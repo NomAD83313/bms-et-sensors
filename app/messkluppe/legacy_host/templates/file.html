@@ -1,0 +1,97 @@
+{% extends "index.html" %}
+{% block extra %}
+<script src="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.js"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.css" />
+	
+
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="ct-chart ct-perfect-fourth"></div>
+                </div>
+                <div class="chart-container" style="height: 550px;">
+                    <div id="graphdiv2" style="width:100%; height:550px;"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+<script type="text/javascript">
+  g2 = new Dygraph(
+    document.getElementById("graphdiv2"),
+         [
+            {% for file in g_buffer %}
+                [new Date({{file[1]|int * 1000 + file[2]|int}}), {{file[4]}}, {{file[5]}}, {{file[6]}}, {{file[4]}}], {% endfor %}
+              ],
+              {
+                labels: ['Date', 'X', 'Y', 'Z', '?'],
+                legend: 'always',
+                animatedZooms: true,
+                axis : {
+                        x : {
+                            valueFormatter: Dygraph.dateString_,
+                            ticker: Dygraph.dateTicker
+                        }
+                }
+              }
+              
+              
+              
+              );
+</script>
+
+
+
+<div class="row">
+    <div class="col-lg-9">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                Data
+            </div>
+            <!-- /.panel-heading -->
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Timestamp</th>
+                                <th>MS</th>
+                                <th>Line</th>
+                                <th>S1</th>
+                                <th>S2</th>
+                                <th>S3</th>
+                                <th>S4</th>
+                                <th>S5</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for file in g_buffer %}
+                            <tr>
+                                <td>{{file[0]}}</td>
+                                <td>{{file[1]}}</td>
+                                <td>{{file[2]}}</td>
+                                <td>{{file[3]}}</td>
+                                <td>{{file[4]}}</td>
+                                <td>{{file[5]}}</td>
+                                <td>{{file[6]}}</td>
+                                <td>{{file[7]}}</td>
+                            </tr>
+                        {% endfor %}
+  
+                        </tbody>
+                    </table>
+                </div>
+                <!-- /.table-responsive -->
+            </div>
+            <!-- /.panel-body -->
+        </div>
+        <!-- /.panel -->
+    </div>
+    <!-- /.col-lg-6 -->
+   
+</div>
+{% endblock %}

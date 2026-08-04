@@ -1,0 +1,349 @@
+services:
+
+  redlab-collector:
+    image: nomad375/bms-redlab-collector:latest
+    container_name: redlab-collector
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - REDLAB_ACTIVE_UNIQUE_ID=${REDLAB_ACTIVE_UNIQUE_ID:-}
+      - REDLAB_READ_MODE=${REDLAB_READ_MODE:-list}
+      - REDLAB_REENUMERATION_RECOVERY=${REDLAB_REENUMERATION_RECOVERY:-1}
+      - REDLAB_REENUMERATION_CONFIRMATIONS=${REDLAB_REENUMERATION_CONFIRMATIONS:-2}
+      - REDLAB_REENUMERATION_DEBOUNCE_SECONDS=${REDLAB_REENUMERATION_DEBOUNCE_SECONDS:-5.0}
+      - REDLAB_REENUMERATION_RESTART_COOLDOWN_SECONDS=${REDLAB_REENUMERATION_RESTART_COOLDOWN_SECONDS:-60.0}
+    volumes:
+      - /dev:/dev
+      - ./runtime:/runtime
+    depends_on:
+      influxdb:
+        condition: service_healthy 
+
+  mscl-collector:
+    image: nomad375/bms-mscl-collector:latest
+    container_name: mscl-collector
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - MSCL_LOCK_FILE=/tmp/mscl/base.lock
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - MSCL_PORT=${MSCL_PORT:-}
+      - MSCL_EXCLUDE_USB_IDS=${MSCL_EXCLUDE_USB_IDS:-10c4:834b}
+      - MSCL_NODE_IDS=${MSCL_NODE_IDS:-16904}
+    volumes:
+      - /dev:/dev
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+  almemo-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.almemo
+    image: nomad375/bms-almemo-collector:latest
+    container_name: almemo-collector
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - ALMEMO_PORT=${ALMEMO_PORT:-}
+      - ALMEMO_EXCLUDE_PORTS=${ALMEMO_EXCLUDE_PORTS:-/dev/ttyMICROEPS*,/dev/ttyOPTRIS*,/dev/ttyPYRO*}
+      - ALMEMO_EXCLUDE_USB_IDS=${ALMEMO_EXCLUDE_USB_IDS:-10c4:834b}
+      - ALMEMO_DEVICE_NAME=${ALMEMO_DEVICE_NAME:-almemo_logger}
+    volumes:
+      - /dev:/dev
+
+  pyrometer-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.pyrometers
+    image: nomad375/bms-pyrometer-collector:latest
+    container_name: pyrometer-collector
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - THERMOMETER_HTTP_PORT=${THERMOMETER_HTTP_PORT:-3050}
+      - THERMOMETER_BAUD=${THERMOMETER_BAUD:-115200}
+      - THERMOMETER_POLL_SEC=${THERMOMETER_POLL_SEC:-0.2}
+      - THERMOMETER_STREAM_TIMEOUT_MS=${THERMOMETER_STREAM_TIMEOUT_MS:-50}
+      - THERMOMETER_STREAM_STALE_SEC=${THERMOMETER_STREAM_STALE_SEC:-3.0}
+      - THERMOMETER_LOG_HZ=${THERMOMETER_LOG_HZ:-10}
+      - THERMOMETER_INFLUX_BATCH_SIZE=${THERMOMETER_INFLUX_BATCH_SIZE:-500}
+      - THERMOMETER_INFLUX_FLUSH_MS=${THERMOMETER_INFLUX_FLUSH_MS:-1000}
+      - PYROMETERS_REGISTRY=${PYROMETERS_REGISTRY:-/runtime/pyrometers-devices.json}
+      - PYROMETER_PORT_MICROEPS1=/host-dev/ttyMICROEPS1
+      - PYROMETER_PORT_OPTRIS1=/host-dev/ttyOPTRIS1
+    device_cgroup_rules:
+      - "c 188:* rmw"
+    volumes:
+      - /dev:/host-dev:ro
+      - ./runtime:/runtime
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+  openthread-border-router:
+    image: ${OTBR_IMAGE:-openthread/otbr:jammy@sha256:06cbdc86019deaf6acfb28f1312745980aab658f205898274cfdf51aa57093e2}
+    container_name: openthread-border-router
+    profiles:
+      - thread
+    network_mode: host
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - ./runtime/openthread:/data
+      - ./runtime/openthread/thread:/var/lib/thread
+      - ./config/otbr-web.default:/etc/default/otbr-web:ro
+    environment:
+      - TZ=UTC
+      - OT_RCP_DEVICE=spinel+hdlc+uart://${OTBR_RCP_DEVICE:-/dev/ttyACM0}?uart-baudrate=${OTBR_RCP_BAUD:-1000000}
+      - OT_INFRA_IF=${OTBR_INFRA_IF:-wlan0}
+      - OT_THREAD_IF=${OTBR_THREAD_IF:-wpan0}
+      - OT_LOG_LEVEL=${OTBR_LOG_LEVEL:-5}
+      - OT_WEB_LISTEN_ADDR=0.0.0.0
+    command:
+      - --radio-url
+      - spinel+hdlc+uart://${OTBR_RCP_DEVICE:-/dev/ttyACM0}?uart-baudrate=${OTBR_RCP_BAUD:-1000000}
+      - --backbone-interface
+      - ${OTBR_INFRA_IF:-wlan0}
+      - --interface
+      - ${OTBR_THREAD_IF:-wpan0}
+      - --trel-url
+      - trel://${OTBR_INFRA_IF:-wlan0}
+      - --debug-level
+      - ${OTBR_LOG_LEVEL:-5}
+    restart: unless-stopped
+
+  matter-server:
+    image: ${MATTER_SERVER_IMAGE:-ghcr.io/matter-js/matterjs-server:stable}
+    container_name: matter-server
+    profiles:
+      - matter
+    network_mode: host
+    user: ${MATTER_SERVER_USER:-0:0}
+    privileged: true
+    security_opt:
+      - apparmor:unconfined
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ${MATTER_SERVER_DATA_DIR:-./runtime/matterjs-server}:/data
+      - /run/dbus:/run/dbus
+    environment:
+      - TZ=UTC
+      - STORAGE_PATH=/data
+      - LISTEN_ADDRESS=${MATTER_LISTEN_ADDRESS:-0.0.0.0}
+      - PRIMARY_INTERFACE=${MATTER_PRIMARY_IF:-wlan0}
+      - BLUETOOTH_ADAPTER=${MATTER_BLUETOOTH_ADAPTER:-999}
+      - LOG_LEVEL=${MATTER_SERVER_LOG_LEVEL:-info}
+      - PRODUCTION_MODE=${MATTER_SERVER_PRODUCTION_MODE:-true}
+    restart: unless-stopped
+
+  matter-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.matter-app
+    image: nomad375/bms-matter-collector:latest
+    container_name: matter-collector
+    profiles:
+      - matter
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - MATTER_APP_PORT=${MATTER_APP_PORT:-3060}
+      - MATTER_SERVER_WS_URL=${MATTER_SERVER_WS_URL:-ws://host.docker.internal:5580/ws}
+      - MATTER_WS_RECONNECT_SEC=${MATTER_WS_RECONNECT_SEC:-3.0}
+      - MATTER_WS_PING_INTERVAL_SEC=${MATTER_WS_PING_INTERVAL_SEC:-20}
+      - MATTER_WS_PING_TIMEOUT_SEC=${MATTER_WS_PING_TIMEOUT_SEC:-10}
+      - MATTER_POLL_INTERVAL_SEC=${MATTER_POLL_INTERVAL_SEC:-60}
+      - MATTER_POLL_NODE_ID=${MATTER_POLL_NODE_ID:-1}
+      - MATTER_POLL_BATTERY_ENDPOINT_ID=${MATTER_POLL_BATTERY_ENDPOINT_ID:-5}
+      - MATTER_INFLUX_MEASUREMENT=${MATTER_INFLUX_MEASUREMENT:-matter_sensor}
+      - MATTER_SOURCE_TAG=${MATTER_SOURCE_TAG:-matter-server}
+      - OTBR_RCP_DEVICE=${OTBR_RCP_DEVICE:-}
+      - OTBR_RCP_TCP_ENDPOINT=${OTBR_RCP_TCP_ENDPOINT:-}
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      matter-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime/matter-collector:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev:/dev:ro
+    restart: unless-stopped
+
+  messkluppe-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.messkluppe
+    image: nomad375/bms-messkluppe-collector:latest
+    container_name: messkluppe-collector
+    profiles:
+      - messkluppe
+    privileged: true
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - MESSKLUPPE_APP_PORT=${MESSKLUPPE_APP_PORT:-3080}
+      - MESSKLUPPE_INPUT_MODE=${MESSKLUPPE_INPUT_MODE:-mock}
+      - MESSKLUPPE_FAKE_MODE=${MESSKLUPPE_FAKE_MODE:-1}
+      - MESSKLUPPE_FAKE_INTERVAL_SEC=${MESSKLUPPE_FAKE_INTERVAL_SEC:-5.0}
+      - MESSKLUPPE_RADIO_POLL_SEC=${MESSKLUPPE_RADIO_POLL_SEC:-0.05}
+      - MESSKLUPPE_RADIO_RECENT_PAYLOADS=${MESSKLUPPE_RADIO_RECENT_PAYLOADS:-10}
+      - MESSKLUPPE_RADIO_COMMAND_REPEAT_SEC=${MESSKLUPPE_RADIO_COMMAND_REPEAT_SEC:-0.25}
+      - MESSKLUPPE_RADIO_LIVE_REPEAT_MODE=${MESSKLUPPE_RADIO_LIVE_REPEAT_MODE:-after_rx}
+      - MESSKLUPPE_RADIO_ACK_PAD_TO_PAYLOAD_SIZE=${MESSKLUPPE_RADIO_ACK_PAD_TO_PAYLOAD_SIZE:-0}
+      - MESSKLUPPE_CLIP_ID=${MESSKLUPPE_CLIP_ID:-1}
+      - MESSKLUPPE_INFLUX_MEASUREMENT=${MESSKLUPPE_INFLUX_MEASUREMENT:-messkluppe_sensor}
+      - MESSKLUPPE_SOURCE_TAG=${MESSKLUPPE_SOURCE_TAG:-messkluppe}
+      - MESSKLUPPE_RADIO_SPI_BUS=${MESSKLUPPE_RADIO_SPI_BUS:-0}
+      - MESSKLUPPE_RADIO_SPI_DEVICE=${MESSKLUPPE_RADIO_SPI_DEVICE:-0}
+      - MESSKLUPPE_RADIO_CE_GPIO=${MESSKLUPPE_RADIO_CE_GPIO:-25}
+      - MESSKLUPPE_RADIO_CHANNEL=${MESSKLUPPE_RADIO_CHANNEL:-111}
+      - MESSKLUPPE_RADIO_PAYLOAD_SIZE=${MESSKLUPPE_RADIO_PAYLOAD_SIZE:-32}
+      - MESSKLUPPE_RADIO_SPI_SPEED_HZ=${MESSKLUPPE_RADIO_SPI_SPEED_HZ:-4000000}
+    ports:
+      - "${MESSKLUPPE_APP_PORT:-3080}:${MESSKLUPPE_APP_PORT:-3080}"
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - /dev:/dev
+      - ./runtime/messkluppe:/data
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    environment:
+      - TZ=UTC
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_ADMIN_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  grafana:
+    image: grafana/grafana-oss
+    container_name: grafana
+    environment:
+      - TZ=UTC
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  graf-lite:
+    build:
+      context: .
+      dockerfile: Dockerfile.graf-app
+    image: nomad375/bms-graf-lite:latest
+    container_name: graf-lite
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - GRAF_APP_DEFAULT_RANGE=${GRAF_APP_DEFAULT_RANGE:-5m}
+      - GRAF_APP_REFRESH_SEC=${GRAF_APP_REFRESH_SEC:-5}
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - ./runtime:/runtime
+    restart: unless-stopped
+
+  ap-control:
+    build:
+      context: .
+      dockerfile: Dockerfile.ap-ui
+    image: nomad375/bms-ap-control:latest
+    container_name: ap-control
+    network_mode: host
+    privileged: true
+    environment:
+      - TZ=UTC
+      - AP_UI_PORT=${AP_UI_PORT:-3070}
+      - AP_UI_INTERFACE=${AP_UI_INTERFACE:-wlan0}
+      - AP_UI_PROFILE=${AP_UI_PROFILE:-}
+      - AP_UI_LEASE_FILE=${AP_UI_LEASE_FILE:-/host/var/lib/NetworkManager/dnsmasq-wlan0.leases}
+    volumes:
+      - /run/dbus:/run/dbus
+      - /var/lib/NetworkManager:/host/var/lib/NetworkManager:ro
+    restart: unless-stopped
+
+  service-controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.svcctl
+    image: nomad375/bms-service-controller:latest
+    container_name: service-controller
+    network_mode: host
+    environment:
+      - TZ=UTC
+      - MSCL_PORT=${MSCL_PORT:-}
+      - MSCL_UI_ALLOW_WITHOUT_SERIAL=${MSCL_UI_ALLOW_WITHOUT_SERIAL:-1}
+      - SVCCTL_KEEP_DEGRADED_SERVICES_RUNNING=${SVCCTL_KEEP_DEGRADED_SERVICES_RUNNING:-1}
+      - SVCCTL_DEGRADED_START_RETRY_SEC=${SVCCTL_DEGRADED_START_RETRY_SEC:-60.0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev:/dev:ro
+    restart: unless-stopped
+
+  dashboard:
+    image: nginx:latest
+    container_name: dashboard
+    environment:
+      - TZ=UTC
+    ports:
+      - "${DASHBOARD_PORT:-80}:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./dashboard/simple-dash:/usr/share/nginx/html:ro
+      - ./dashboard/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - service-controller
+      - ap-control
+    restart: unless-stopped
+
+
+volumes:
+  influxdb_data:
+  grafana_data:

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMEMO 2490</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="device-common.css">
+<style>
+    .page-shell{max-width:1240px;margin:0 auto;}
+    .page-head{margin-bottom:22px;}
+    .page-head-title{display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+    .page-head-title h1{margin:0;}
+    .hero-card{padding:22px 24px !important;}
+    .device-summary{font-size:.96rem;line-height:1.55;color:var(--muted);}
+    .hero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:16px;}
+    .hero-grid .stat-block{padding:10px 12px;}
+    .hero-grid .stat-label{font-size:.68rem;}
+    .hero-grid .stat-value{font-size:.88rem;}
+    .overview-band{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 18px;}
+    .layout{display:grid;grid-template-columns:minmax(290px,0.8fr) minmax(0,1.6fr);gap:18px;align-items:stretch;margin-bottom:18px;}
+    .left-col,.right-col{display:grid;gap:18px;}
+    .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;}
+    .card-title{font-size:1.32rem;font-weight:700;letter-spacing:-.03em;margin:0;}
+    .section-subtitle{margin:6px 0 0;color:var(--muted);font-size:.92rem;}
+    .control-surface{padding:14px 16px;border-radius:18px;background:linear-gradient(180deg,#fbfdff 0%,#f4f8fb 100%);border:1px solid var(--line);}
+    pre{margin:0;padding:18px;border-radius:18px;background:#0d1722;color:#d5e9ff;min-height:150px;white-space:pre-wrap;word-break:break-word;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);}
+    #liveOut{line-height:1.45;height:calc(1.45em * 10 + 36px);overflow-y:auto;}
+    .tiny-input{max-width:92px;font-size:.96rem;}
+    .v-compact{max-width:52px !important;}
+    .time-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    .time-row .btn{padding:0 14px;min-height:42px;font-size:.92rem;border-radius:14px;}
+    .channel-card .label{font-size:.76rem;line-height:1;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;white-space:nowrap;}
+    .channel-card .sub{min-width:18px;text-align:center;font-size:.72rem;color:var(--muted);}
+    .channel-card .tiny-input{max-width:72px;font-size:.95rem;}
+    .card .btn.btn-outline-secondary,.card .btn.btn-primary{font-size:.92rem;border-radius:14px;min-height:42px;padding:0 14px;}
+    .card .btn.btn-primary{background:linear-gradient(180deg,#2f80da 0%,#1f5f9a 100%);border-color:#1f5f9a;}
+    .row1{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+    .row2{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+    .row-gap{margin-top:10px;}
+    .btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+    .channel-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px;margin-bottom:12px;}
+    .channel-grid .btn{padding:0 8px;font-size:.86rem;width:100%;min-height:38px;border-radius:12px;}
+    .full-btn{min-width:124px;font-size:.9rem;padding:0 14px;}
+    .hint{font-size:.84rem;}
+    .stat-block.bat-ok{background:linear-gradient(180deg,#dff7e8,#d0f0e0);border-color:rgba(27,125,77,.25);}
+    .stat-block.bat-ok .stat-label{color:var(--ok);}
+    .stat-block.bat-warn{background:linear-gradient(180deg,#fff1d2,#fde8b0);border-color:rgba(147,93,15,.25);}
+    .stat-block.bat-warn .stat-label{color:var(--warn);}
+    .stat-block.bat-low{background:linear-gradient(180deg,#fde8e8,#fad0d0);border-color:rgba(180,30,30,.25);}
+    .stat-block.bat-low .stat-label{color:#b41e1e;}
+    .cmd-bar{align-items:center;gap:10px !important;}
+    .cmd-bar form{display:flex;align-items:center;margin:0;}
+    .cmd-bar .form-select,.cmd-bar .form-control,.cmd-bar .btn{height:44px;font-size:.92rem;line-height:1.2;box-sizing:border-box;border-radius:14px;}
+    .cmd-bar .form-control{padding:0 14px;}
+    .cmd-bar .form-select{padding:0 40px 0 14px;}
+    .help-panel{display:none;margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#fbfdff 0%,#f4f8fb 100%);}
+    .help-panel.show{display:block;}
+    .help-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+    .help-title{font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:8px;}
+    .help-item{font-size:.88rem;display:flex;gap:8px;align-items:baseline;color:var(--ink);}
+    .help-item span{font-weight:700;min-width:110px;display:inline-block;}
+    .help-note{font-size:.86rem;color:var(--muted);line-height:1.5;margin-top:10px;}
+    .help-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#eef2f7;border-radius:8px;padding:6px 8px;display:inline-block;}
+    .console-note{margin-bottom:12px;color:var(--muted);font-size:.9rem;line-height:1.5;}
+    @media (max-width: 991.98px){.layout{grid-template-columns:1fr;}.channel-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.hero-grid,.overview-band{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    @media (max-width: 720px){body{padding:18px 14px 32px;}.row1,.row2{grid-template-columns:1fr;}.channel-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.help-grid{grid-template-columns:1fr;}.cmd-bar{flex-direction:column;align-items:stretch !important;}.cmd-bar form{width:100%;}.cmd-bar > *{width:100%;}.time-row{flex-direction:column;align-items:stretch;}.overview-band{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<main class="page-shell">
+<header class="page-head">
+<div class="eyebrow">Precision Logger Console</div>
+<div class="page-head-title">
+<h1>ALMEMO 2490 USB</h1>
+<p class="page-subtitle">Live readout, channel diagnostics, and direct command access in one operator-focused workspace. The goal is fast inspection first, low-level command control second.</p>
+</div>
+</header>
+
+<div class="card p-3 mb-3 hero-card" style="font-size: 0.88rem;">
+<div class="d-flex align-items-center justify-content-between mb-2">
+<div>
+<strong>Cable</strong>: <span id="devicePort" class="text-muted">-</span>
+<div id="deviceInfo" style="margin-top:2px;display:none"><strong>Device</strong>: <span id="deviceInfoText" class="text-muted"></span></div>
+</div>
+<div class="d-flex align-items-center gap-2">
+<span id="opStatus" class="small text-muted me-2" style="display:none">Processing...</span>
+<span id="deviceStatus" class="status-pill status-warn">checking</span>
+<a class="graf-link-button" href="/graf/almemo?range=5m" target="_blank" rel="noopener">Graf App Lite</a>
+<button id="refreshBtn" class="btn btn-outline-secondary btn-sm" onclick="loadHealth(true)">Refresh cable &amp; device</button>
+<button class="btn btn-outline-secondary btn-sm" onclick="toggleHeroGrid()" id="heroToggleBtn">Details ▾</button>
+</div>
+</div>
+<div id="recoverySuggestions" class="alert alert-info mt-2" style="display:none; border-radius:14px; font-size:0.9rem;">
+    <strong>Connection Trouble?</strong>
+    <ul class="mb-0 mt-1">
+        <li>Check if the ALMEMO device is powered on.</li>
+        <li>Ensure the <strong>ZA 1919 DKU</strong> cable is firmly connected to socket <strong>A1</strong>.</li>
+        <li>Try unplugging and replugging the USB cable to reset the CP210x bridge.</li>
+        <li>Wait a few seconds; the device communicates at a slow 9600 baud rate.</li>
+    </ul>
+</div>
+<div class="hero-grid" id="heroGrid" style="display:none">
+<div class="stat-block"><div class="stat-label">Device</div><div class="stat-value" id="heroDeviceModel">-</div></div>
+<div class="stat-block"><div class="stat-label">Version</div><div class="stat-value" id="heroVersion">-</div></div>
+<div class="stat-block"><div class="stat-label">Serial</div><div class="stat-value" id="heroSerial">-</div></div>
+<div class="stat-block"><div class="stat-label">Active Channels</div><div class="stat-value" id="heroChannels">-</div></div>
+<div class="stat-block"><div class="stat-label">Address / Channels</div><div class="stat-value" id="heroAddress">-</div></div>
+<div class="stat-block"><div class="stat-label">Print Cycle</div><div class="stat-value" id="heroPrintCycle">-</div></div>
+<div class="stat-block"><div class="stat-label">Conversion Rate</div><div class="stat-value" id="heroConvRate">-</div></div>
+<div class="stat-block"><div class="stat-label">Set Point</div><div class="stat-value" id="heroSetpoint">-</div></div>
+<div class="stat-block"><div class="stat-label">Hysteresis</div><div class="stat-value" id="heroHysteresis">-</div></div>
+<div class="stat-block"><div class="stat-label">Config</div><div class="stat-value" id="heroConfig">-</div></div>
+<div class="stat-block"><div class="stat-label">Device Lock</div><div class="stat-value" id="heroLock">-</div></div>
+<div class="stat-block"><div class="stat-label">Language</div><div class="stat-value" id="heroLang">-</div></div>
+<div class="stat-block"><div class="stat-label">Display</div><div class="stat-value" id="heroDisplay">-</div></div>
+<div class="stat-block"><div class="stat-label">Start Time</div><div class="stat-value" id="heroStartTime">-</div></div>
+<div class="stat-block"><div class="stat-label">Start Date</div><div class="stat-value" id="heroStartDate">-</div></div>
+<div class="stat-block"><div class="stat-label">End Time</div><div class="stat-value" id="heroEndTime">-</div></div>
+<div class="stat-block"><div class="stat-label">End Date</div><div class="stat-value" id="heroEndDate">-</div></div>
+<div class="stat-block"><div class="stat-label">Device Time</div><div class="stat-value" id="heroDeviceTime">-</div></div>
+<div class="stat-block"><div class="stat-label">Device Date</div><div class="stat-value" id="heroDeviceDate">-</div></div>
+<div class="stat-block"><div class="stat-label">CJ Temp</div><div class="stat-value" id="heroCjTemp">-</div></div>
+<div class="stat-block"><div class="stat-label">Compensation Temp</div><div class="stat-value" id="heroTempComp">-</div></div>
+<div class="stat-block"><div class="stat-label">Air Pressure</div><div class="stat-value" id="heroAirPressure">-</div></div>
+<div class="stat-block"><div class="stat-label">Battery Voltage</div><div class="stat-value" id="heroBattery">-</div></div>
+<div class="stat-block"><div class="stat-label">Sensor Supply V</div><div class="stat-value" id="heroSensorSupply">-</div></div>
+<div class="stat-block"><div class="stat-label">Sensor V Setpoint</div><div class="stat-value" id="heroSensorVSetpoint">-</div></div>
+<div class="stat-block"><div class="stat-label">Recharge Count</div><div class="stat-value" id="heroRechargeCount">-</div></div>
+<div class="stat-block"><div class="stat-label">Charging Mode</div><div class="stat-value" id="heroChargingMode">-</div></div>
+<div class="stat-block"><div class="stat-label">Charging Current</div><div class="stat-value" id="heroChargingCurrent">-</div></div>
+</div>
+</div>
+
+
+<div class="layout">
+<div class="left-col">
+<div class="card p-3 h-100 channel-card">
+<div class="panel-head">
+<div>
+<h5 class="card-title">Channel Properties</h5>
+<div class="section-subtitle" id="connectedChannelsSummary">Connected channels: -</div>
+</div>
+<button class="btn btn-outline-secondary btn-sm" onclick="refreshChannels()">Refresh sensors</button>
+</div>
+<div class="control-surface">
+<div class="row1">
+<span class="label">Channel №</span>
+<span class="sub">M</span>
+<select id="smoothChannel" class="form-select form-select-sm tiny-input">
+<option value="00">00</option>
+<option value="01">01</option>
+<option value="02">02</option>
+<option value="03">03</option>
+<option value="04">04</option>
+<option value="05">05</option>
+<option value="06">06</option>
+<option value="07">07</option>
+<option value="08">08</option>
+<option value="09">09</option>
+<option value="10">10</option>
+<option value="11">11</option>
+<option value="12">12</option>
+<option value="13">13</option>
+<option value="14">14</option>
+<option value="15">15</option>
+</select>
+<button class="btn btn-outline-secondary btn-sm full-btn" style="flex:1 1 auto;" onclick="readFullSensorInfo()">Sensor Info</button>
+</div>
+<div class="channel-grid"></div>
+<div class="row2 row-gap">
+<span class="label">smooth</span>
+<input id="smoothCount" class="form-control form-control-sm tiny-input v-compact" placeholder="N" value="20" maxlength="3">
+<div class="btn-row">
+<button class="btn btn-outline-secondary btn-sm" onclick="applySmoothing()">Apply</button>
+<button class="btn btn-outline-secondary btn-sm" onclick="readSmoothing()">Read</button>
+<button class="btn btn-outline-secondary btn-sm" onclick="resetSmoothing()">Reset</button>
+</div>
+</div>
+<div class="small mt-2" style="display:grid;grid-template-columns:max-content 1fr;gap:3px 8px;align-items:baseline;">
+  <span class="label">Sensor</span><span class="text-muted"><span id="sensorType">-</span></span>
+  <span class="label">Ch</span><span class="text-muted"><span id="sensorChannel">-</span></span>
+  <span class="label">Unit</span><span class="text-muted"><span id="sensorUnit">-</span></span>
+  <span class="label">Smooth</span><span class="text-muted"><span id="smoothCurrent">-</span></span>
+  <span class="sensor-extra" style="display:none"></span><span class="sensor-extra" style="display:none;border-top:1px solid var(--line);margin-top:4px"></span>
+  <span class="label sensor-extra" style="display:none">Max</span><span class="text-muted sensor-extra" style="display:none"><span id="sensorPeakMax">-</span><span id="sensorPeakMaxTime" style="opacity:.55;font-size:.85em;margin-left:5px"></span></span>
+  <span class="label sensor-extra" style="display:none">Min</span><span class="text-muted sensor-extra" style="display:none"><span id="sensorPeakMin">-</span><span id="sensorPeakMinTime" style="opacity:.55;font-size:.85em;margin-left:5px"></span></span>
+  <span class="label sensor-extra" style="display:none">Limits</span><span class="text-muted sensor-extra" style="display:none" id="sensorLimits">-</span>
+  <span class="label sensor-extra" style="display:none">Base</span><span class="text-muted sensor-extra" style="display:none" id="sensorBase">-</span>
+  <span class="label sensor-extra" style="display:none">Factor</span><span class="text-muted sensor-extra" style="display:none" id="sensorFactor">-</span>
+</div>
+<div class="small text-muted mt-2 hint">smoothing applies to selected channel (stored in sensor connector). Average of N=0..99 measurements.</div>
+</div>
+</div>
+</div>
+
+<div class="right-col">
+<div class="card p-3 h-100">
+<div class="panel-head">
+<div>
+<h5 class="card-title">Live Data</h5>
+<div class="section-subtitle">Print Cycle — human-readable periodic output. Continuous Query — dense streaming for throughput checks.</div>
+</div>
+<div class="time-row">
+<select id="liveMode" class="form-select form-select-sm" style="min-width:264px;max-width:264px;">
+<optgroup label="Print Cycle">
+<option value="print:000001" selected>Print Cycle — 1 s</option>
+<option value="print:000002">Print Cycle — 2 s</option>
+<option value="print:000005">Print Cycle — 5 s</option>
+<option value="print:000010">Print Cycle — 10 s</option>
+<option value="print:000030">Print Cycle — 30 s</option>
+<option value="print:000100">Print Cycle — 1 min</option>
+</optgroup>
+<optgroup label="Continuous Query">
+<option value="fast:2.5">Continuous Query — 2.5 M/s</option>
+<option value="fast:10">Continuous Query — 10 M/s</option>
+</optgroup>
+</select>
+<button id="liveStartBtn" class="btn btn-outline-secondary btn-sm" onclick="startSelected()">Start</button>
+<button class="btn btn-outline-secondary btn-sm" onclick="stopSelected()">Stop</button>
+<button class="btn btn-outline-secondary btn-sm" onclick="clearSelected()">Clear</button>
+</div>
+</div>
+<div id="liveStatus" class="small text-muted mb-2">stopped</div>
+<pre id="liveOut"></pre>
+</div>
+</div>
+</div>
+
+<div class="card p-3">
+<div class="panel-head">
+<div>
+<h5 class="card-title">Command Workspace</h5>
+<div class="section-subtitle">Use quick actions for common tasks and fall back to raw serial commands when needed.</div>
+</div>
+</div>
+<div class="d-flex align-items-center gap-2 mb-2 cmd-bar">
+<select id="cmdSelect" class="form-select form-select-sm" style="max-width:240px;">
+<option value="">Quick command...</option>
+<optgroup label="Safe">
+<option value="S-4; P-04">S-4; P-04 (dump memory)</option>
+<option value="G00">G00 (select addr)</option>
+<option value="t0">t0 (version)</option>
+<option value="p">p (read)</option>
+<option value="P01">P01 (read+time)</option>
+<option value="P15">P15 (channels)</option>
+<option value="P18">P18 (meas values)</option>
+<option value="f3 P15">f3 P15 (avg field)</option>
+<option value="P69">P69 (avg/damping)</option>
+<option value="P61">P61 (config menu)</option>
+<option value="P32">P32 (smoothing)</option>
+<option value="P43">P43 (atm pressure)</option>
+<option value="P19">P19 (device config)</option>
+<option value="f1 P19">f1 P19 (device config ext)</option>
+<option value="f2 P19">f2 P19 (device status)</option>
+<option value="P02">P02 (max value)</option>
+<option value="P03">P03 (min value)</option>
+<option value="P28">P28 (max time/date)</option>
+<option value="P29">P29 (min time/date)</option>
+<option value="P45">P45 (setpoint)</option>
+<option value="S1">S1 (one-time output)</option>
+<option value="s">s (one-time output)</option>
+<option value="S2">S2 (cyclic output)</option>
+</optgroup>
+<optgroup label="Date | Time">
+<option value="__SET_TIME_NOW__" style="font-weight:700;">Set Time (now)</option>
+<option value="__SET_DATE_NOW__" style="font-weight:700;">Set Date (today)</option>
+<option value="P10">P10 (read time)</option>
+<option value="P13">P13 (read date)</option>
+<option value="P11">P11 (read cycle)</option>
+<option value="f1 P11">f1 P11 (cycle timer)</option>
+<option value="C10">C10 (reset time)</option>
+<option value="C13">C13 (reset date)</option>
+</optgroup>
+<optgroup label="Reset / Clear">
+<option value="S-4; C-04">S-4; C-04 (clear memory)</option>
+<option value="C11">C11 (stop cycle)</option>
+<option value="C18">C18 (clear values)</option>
+<option value="C02">C02 (clear max)</option>
+<option value="C03">C03 (clear min)</option>
+<option value="C01">C01 (zero/base)</option>
+<option value="f1 C01">f1 C01 (zero correction)</option>
+<option value="f1 C19">f1 C19 (reset variables)</option>
+<option value="f2 C19">f2 C19 (restore defaults)</option>
+<option value="o01">o01 (cal resistor on)</option>
+<option value="o-01">o-01 (cal resistor off)</option>
+<option value="f2 C01">f2 C01 (calibrate)</option>
+</optgroup>
+<optgroup label="Risky">
+<option value="I+000001">I+hhmmss (cycle+mem)</option>
+<option value="I-000001">I-hhmmss (cycle no mem)</option>
+<option value="f1 A4">f1 A4 (mem on)</option>
+<option value="f1 A-4">f1 A-4 (mem off)</option>
+<option value="o11">o11 (sleep on)</option>
+<option value="o-11">o-11 (sleep off)</option>
+</optgroup>
+</select>
+<button class="btn btn-primary btn-sm" onclick="runSelectedCmd()">Run</button>
+<form method="post" action="api/command" onsubmit="return sendCmd(event)" class="d-flex align-items-center gap-2 flex-grow-1">
+<input id="cmd" name="command" class="form-control" placeholder="Command (e.g., t0, M00, p)">
+<button type="submit" class="btn btn-primary">Send</button>
+</form>
+<button class="btn btn-outline-secondary btn-sm" onclick="toggleCmdHelp()">Help</button>
+</div>
+
+<div id="cmdHelp" class="help-panel">
+<div class="small text-muted mb-2">Command reference (quick cheat-sheet)</div>
+<div class="help-grid">
+<div class="help-col">
+<div class="help-title">Safe</div>
+<div class="help-item"><span>S-4; P-04</span> dump memory</div>
+<div class="help-item"><span>G00</span> select addr</div>
+<div class="help-item"><span>p</span> read value</div>
+<div class="help-item"><span>P01</span> read + time</div>
+<div class="help-item"><span>P02</span> max value</div>
+<div class="help-item"><span>P03</span> min value</div>
+<div class="help-item"><span>P15</span> channels</div>
+<div class="help-item"><span>P18</span> meas values list</div>
+<div class="help-item"><span>P61</span> config menu</div>
+<div class="help-item"><span>P32</span> smoothing</div>
+<div class="help-item"><span>P43</span> atm pressure</div>
+<div class="help-item"><span>P45</span> setpoint</div>
+<div class="help-item"><span>P69</span> avg/damping</div>
+<div class="help-item"><span>P19</span> device config</div>
+<div class="help-item"><span>P28</span> max time/date</div>
+<div class="help-item"><span>P29</span> min time/date</div>
+<div class="help-item"><span>S1</span> one-time output</div>
+<div class="help-item"><span>s</span> one-time output</div>
+<div class="help-item"><span>S2</span> cyclic output</div>
+<div class="help-item"><span>f1 P19</span> device config ext</div>
+<div class="help-item"><span>f2 P19</span> device status</div>
+<div class="help-item"><span>f3 P15</span> avg field</div>
+<div class="help-item"><span>f1 P15</span> channel ext. programming</div>
+<div class="help-item"><span>t0</span> version</div>
+</div>
+<div class="help-col">
+<div class="help-title">Date | Time</div>
+<div class="help-item"><span>Set Time (now)</span> set current time</div>
+<div class="help-item"><span>Set Date (today)</span> set current date</div>
+<div class="help-item"><span>P10</span> read time</div>
+<div class="help-item"><span>P13</span> read date</div>
+<div class="help-item"><span>P11</span> read cycle</div>
+<div class="help-item"><span>f1 P11</span> cycle timer</div>
+<div class="help-item"><span>C10</span> reset time</div>
+<div class="help-item"><span>C13</span> reset date</div>
+<div class="help-title" style="margin-top:8px;">Reset / Clear</div>
+<div class="help-item"><span>S-4; C-04</span> clear memory</div>
+<div class="help-item"><span>C11</span> stop cycle</div>
+<div class="help-item"><span>C18</span> clear values</div>
+<div class="help-item"><span>C02</span> clear max</div>
+<div class="help-item"><span>C03</span> clear min</div>
+<div class="help-item"><span>C01</span> zero/base</div>
+<div class="help-item"><span>f1 C01</span> zero correction</div>
+<div class="help-item"><span>f1 C19</span> reset variables</div>
+<div class="help-item"><span>f2 C19</span> restore defaults</div>
+<div class="help-item"><span>o01 / o-01</span> cal resistor on/off</div>
+<div class="help-item"><span>f2 C01</span> calibrate</div>
+<div class="help-title" style="margin-top:8px;">Risky</div>
+<div class="help-item"><span>I+hhmmss</span> cycle + mem</div>
+<div class="help-item"><span>I-hhmmss</span> cycle no mem</div>
+<div class="help-item"><span>f1 A4</span> mem on</div>
+<div class="help-item"><span>f1 A-4</span> mem off</div>
+<div class="help-item"><span>o11 / o-11</span> sleep on/off</div>
+</div>
+</div>
+<div class="help-note">
+<div><strong>Multi-command input:</strong> enter commands separated by <span class="help-code">;</span> (run in order).</div>
+<div>Spaces and prefixes matter (e.g., <span class="help-code">f3 P32 20</span> has a space after <span class="help-code">f3</span>).</div>
+<div>Example (set smoothing for channel 00, N=20): <span class="help-code">G00; M00; f1 z20</span></div>
+<div>Example (read config then status): <span class="help-code">P19; f2 P19</span></div>
+<div>Example (select channel then read value+time): <span class="help-code">G00; M01; P01</span></div>
+<div><strong>Fast Sensor Info:</strong> the button now uses <span class="help-code">G00; Mxx; f2 P00; P32</span> for a faster channel overview.</div>
+<div>Peak values and their timestamps are no longer polled by the button. Read them manually with <span class="help-code">P02</span>, <span class="help-code">P03</span>, <span class="help-code">P28</span>, and <span class="help-code">P29</span>.</div>
+<div class="mt-2"><strong>Docs:</strong> <a href="https://www.ahlborn.com/assets/uploads/general/Produkte/Datenlogger-Messgeraete/Almemo-2490A/ALMEMO-2490A-english.pdf" target="_blank">ALMEMO 2490A Manual</a> · <a href="https://www.ahlborn.com/assets/uploads/general/Downloads/Handbuch/ALMEMO-Manual-2020.pdf#page=491" target="_blank">ALMEMO Manual 2020 (serial commands)</a></div>
+</div>
+</div>
+
+<div class="small text-muted mb-2">Pretty</div>
+<pre id="outPretty"></pre>
+<div class="small text-muted mt-3 mb-2">Raw JSON</div>
+<pre id="out"></pre>
+</div>
+</main>
+<script src="ui.js"></script>
+</body>
+</html>

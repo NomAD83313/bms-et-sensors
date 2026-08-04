@@ -1,0 +1,44 @@
+FROM python:3.12-slim
+
+# 1. System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates libbluetooth3 libboost-system-dev \
+    libboost-filesystem-dev libboost-program-options-dev libboost-python-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+
+# 2. Install MSCL via arch-aware package links.
+# TARGETARCH is provided by Docker/buildx (amd64/arm64). We keep uname fallback
+# so local legacy builds also work on Raspberry Pi.
+ARG TARGETARCH
+ARG MSCL_VERSION=68.1.0
+ARG MSCL_SHA256_AMD64=2de624e9be495089575296da90e2da55e31ed29167626f824965c2b6909eb0ed
+ARG MSCL_SHA256_ARM64=5f1a89b43b167b737a6e17944d8cd05e0c39ad3d52584ca7a6a87c4643a7ca62
+RUN ARCH="${TARGETARCH:-$(uname -m)}" && \
+    if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "x86_64" ]; then \
+        MSCL_URL="https://github.com/LORD-MicroStrain/MSCL/releases/download/v${MSCL_VERSION}/MSCL-Python3.12-x86_64-v${MSCL_VERSION}.deb"; \
+        MSCL_SHA256="${MSCL_SHA256_AMD64}"; \
+    elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
+        MSCL_URL="https://github.com/LORD-MicroStrain/MSCL/releases/download/v${MSCL_VERSION}/MSCL-Python3.12-aarch64-v${MSCL_VERSION}.deb"; \
+        MSCL_SHA256="${MSCL_SHA256_ARM64}"; \
+    else \
+        echo "Unsupported arch for MSCL package: $ARCH" >&2; \
+        exit 1; \
+    fi && \
+    wget --quiet "$MSCL_URL" -O mscl.deb && \
+    echo "${MSCL_SHA256}  mscl.deb" | sha256sum -c - && \
+    (dpkg -i mscl.deb || (apt-get update && apt-get install -f -y)) && \
+    rm -f mscl.deb && \
+    rm -rf /var/lib/apt/lists/*
+
+# 3. Environment setup
+ENV PYTHONPATH="/usr/lib/python3.12/dist-packages"
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY app/mscl/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app/mscl/ .
+COPY app/shared/device-common.css static/device-common.css
+CMD ["python", "mscl_config.py"]

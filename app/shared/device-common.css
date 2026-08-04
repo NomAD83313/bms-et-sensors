@@ -1,0 +1,162 @@
+/* device-common.css — shared design tokens and primitives for all device pages.
+   Each app Dockerfile copies this file to its own container.
+   Page-specific overrides go in the page's own <style> block, loaded after this file. */
+
+:root {
+    --bg: #edf3f8;
+    --panel: rgba(255, 255, 255, 0.96);
+    --panel-soft: #f7fbff;
+    --line: #d4deea;
+    --line-strong: #b8c8da;
+    --ink: #17324a;
+    --muted: #64798d;
+    --accent: #1f5f9a;
+    --accent-soft: #e8f1fb;
+    --ok: #1b7d4d;
+    --ok-bg: #dff7e8;
+    --warn: #935d0f;
+    --warn-bg: #fff1d2;
+    --err: #b41e1e;
+    --err-bg: #fde8e8;
+    --shadow: 0 18px 40px rgba(20, 39, 58, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 28px 20px 40px;
+    background:
+        radial-gradient(circle at top left, rgba(31, 95, 154, 0.12), transparent 28%),
+        linear-gradient(180deg, #f7fbff 0%, var(--bg) 100%);
+    color: var(--ink);
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+h1 {
+    margin: 14px 0 8px;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    line-height: 0.98;
+    letter-spacing: -0.04em;
+}
+
+.eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--line);
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.page-subtitle {
+    max-width: 72ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.02rem;
+    line-height: 1.55;
+}
+
+.card {
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    border-radius: 24px;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+}
+
+/* Compound selectors prevent conflict with pages that use .status-ok as a plain text modifier */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+.status-pill.status-ok   { background: var(--ok-bg);  color: var(--ok);  border-color: rgba(27, 125, 77, 0.14); }
+.status-pill.status-warn { background: var(--warn-bg); color: var(--warn); border-color: rgba(147, 93, 15, 0.14); }
+.status-pill.status-err  { background: var(--err-bg);  color: var(--err);  border-color: rgba(180, 30, 30, 0.14); }
+
+.stat-block {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f3f8fd 100%);
+    border: 1px solid var(--line);
+}
+.stat-label {
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.stat-value {
+    color: var(--ink);
+    font-size: 1rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+a.graf-link-button,
+button.graf-link-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line-strong);
+    background: #fff;
+    color: var(--accent);
+    font-size: 0.92rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-decoration: none !important;
+    white-space: nowrap;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+}
+
+a.graf-link-button:visited {
+    color: var(--accent);
+}
+
+a.graf-link-button:hover,
+a.graf-link-button:focus,
+button.graf-link-button:hover,
+button.graf-link-button:focus {
+    color: #174c7d;
+    border-color: rgba(31, 95, 154, 0.42);
+    background: var(--accent-soft);
+    text-decoration: none !important;
+}
+
+a.graf-link-button-light,
+button.graf-link-button-light {
+    border-color: rgba(255, 255, 255, 0.42);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+a.graf-link-button-light:visited {
+    color: #fff;
+}
+
+a.graf-link-button-light:hover,
+a.graf-link-button-light:focus,
+button.graf-link-button-light:hover,
+button.graf-link-button-light:focus {
+    border-color: rgba(255, 255, 255, 0.74);
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}

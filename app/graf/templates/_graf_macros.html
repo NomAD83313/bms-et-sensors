@@ -1,0 +1,193 @@
+{% macro render_export_button(button_id=None, button_label=None) -%}
+  {% if button_id and button_label %}
+  <button id="{{ button_id }}" type="button">{{ button_label }}</button>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_top_shell(page_mode, ranges, default_range, default_refresh_sec, export_button_id=None, export_button_label=None) -%}
+  <div class="top-shell">
+    <div class="top-main">
+      <div class="control-group">
+        <div class="zoom-shell">
+          <span id="zoomStateChip" class="zoom-state-chip" data-state="idle">Base range not set</span>
+          <button id="btnResetZoom" type="button" hidden>Reset zoom</button>
+        </div>
+        <div class="range-group">
+          <label>Range
+            <select id="rangeSel">
+              {% for r in ranges %}
+                <option value="{{ r }}" {% if r == default_range %}selected{% endif %}>{{ r }}</option>
+              {% endfor %}
+              <option value="custom">custom (user)</option>
+            </select>
+          </label>
+          <div class="custom-range-group">
+            <label id="customFromWrap" style="display:none;">From
+              <input id="customFrom" type="datetime-local" step="1" />
+            </label>
+            <label id="customToWrap" style="display:none;">To
+              <input id="customTo" type="datetime-local" step="1" />
+            </label>
+          </div>
+          <div class="zoom-group">
+            <button id="btnShiftLeft" type="button" title="Shift range backward by half window" style="display:none;"><<</button>
+            <button id="btnShiftRight" type="button" title="Shift range forward by half window" style="display:none;">>></button>
+            <button id="btnZoomOut25" type="button" title="Increase range by 25%" style="display:none;">-</button>
+            <button id="btnZoomIn25" type="button" title="Decrease range by 25%" style="display:none;">+</button>
+            <span id="rangeActionFeedback" class="range-feedback" data-state="pending" aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="refresh-shell">
+          <label id="refreshSecWrap">Refresh (sec)
+            <span class="refresh-slider-row">
+              <input
+                id="refreshSec"
+                type="range"
+                min="0"
+                max="5"
+                step="1"
+                value="1"
+                data-values="10,5,2,1,0.5,0.2"
+                data-default-sec="{{ default_refresh_sec }}"
+                aria-valuetext="{{ default_refresh_sec }} seconds"
+              />
+              <span id="refreshSecValue" class="refresh-value">{{ default_refresh_sec }}s</span>
+            </span>
+          </label>
+          <button id="btnRefresh" type="button">Refresh now</button>
+        </div>
+      </div>
+      <div class="action-group">
+        {% if page_mode == "all" %}
+        <button id="btnExportAll" type="button">Export All CSV</button>
+        {% elif export_button_id and export_button_label %}
+        <button id="{{ export_button_id }}" type="button">{{ export_button_label }}</button>
+        {% endif %}
+        <div class="help-wrap">
+          <button id="btnZoomHelp" class="help-btn" type="button" title="Zoom help">?</button>
+          <div id="zoomHelpPop" class="help-pop">
+            <h3>Time Range Zoom</h3>
+            <p><b>Drag on any chart:</b> select a time interval to zoom the shared page time range.</p>
+            <p><b>Custom range:</b> after zoom, the top `From/To` fields become the active page range.</p>
+            <p><b>Reset zoom:</b> returns the page range to the stored base range.</p>
+            <p><b>&lt;&lt; &gt;&gt; - +:</b> shift or scale the current custom page range.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="top-secondary">
+      <nav class="page-nav" aria-label="Graf pages">
+        <a href="./" {% if page_mode == "all" %}class="active"{% endif %}>All</a>
+        <a href="./redlab" {% if page_mode == "redlab" %}class="active"{% endif %}>RedLab</a>
+        <a href="./almemo" {% if page_mode == "almemo" %}class="active"{% endif %}>ALMEMO</a>
+        <a href="./pyrometers" {% if page_mode == "pyrometers" %}class="active"{% endif %}>Pyrometers</a>
+        <a href="./mscl" {% if page_mode == "mscl" %}class="active"{% endif %}>MSCL</a>
+        <a href="./matter" {% if page_mode == "matter" %}class="active"{% endif %}>Matter</a>
+        <a href="./messkluppe" {% if page_mode == "messkluppe" %}class="active"{% endif %}>Messkluppe</a>
+      </nav>
+      <div class="status-panel">
+        <div class="status-row">
+          <span class="status-badge" id="statusSummary" data-state="idle">Idle</span>
+          <button id="btnStatusDetails" class="status-toggle" type="button" hidden>Details</button>
+        </div>
+        <div class="status-details" id="statusDetails"></div>
+      </div>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro render_panel(chart_id, panel_title, list_kind, list_id, toggle_all_id, export_button_id=None, export_button_label=None, filter_toggle_id=None, filter_toggle_label=None) -%}
+  <div class="panel">
+    <div class="panel-head">
+      <div class="y-controls" data-chart="{{ chart_id }}">
+        <span>Y:</span><input id="yMin-{{ chart_id }}" type="number" step="any" placeholder="min" />
+        <input id="yMax-{{ chart_id }}" type="number" step="any" placeholder="max" />
+        <button id="applyY-{{ chart_id }}" type="button">Apply</button>
+        <button id="autoY-{{ chart_id }}" type="button">Auto</button>
+        <label class="norm-toggle" id="normY-{{ chart_id }}">
+          <input type="checkbox" />
+          <span class="norm-switch"></span>
+          <span>Normalize scales</span>
+        </label>
+        {% if filter_toggle_id and filter_toggle_label %}
+        <label class="norm-toggle filter-toggle" id="{{ filter_toggle_id }}">
+          <input type="checkbox" />
+          <span class="norm-switch"></span>
+          <span>{{ filter_toggle_label }}</span>
+        </label>
+        {% endif %}
+      </div>
+      <div class="title-actions">
+        <h2>{{ panel_title }}</h2>
+        <div class="h-controls" data-chart="{{ chart_id }}">
+          <span>Height (px)</span><input id="h-{{ chart_id }}" type="number" min="180" max="800" step="10" value="240" />
+          <button id="applyH-{{ chart_id }}" type="button">Apply height</button>
+        </div>
+        {{ render_export_button(export_button_id, export_button_label) }}
+      </div>
+    </div>
+    <div class="panel-summary" id="summary-{{ chart_id }}"></div>
+    {% if list_kind == "redlab" %}
+    <div class="temp-chart-layout">
+      <div class="chart-wrap">
+        <svg id="{{ chart_id }}" class="chart-surface"></svg>
+        <div class="chart-tooltip" id="tt-{{ chart_id }}"></div>
+      </div>
+      <div class="temp-channel-list" id="{{ list_id }}">
+        <label class="temp-channel-item temp-channel-master">
+          <input id="{{ toggle_all_id }}" type="checkbox" />
+          <span class="temp-channel-label">all</span>
+        </label>
+      </div>
+    </div>
+    {% else %}
+    <div class="series-chart-layout">
+      <div class="chart-wrap">
+        <svg id="{{ chart_id }}" class="chart-surface"></svg>
+        <div class="chart-tooltip" id="tt-{{ chart_id }}"></div>
+      </div>
+      <div class="series-channel-list" id="{{ list_id }}">
+        <label class="series-channel-item series-channel-master">
+          <input id="{{ toggle_all_id }}" type="checkbox" />
+          <span class="series-channel-label">all</span>
+        </label>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro render_export_modal(modal_id, title_id, title_text, mode_name, rate_wrap_id, preset_id, custom_input_id, delimiter_id, cancel_button_id, confirm_button_id) -%}
+  <div id="{{ modal_id }}" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}">
+      <h3 id="{{ title_id }}">{{ title_text }}</h3>
+      <div class="modal-options">
+        <label><input type="radio" name="{{ mode_name }}" value="view" checked /> What is on screen</label>
+        <label><input type="radio" name="{{ mode_name }}" value="raw_period" /> Raw for selected period</label>
+        <label><input type="radio" name="{{ mode_name }}" value="custom_rate" /> Selected period at rate</label>
+      </div>
+      <div id="{{ rate_wrap_id }}" class="modal-rate">
+        <span>Rate (Hz)</span>
+        <select id="{{ preset_id }}">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="4" selected>4</option>
+          <option value="custom">*</option>
+        </select>
+        <input id="{{ custom_input_id }}" type="number" min="0.01" max="1000" step="0.01" placeholder="custom" style="display:none;" />
+      </div>
+      <div class="modal-delimiter">
+        <span>CSV locale</span>
+        <select id="{{ delimiter_id }}">
+          <option value="comma" selected>EN / CN (comma, dot)</option>
+          <option value="semicolon">DE / RU (semicolon, comma)</option>
+          <option value="tab">Universal tab-separated</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button id="{{ cancel_button_id }}" type="button">Cancel</button>
+        <button id="{{ confirm_button_id }}" type="button">Export</button>
+      </div>
+    </div>
+  </div>
+{%- endmacro %}

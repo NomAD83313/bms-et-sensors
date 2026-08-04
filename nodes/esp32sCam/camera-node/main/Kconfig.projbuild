@@ -1,0 +1,9 @@
+menu "BMS ESP32-S-CAM Matter node"
+
+config BMS_CAM_RESERVED
+    bool "Reserved project option"
+    default n
+    help
+        Reserved placeholder for future ESP32-S-CAM project options.
+
+endmenu

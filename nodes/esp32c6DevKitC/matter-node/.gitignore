@@ -1,0 +1,18 @@
+# ESP-IDF local artifacts
+build/
+build-*/
+build-doa/
+managed_components/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+.idf/
+
+# Local Python/tool state
+.venv/
+.vscode/
+__pycache__/
+*.py[cod]
+
+# Generated onboarding/media artifacts
+matter-node-card.png

@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RedLab Configurator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="static/device-common.css">
+    <style>
+        .page { max-width: 1120px; margin: 0 auto; }
+        .page-head { margin-bottom: 22px; }
+        .page-subtitle { max-width: 64ch; }
+        .card-shell {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+        .tc-table-container {
+            width: 100%;
+        }
+        .tc-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px 12px;
+        }
+        .tc-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tc-channel {
+            width: 2.2rem;
+            text-align: right;
+            font-weight: 600;
+            color: #333;
+        }
+        .tc-select-narrow {
+            width: 10ch;
+            padding: 6px 8px;
+            box-sizing: border-box;
+        }
+        .tc-name-wide {
+            flex: 1 1 auto;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid #d0d7de;
+            min-width: 160px;
+        }
+        .hero-card {
+            padding: 24px 26px;
+            margin-bottom: 18px;
+        }
+        .hero-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+        .hero-actions {
+            display: grid;
+            gap: 12px;
+            justify-items: end;
+            min-width: min(300px, 100%);
+        }
+        .device-select-block {
+            display: grid;
+            gap: 6px;
+            width: 100%;
+        }
+        .device-select-label {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .shared-toolbar {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(240px, 1fr)) minmax(180px, 0.6fr);
+            gap: 12px 16px;
+            align-items: end;
+            margin: 0 0 18px;
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+        }
+        .toolbar-block {
+            display: grid;
+            gap: 8px;
+            min-width: 0;
+        }
+        .toolbar-label {
+            color: var(--ink);
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+        .toolbar-control-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: stretch;
+        }
+        .toolbar-control-row .action-primary,
+        .toolbar-control-row .action-secondary {
+            min-width: 88px;
+            min-height: 46px;
+            white-space: nowrap;
+        }
+        .toolbar-status {
+            display: grid;
+            gap: 6px;
+            min-height: 46px;
+            align-content: center;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.64);
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.35;
+        }
+        .toolbar-status strong {
+            color: var(--ink);
+        }
+        .hero-title {
+            display: grid;
+            gap: 8px;
+        }
+        .hero-title strong {
+            font-size: 1.4rem;
+        }
+        .hero-meta {
+            color: var(--muted);
+            line-height: 1.55;
+            font-size: 0.97rem;
+        }
+        .device-inventory {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
+        .device-inventory-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .device-inventory-title {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .device-inventory-count {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .device-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 10px;
+        }
+        .device-row {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+            min-height: 136px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+            color: var(--ink);
+            text-align: left;
+            appearance: none;
+            cursor: pointer;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        .device-row-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .device-row-action {
+            min-height: 38px;
+            padding: 0 12px;
+            border-radius: 12px;
+            border: 1px solid var(--line-strong);
+            background: linear-gradient(180deg, #ffffff 0%, #f3f7fb 100%);
+            color: var(--ink);
+            font-size: 0.86rem;
+            font-weight: 800;
+        }
+        .device-row:hover,
+        .device-row:focus-visible {
+            border-color: #2f80da;
+            box-shadow: 0 0 0 3px rgba(47, 128, 218, 0.14);
+            outline: none;
+        }
+        .device-row-selected {
+            border-color: #1f5f9a;
+            background: #f5faff;
+        }
+        .device-row-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .device-row-main {
+            min-width: 0;
+        }
+        .device-row-title,
+        .device-row-meta {
+            overflow-wrap: anywhere;
+        }
+        .device-row-title {
+            font-weight: 800;
+        }
+        .device-row-meta {
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+        .device-row-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .device-chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 0 9px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.62);
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .device-chip-strong {
+            color: var(--ink);
+            background: #fff;
+        }
+        .device-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px 18px;
+            margin-top: 4px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+        }
+        .device-detail-item {
+            display: grid;
+            gap: 4px;
+            min-width: 0;
+        }
+        .device-detail-label {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .device-detail-value {
+            color: var(--ink);
+            font-size: 0.96rem;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+        .device-badge {
+            min-width: 74px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line-strong);
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .device-badge-active {
+            border-color: #2f7c43;
+            background: #e9f7ee;
+            color: #216235;
+        }
+        .device-badge-selected {
+            border-color: #1f5f9a;
+            background: #e8f2ff;
+            color: #1f5f9a;
+        }
+        .device-action-note {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .summary-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 0 0 18px;
+        }
+        .summary-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 999px;
+            background: var(--panel-soft);
+            border: 1px solid var(--line);
+            color: var(--ink);
+            font-size: 0.92rem;
+            line-height: 1;
+        }
+        .summary-pill strong {
+            font-weight: 800;
+        }
+        .summary-pill-state {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .target-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .target-id {
+            font-weight: 800;
+            color: var(--accent);
+        }
+        .overview-band {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin: 0 0 18px;
+        }
+        .layout {
+            display: block;
+        }
+        .panel {
+            padding: 22px 24px;
+        }
+        .panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .panel-title {
+            margin: 0;
+            font-size: 1.35rem;
+            letter-spacing: -0.03em;
+        }
+        .panel-subtitle {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+        .target-banner {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            margin: -4px 0 16px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, #fbfdff 0%, #f3f8fd 100%);
+        }
+        .target-banner-main {
+            display: grid;
+            gap: 3px;
+            min-width: 0;
+        }
+        .target-banner-label {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .target-banner-value {
+            color: var(--ink);
+            font-size: 1rem;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+        .target-banner-meta {
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .table-frame {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: linear-gradient(180deg, #fbfdff 0%, #f5f9fd 100%);
+            border: 1px solid var(--line);
+        }
+        #tcTable {
+            min-height: 0;
+        }
+        .tc-table-container {
+            display: block;
+        }
+        .tc-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px 10px;
+        }
+        .tc-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            min-width: 0;
+        }
+        .tc-pair-gap {
+            width: 30px;
+            flex: 0 0 30px;
+        }
+        .tc-channel {
+            color: var(--muted);
+            font-size: 0.86rem;
+            font-weight: 800;
+            text-align: right;
+            width: 2.2rem;
+        }
+        .tc-select,
+        .control-select,
+        .control-input {
+            width: 100%;
+            min-height: 46px;
+            border: 1px solid var(--line-strong);
+            border-radius: 14px;
+            padding: 0 14px;
+            background: #fff;
+            color: var(--ink);
+            font-size: 1rem;
+        }
+        /* ensure narrow selects and name inputs stay inline within tc-row */
+        .tc-row .tc-select-narrow {
+            display: inline-block;
+            width: 10ch;
+            min-height: 36px;
+            padding: 6px 8px;
+            box-sizing: border-box;
+            vertical-align: middle;
+        }
+        .tc-row .tc-name {
+            display: inline-block;
+            min-height: 36px;
+            padding: 8px 10px;
+            box-sizing: border-box;
+            vertical-align: middle;
+            width: 14rem;
+            border-radius: 8px;
+            border: 1px solid #d0d7de;
+            background: #fff;
+        }
+        .control-row {
+            display: grid;
+            grid-template-columns: 90px minmax(0, 1fr);
+            gap: 12px 14px;
+            align-items: center;
+        }
+        .control-row + .control-row {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--line);
+        }
+        .control-label {
+            color: var(--muted);
+            font-size: 0.92rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .control-main {
+            display: grid;
+            gap: 12px;
+        }
+        .control-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .action-primary,
+        .action-secondary {
+            min-height: 46px;
+            border-radius: 14px;
+            padding: 0 18px;
+            font-size: 0.98rem;
+            font-weight: 700;
+            border: 1px solid var(--line-strong);
+        }
+        .action-primary {
+            border-color: #1d67b3;
+            background: linear-gradient(180deg, #2f80da 0%, #1f5f9a 100%);
+            color: #fff;
+        }
+        .action-secondary {
+            background: linear-gradient(180deg, #ffffff 0%, #f3f7fb 100%);
+            color: var(--ink);
+        }
+        .actions-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .actions-stack .action-primary,
+        .actions-stack .action-secondary {
+            flex: 1 1 180px;
+        }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: grid;
+            place-items: center;
+            padding: 18px;
+            background: rgba(14, 31, 48, 0.34);
+        }
+        .modal-backdrop[hidden] {
+            display: none;
+        }
+        .modal-panel {
+            width: min(980px, 100%);
+            max-height: min(760px, calc(100vh - 36px));
+            overflow: auto;
+            padding: 18px 20px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+        }
+        .modal-panel .target-banner {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border-radius: 14px;
+        }
+        .modal-panel .target-banner-label {
+            font-size: 0.7rem;
+        }
+        .modal-panel .target-banner-value {
+            font-size: 0.95rem;
+        }
+        .modal-panel .target-banner-meta {
+            font-size: 0.82rem;
+            line-height: 1.25;
+        }
+        .modal-panel .actions-stack {
+            margin-top: 12px;
+            gap: 8px;
+        }
+        .modal-panel .feedback-card {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 14px;
+        }
+        .modal-panel .feedback {
+            min-height: 18px;
+            margin-top: 6px;
+            font-size: 0.86rem;
+        }
+        .modal-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .modal-head h2 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        .modal-subtitle {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+        .icon-button {
+            width: 36px;
+            min-width: 36px;
+            height: 36px;
+            border-radius: 999px;
+            border: 1px solid var(--line-strong);
+            background: linear-gradient(180deg, #ffffff 0%, #f3f7fb 100%);
+            color: var(--ink);
+            font-size: 1.35rem;
+            line-height: 1;
+        }
+        .feedback {
+            min-height: 24px;
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+        .feedback-card {
+            margin-top: 16px;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #fbfdff 0%, #f3f8fd 100%);
+            border: 1px solid var(--line);
+        }
+        .feedback-label {
+            margin-bottom: 6px;
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .aside-note {
+            margin-top: 18px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #f9fbfe 0%, #f3f8fd 100%);
+            border: 1px solid var(--line);
+            color: var(--muted);
+            line-height: 1.55;
+            font-size: 0.95rem;
+        }
+        .aside-note strong {
+            color: var(--ink);
+        }
+        @media (max-width: 960px) {
+            .hero-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .shared-toolbar {
+                grid-template-columns: 1fr;
+            }
+            .overview-band {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 640px) {
+            body {
+                padding: 18px 14px 32px;
+            }
+            .hero-card,
+            .panel {
+                padding: 18px;
+            }
+            .hero-top,
+            .panel-head {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .hero-actions {
+                justify-items: stretch;
+                width: 100%;
+            }
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .toolbar-control-row {
+                grid-template-columns: 1fr;
+            }
+            .modal-panel {
+                padding: 18px;
+            }
+            .modal-head {
+                align-items: center;
+            }
+            .tc-grid {
+                grid-template-columns: 1fr;
+            }
+            .device-row {
+                grid-template-columns: 1fr;
+            }
+            .device-detail-grid {
+                grid-template-columns: 1fr;
+            }
+            .target-banner {
+                grid-template-columns: 1fr;
+            }
+            .overview-band {
+                grid-template-columns: 1fr;
+            }
+            .control-row {
+                grid-template-columns: 1fr;
+            }
+            .control-actions,
+            .actions-stack {
+                flex-direction: column;
+            }
+            .actions-stack .action-primary,
+            .actions-stack .action-secondary {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="page-head">
+            <div class="eyebrow">USB Thermocouple Reader</div>
+            <h1>RedLab Configurator</h1>
+            <p class="page-subtitle">
+                Configure thermocouple channels, tune acquisition cadence, and keep the operator focused on the current device state instead of low-level service details.
+            </p>
+        </header>
+
+        <section class="card-shell hero-card">
+            <div class="hero-top">
+                <div class="hero-title">
+                    <div><strong>Collector:</strong> <span id="deviceName">-</span></div>
+                    <div id="deviceServiceMeta" class="hero-meta">ID: <span id="deviceId">-</span> | FW: <span id="deviceFw">-</span> | Connected: - | Influx: - | Mode: <span id="readMode">-</span> | Loop: <span id="loopSleep">-</span>s | Hz: <span id="loopHz">-</span></div>
+                </div>
+                <div class="hero-actions">
+                    <span id="deviceStatus" class="status-pill status-warn">checking</span>
+                    <a class="graf-link-button" href="/graf/redlab?range=5m" target="_blank" rel="noopener">Graf App Lite</a>
+                    <label class="device-select-block" for="deviceSelect">
+                        <span class="device-select-label">Device</span>
+                        <select id="deviceSelect" class="control-select"></select>
+                    </label>
+                </div>
+            </div>
+            <div class="shared-toolbar" aria-label="Shared RedLab read settings">
+                <div class="toolbar-block">
+                    <label class="toolbar-label" for="readModeSelect">Mode</label>
+                    <div class="toolbar-control-row">
+                        <select id="readModeSelect" class="control-select">
+                            <option value="single">single</option>
+                            <option value="list">list</option>
+                        </select>
+                        <button class="action-primary" onclick="applyMode()">Apply</button>
+                    </div>
+                </div>
+                <div class="toolbar-block">
+                    <label class="toolbar-label" for="loopSleepSelect">Estimated freq</label>
+                    <div class="toolbar-control-row">
+                        <select id="loopSleepSelect" class="control-select">
+                            <option value="0.3">~2 Hz · fast scan</option>
+                            <option value="1">~1 Hz · every 1 sec</option>
+                            <option value="2">~0.5 Hz · every 2 sec</option>
+                            <option value="3.3">~0.3 Hz · every 3 sec</option>
+                            <option value="5">~0.2 Hz · every 5 sec</option>
+                        </select>
+                        <button class="action-primary" onclick="applyLoopSleep()">Apply</button>
+                    </div>
+                </div>
+                <div class="toolbar-status">
+                    <strong>Shared read settings</strong>
+                    <span id="readTargetMeta">Applies to every running RedLab runtime.</span>
+                    <span id="pollingStatus">Idle</span>
+                </div>
+            </div>
+            <div class="device-inventory">
+                <div class="device-inventory-head">
+                    <div class="device-inventory-title">Device Inventory</div>
+                    <div id="deviceInventoryCount" class="device-inventory-count">checking</div>
+                </div>
+                <div id="deviceInventory" class="device-list"></div>
+                <div id="deviceActionNote" class="device-action-note"></div>
+            </div>
+        </section>
+
+        <div id="tcEditorOverlay" class="modal-backdrop" hidden>
+            <section class="modal-panel" aria-labelledby="tcEditorTitle">
+                <div class="modal-head">
+                    <div>
+                        <h2 id="tcEditorTitle">Thermocouple Type</h2>
+                        <p id="tcEditorSubtitle" class="modal-subtitle">Select a RedLab device to edit thermocouple channels.</p>
+                    </div>
+                    <button type="button" class="icon-button" title="Close thermocouple settings" onclick="closeTcSettings()">×</button>
+                </div>
+                <div class="target-banner">
+                    <div class="target-banner-main">
+                        <div class="target-banner-label">Settings Target</div>
+                        <div id="tcTargetName" class="target-banner-value">No RedLab selected</div>
+                        <div id="tcTargetMeta" class="target-banner-meta">Open settings from a device card.</div>
+                    </div>
+                    <span id="tcTargetStatus" class="device-badge">waiting</span>
+                </div>
+                <div class="table-frame">
+                    <div id="tcTable"></div>
+                </div>
+                <div class="actions-stack">
+                    <button id="tcApplyButton" class="action-primary" data-requires-active-device onclick="applyTc()">Apply to Selected Device</button>
+                    <button id="tcReloadButton" class="action-secondary" onclick="loadTc()">Reload Selected Device</button>
+                </div>
+                <div class="feedback-card">
+                    <div class="feedback-label">Thermocouple Action Status</div>
+                    <div id="tcStatus" class="feedback">Idle</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        const tcTypes = {{ tc_types | tojson }};
+        let redlabDevices = [];
+        let selectedDeviceId = "";
+        let tcEditorDeviceId = "";
+        let selectedDeviceConfigurable = true;
+        let latestHealth = {};
+        let refreshInFlight = false;
+
+        function esc(s) {
+            return String(s ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function byId(id) {
+            return document.getElementById(id);
+        }
+
+        function setText(id, value) {
+            const node = byId(id);
+            if (node) node.textContent = value;
+        }
+
+        function setHtml(id, value) {
+            const node = byId(id);
+            if (node) node.innerHTML = value;
+        }
+
+        function setLoopSleepSelectValue(value) {
+            const select = byId("loopSleepSelect");
+            if (!select) return;
+            const normalized = String(value ?? "");
+            if (!normalized) return;
+            const existing = Array.from(select.options).find((option) => option.value === normalized);
+            if (!existing) {
+                const customOption = new Option("Current · every " + normalized + " sec", normalized);
+                customOption.dataset.custom = "true";
+                select.prepend(customOption);
+            }
+            select.value = normalized;
+        }
+
+        function selectedApi(path) {
+            const cleanPath = String(path || "").replace(/^\/+/, "");
+            return selectedDeviceId
+                ? "api/device/" + encodeURIComponent(selectedDeviceId) + "/" + cleanPath
+                : "api/" + cleanPath;
+        }
+
+        function tcApi(path) {
+            const cleanPath = String(path || "").replace(/^\/+/, "");
+            return tcEditorDeviceId
+                ? "api/device/" + encodeURIComponent(tcEditorDeviceId) + "/" + cleanPath
+                : selectedApi(cleanPath);
+        }
+
+        function selectedDevice() {
+            return redlabDevices.find((device) => device.device_id === selectedDeviceId) || null;
+        }
+
+        function tcEditorDevice() {
+            return redlabDevices.find((device) => device.device_id === tcEditorDeviceId) || null;
+        }
+
+        function preferredDevice(devices) {
+            if (!Array.isArray(devices) || !devices.length) return null;
+            if (selectedDeviceId) {
+                const selected = devices.find((device) => device.device_id === selectedDeviceId);
+                if (selected) return selected;
+            }
+            return devices.find((device) => {
+                const state = deviceHealth(device.device_id);
+                return state && state.connected === true;
+            }) || devices.find((device) => device.active === true) || devices[0];
+        }
+
+        function shortDeviceId(deviceId) {
+            return String(deviceId || "").replace(/^redlab[_-]/i, "") || "-";
+        }
+
+        function deviceHealth(deviceId) {
+            const devices = latestHealth && latestHealth.devices && typeof latestHealth.devices === "object"
+                ? latestHealth.devices
+                : {};
+            return devices[deviceId] || null;
+        }
+
+        function channelNamesFromHealth(state) {
+            const channels = Array.isArray(state && state.last_channels) ? state.last_channels : [];
+            return channels.map((value) => String(value).split(":")[0].replace(/^CH/i, "ch"));
+        }
+
+        function deviceStateLabel(device) {
+            const state = device ? deviceHealth(device.device_id) : null;
+            if (state && state.status) return state.status;
+            if (device && device.active) return "active";
+            if (device && device.connected) return "present";
+            return "missing";
+        }
+
+        function setDeviceOptions(devices) {
+            const select = document.getElementById("deviceSelect");
+            if (!select) return;
+            const list = Array.isArray(devices) ? devices : [];
+            select.innerHTML = "";
+            if (!list.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "No RedLab devices";
+                select.appendChild(option);
+                select.disabled = true;
+                return;
+            }
+            select.disabled = false;
+            for (const device of list) {
+                const option = document.createElement("option");
+                option.value = device.device_id || "";
+                option.textContent = shortDeviceId(device.device_id) + " (" + deviceStateLabel(device) + ")";
+                select.appendChild(option);
+            }
+            const current = preferredDevice(list);
+            if (current) {
+                selectedDeviceId = current.device_id || "";
+                select.value = selectedDeviceId;
+            }
+        }
+
+        function renderDeviceSummary(devices) {
+            const target = document.getElementById("deviceSummary");
+            if (!target) return;
+            const list = Array.isArray(devices) ? devices : [];
+            if (!list.length) {
+                target.innerHTML = "<div class=\"summary-pill\"><strong>No RedLab devices</strong><span class=\"summary-pill-state\">waiting</span></div>";
+                return;
+            }
+            target.innerHTML = list.map((device) => {
+                const state = deviceStateLabel(device);
+                return "<div class=\"summary-pill\"><strong>" + esc(shortDeviceId(device.device_id)) + "</strong><span>" +
+                    esc(device.product_name || "USB-TC") + "</span><span class=\"summary-pill-state\">" + esc(state) + "</span></div>";
+            }).join("");
+        }
+
+        function channelSummary(state) {
+            const names = channelNamesFromHealth(state);
+            return names.length + " of 8 channels" + (names.length ? " | " + names.join(",") : "");
+        }
+
+        function formatHz(value) {
+            return value === null || value === undefined || value === "" ? "-" : value;
+        }
+
+        function formatLastRead(value) {
+            if (value === null || value === undefined || value === "") return "-";
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) {
+                const millis = numeric > 100000000000 ? numeric : numeric * 1000;
+                const dt = new Date(millis);
+                if (Number.isFinite(dt.getTime())) return dt.toISOString();
+            }
+            return String(value);
+        }
+
+        function renderSelectedDeviceSummary() {
+            const selectedLabel = document.getElementById("selectedDeviceSummary");
+            const channelWindow = document.getElementById("channelWindowSummary");
+            const cadence = document.getElementById("cadenceSummary");
+            const operator = document.getElementById("operatorStateSummary");
+            const deviceMeta = document.getElementById("deviceMeta");
+            const tcTargetName = document.getElementById("tcTargetName");
+            const tcTargetMeta = document.getElementById("tcTargetMeta");
+            const tcTargetStatus = document.getElementById("tcTargetStatus");
+            const tcApplyButton = document.getElementById("tcApplyButton");
+            const tcReloadButton = document.getElementById("tcReloadButton");
+            const readTargetMeta = document.getElementById("readTargetMeta");
+            const device = tcEditorDevice() || selectedDevice();
+            const state = device ? deviceHealth(device.device_id) : null;
+            const shortId = device ? shortDeviceId(device.device_id) : "";
+            const runningCount = latestHealth && latestHealth.running_device_count !== undefined
+                ? latestHealth.running_device_count
+                : _runningDeviceCountFromInventory();
+            if (selectedLabel) {
+                if (device) {
+                    selectedLabel.innerHTML = "<span class=\"target-id\">" + esc(shortId) + "</span><span>" + esc(device.product_name || "USB-TC") + "</span>";
+                } else {
+                    selectedLabel.textContent = "No selected device";
+                }
+            }
+            if (tcTargetName) {
+                tcTargetName.textContent = device ? shortId + " " + (device.product_name || "USB-TC") : "No RedLab selected";
+            }
+            if (tcTargetMeta) {
+                if (!device) {
+                    tcTargetMeta.textContent = "Select a device from Device Inventory.";
+                } else if (state) {
+                    tcTargetMeta.textContent =
+                        "Channels: " + channelSummary(state) +
+                        " | FW: " + ((state && state.device_fw_main) || "-") +
+                        " | Last read: " + formatLastRead(state && state.last_ok_ts);
+                } else {
+                    tcTargetMeta.textContent = "Selected device has no runtime health yet.";
+                }
+            }
+            if (tcTargetStatus) {
+                const status = state && state.status ? state.status : (device ? deviceStateLabel(device) : "waiting");
+                tcTargetStatus.textContent = status;
+                tcTargetStatus.className = "device-badge" + (status === "running" ? " device-badge-active" : "");
+            }
+            if (tcApplyButton) {
+                tcApplyButton.textContent = device ? "Apply to " + shortId : "Apply to Selected Device";
+            }
+            if (tcReloadButton) {
+                tcReloadButton.textContent = device ? "Reload " + shortId : "Reload Selected Device";
+            }
+            if (readTargetMeta) {
+                readTargetMeta.textContent =
+                    "Applies to " + runningCount + " running RedLab " + (runningCount === 1 ? "device" : "devices") +
+                    " | Mode " + ((latestHealth && latestHealth.read_mode) || "-") +
+                    " | Loop " + ((latestHealth && latestHealth.loop_sleep_seconds) ?? "-") + " s";
+            }
+            if (channelWindow) channelWindow.textContent = state ? channelSummary(state) : "-";
+            if (deviceMeta) {
+                if (state) {
+                    const activeList = channelNamesFromHealth(state).join(",");
+                    deviceMeta.textContent =
+                        "Calibrated: " + (state.cal_date || "-") +
+                        " | Resolution: " + (state.resolution || "-") + " bit" +
+                        " | Pacer: " + (state.has_pacer === true ? "yes" : (state.has_pacer === false ? "no" : "-")) +
+                        " | Channels: " + channelNamesFromHealth(state).length + "/8" +
+                        " | Active: " + (activeList || "-");
+                } else {
+                    deviceMeta.textContent = "Select a running device to inspect calibration and active channels.";
+                }
+            }
+            if (cadence) {
+                const source = state || latestHealth || {};
+                cadence.textContent =
+                    "Mode " + (source.read_mode || "-") +
+                    " | Loop " + (source.loop_sleep_seconds ?? "-") + " s" +
+                    " | " + formatHz(source.loop_hz) + " Hz";
+            }
+            if (operator) {
+                if (!device) operator.textContent = "Waiting for RedLab device";
+                else if (!state) operator.textContent = "Selected device has no runtime health yet";
+                else operator.textContent = state.status === "running"
+                    ? "Selected device is logging and ready for config changes"
+                    : "Selected device state: " + (state.status || "unknown");
+            }
+        }
+
+        function _runningDeviceCountFromInventory() {
+            return redlabDevices.filter((device) => {
+                const state = deviceHealth(device.device_id);
+                return state && state.status === "running";
+            }).length;
+        }
+
+        function updateConfigAvailability() {
+            const device = selectedDevice();
+            selectedDeviceConfigurable = !device || device.active === true;
+            const note = document.getElementById("deviceActionNote");
+            const applyButtons = document.querySelectorAll("[data-requires-active-device]");
+            applyButtons.forEach((button) => {
+                button.disabled = !selectedDeviceConfigurable;
+                button.title = selectedDeviceConfigurable ? "" : "This device is detected only. Multi-runtime configuration is not enabled yet.";
+            });
+            if (!device) {
+                note.textContent = "";
+            } else if (device.active) {
+                note.textContent = "Configuration actions target " + shortDeviceId(device.device_id) + ".";
+            } else {
+                note.textContent = "Selected device is detected only. Configuration will be enabled after multi-runtime acquisition is added.";
+            }
+            renderSelectedDeviceSummary();
+        }
+
+        function openTcSettings(deviceId, event) {
+            if (event) event.stopPropagation();
+            tcEditorDeviceId = deviceId || "";
+            if (tcEditorDeviceId) selectedDeviceId = tcEditorDeviceId;
+            const overlay = document.getElementById("tcEditorOverlay");
+            if (overlay) overlay.hidden = false;
+            renderDeviceInventory({ ok: true, devices: redlabDevices });
+            updateConfigAvailability();
+            loadTc();
+        }
+
+        function closeTcSettings() {
+            const overlay = document.getElementById("tcEditorOverlay");
+            if (overlay) overlay.hidden = true;
+        }
+
+        function renderHealth(data) {
+            latestHealth = data;
+            setText("deviceName", "RedLab registry");
+            setText("deviceId", data.device_count ?? "-");
+            setText("deviceFw", data.running_device_count ?? "-");
+            setText("readMode", data.read_mode || "-");
+            setText("readModeSummary", data.read_mode || "-");
+            setText("loopSleep", data.loop_sleep_seconds ?? "-");
+            setText("loopSleepSummary", data.loop_sleep_seconds ?? "-");
+            setText("loopHz", data.loop_hz ?? "-");
+            setText("loopHzInline", data.loop_hz ?? "-");
+            const connected = data.connected === true ? "yes" : "no";
+            const influx = data.influx_ok === true ? "yes" : "no";
+            const channels = Array.isArray(data.last_channels) ? data.last_channels : [];
+            const activeList = channels.map((value) => String(value).split(":")[0].replace(/^CH/i, "ch")).join(",");
+            const activeCount = channels.length;
+            setText("collectorPathSummary", "Connected: " + connected + " | Influx: " + influx);
+            setText("deviceServiceMeta",
+                "Devices: " + (data.running_device_count ?? 0) + "/" + (data.device_count ?? 0) +
+                " | Connected: " + connected +
+                " | Influx: " + influx +
+                " | Mode: " + (data.read_mode || "-") +
+                " | Loop: " + (data.loop_sleep_seconds ?? "-") + "s" +
+                " | Hz: " + (data.loop_hz ?? "-"));
+            setText("deviceMeta",
+                "Calibrated: " + (data.cal_date || "-") +
+                " | Resolution: " + (data.resolution || "-") + " bit" +
+                " | Pacer: " + (data.has_pacer === true ? "yes" : (data.has_pacer === false ? "no" : "-")) +
+                " | Channels: " + activeCount + "/8" +
+                " | Active: " + (activeList || "-"));
+            renderSelectedDeviceSummary();
+            const pill = document.getElementById("deviceStatus");
+            if (data.status === "running") {
+                pill.textContent = "running";
+                pill.className = "status-pill status-ok";
+            } else {
+                pill.textContent = data.status || "unknown";
+                pill.className = "status-pill status-warn";
+            }
+            if (redlabDevices.length) {
+                renderDeviceInventory({ ok: true, devices: redlabDevices });
+            }
+        }
+
+        async function loadHealth() {
+            const res = await fetch("health");
+            const data = await res.json();
+            renderHealth(data);
+        }
+
+        function selectDevice(deviceId) {
+            selectedDeviceId = deviceId || "";
+            renderDeviceInventory({ ok: true, devices: redlabDevices });
+            updateConfigAvailability();
+            loadMode();
+            loadLoopSleep();
+        }
+
+        function renderDeviceInventory(data) {
+            const root = document.getElementById("deviceInventory");
+            const count = document.getElementById("deviceInventoryCount");
+            if (!data.ok) {
+                count.textContent = "error";
+                root.innerHTML = "<div class=\"device-row\"><div class=\"device-row-main\"><div class=\"device-row-title\">Inventory unavailable</div><div class=\"device-row-meta\">" + esc(data.error || "unknown error") + "</div></div></div>";
+                return;
+            }
+            const devices = Array.isArray(data.devices) ? data.devices : [];
+            redlabDevices = devices;
+            const preferred = preferredDevice(devices);
+            selectedDeviceId = preferred ? (preferred.device_id || "") : "";
+            setDeviceOptions(devices);
+            renderDeviceSummary(devices);
+            count.textContent = devices.length + " connected";
+            if (!devices.length) {
+                root.innerHTML = "<div class=\"device-row\"><div class=\"device-row-main\"><div class=\"device-row-title\">No RedLab devices detected</div><div class=\"device-row-meta\">Collector will keep waiting for USB-TC hardware.</div></div></div>";
+                selectedDeviceId = "";
+                updateConfigAvailability();
+                return;
+            }
+            let html = "";
+            for (const device of devices) {
+                const isSelected = device.device_id === selectedDeviceId;
+                const state = deviceHealth(device.device_id);
+                const channels = channelNamesFromHealth(state);
+                let badgeClass = "device-badge";
+                let badgeText = "standby";
+                if (state && state.status === "running") {
+                    badgeClass += " device-badge-active";
+                    badgeText = "running";
+                } else if (device.active) {
+                    badgeClass += " device-badge-active";
+                    badgeText = state ? (state.status || "active") : "active";
+                } else if (isSelected) {
+                    badgeClass += " device-badge-selected";
+                    badgeText = "selected";
+                }
+                html += "<div class=\"device-row" + (isSelected ? " device-row-selected" : "") + "\" role=\"button\" tabindex=\"0\" onclick=\"selectDevice('" + esc(device.device_id || "") + "')\">";
+                html += "<div class=\"device-row-top\">";
+                html += "<div class=\"device-row-main\">";
+                html += "<div class=\"device-row-title\">" + esc(shortDeviceId(device.device_id)) + "</div>";
+                html += "<div class=\"device-row-meta\">" + esc(device.product_name || "USB-TC") +
+                    " | FW: " + esc((state && state.device_fw_main) || "-") +
+                    " | Product: " + esc(device.product_id ?? "-") + "</div>";
+                html += "</div>";
+                html += "<div class=\"" + badgeClass + "\">" + badgeText + "</div>";
+                html += "</div>";
+                html += "<div class=\"device-row-stats\">";
+                html += "<span class=\"device-chip device-chip-strong\">" + esc(channels.length) + "/8 channels</span>";
+                html += "<span class=\"device-chip\">" + esc(channels.join(",") || "no channels") + "</span>";
+                html += "<span class=\"device-chip\">" + esc(formatHz(state && state.loop_hz)) + " Hz</span>";
+                html += "<span class=\"device-chip\">" + esc((state && state.message) || "waiting") + "</span>";
+                html += "</div>";
+                html += "<div class=\"device-row-actions\">";
+                html += "<button type=\"button\" class=\"device-row-action\" onclick=\"openTcSettings('" + esc(device.device_id || "") + "', event)\">Thermocouple</button>";
+                html += "</div>";
+                const connected = state && state.connected === true ? "yes connected" : "not connected";
+                const influx = state && state.influx_ok === true ? "yes" : "no";
+                const mode = (state && state.read_mode) || (latestHealth && latestHealth.read_mode) || "-";
+                const loopSleep = (state && state.loop_sleep_seconds) ?? (latestHealth && latestHealth.loop_sleep_seconds) ?? "-";
+                const hz = formatHz(state && state.loop_hz);
+                const channelList = channels.join(",") || "-";
+                const lastRead = formatLastRead(state && state.last_ok_ts);
+                const calibration =
+                    "Calibrated " + esc((state && state.cal_date) || "-") +
+                    " | Resolution " + esc((state && state.resolution) || "-") + " bit" +
+                    " | Pacer " + esc(state && state.has_pacer === true ? "yes" : (state && state.has_pacer === false ? "no" : "-"));
+                const operatorState = state && state.status === "running"
+                    ? (isSelected ? "Logging and ready for config changes" : "Logging")
+                    : ((state && state.message) || "Waiting for runtime");
+                html += "<div class=\"device-detail-grid\">";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Connection</div><div class=\"device-detail-value\">" +
+                    esc(connected) + " | Influx " + esc(influx) + "</div></div>";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Cadence</div><div class=\"device-detail-value\">Mode " +
+                    esc(mode) + " | Loop " + esc(loopSleep) + " s | " + esc(hz) + " Hz</div></div>";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Channel Window</div><div class=\"device-detail-value\">" +
+                    esc(channels.length) + " of 8 channels | " + esc(channelList) + "</div></div>";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Calibration</div><div class=\"device-detail-value\">" +
+                    calibration + "</div></div>";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Last Read</div><div class=\"device-detail-value\">" +
+                    esc(lastRead) + "</div></div>";
+                html += "<div class=\"device-detail-item\"><div class=\"device-detail-label\">Operator State</div><div class=\"device-detail-value\">" +
+                    esc(operatorState) + "</div></div>";
+                html += "</div>";
+                html += "</div>";
+            }
+            root.innerHTML = html;
+            updateConfigAvailability();
+        }
+
+        async function loadDeviceInventory() {
+            try {
+                const res = await fetch("api/devices");
+                const data = await res.json();
+                renderDeviceInventory(data);
+            } catch (error) {
+                renderDeviceInventory({ ok: false, error: String(error) });
+            }
+        }
+
+        async function refreshAll(options) {
+            if (refreshInFlight) return;
+            refreshInFlight = true;
+            const reloadConfig = options && options.reloadConfig === true;
+            try {
+                const [healthRes, inventoryRes] = await Promise.all([
+                    fetch("health"),
+                    fetch("api/devices"),
+                ]);
+                renderHealth(await healthRes.json());
+                renderDeviceInventory(await inventoryRes.json());
+                if (reloadConfig) {
+                    await reloadSelectedConfig();
+                }
+            } finally {
+                refreshInFlight = false;
+            }
+        }
+
+        async function reloadSelectedConfig() {
+            const tasks = [loadMode(), loadLoopSleep()];
+            const results = await Promise.allSettled(tasks);
+            const failed = results.find((result) => result.status === "rejected");
+            if (failed) {
+                setText("pollingStatus", String(failed.reason || "config reload failed"));
+            }
+        }
+
+        function renderTcTable(rows) {
+            // Render as 4 rows pairing channels: 0|4, 1|5, 2|6, 3|7
+            const byChannel = {};
+            for (const r of rows || []) {
+                const chRaw = String(r.channel ?? '');
+                const idx = Number.isFinite(Number(chRaw)) ? Number(chRaw) : parseInt(chRaw.replace(/\D/g, ''), 10);
+                if (!Number.isFinite(idx) || Number.isNaN(idx)) continue;
+                byChannel[idx] = r;
+            }
+
+            let html = '<div class="tc-table-container"><div class="tc-grid">';
+            for (let i = 0; i < 4; i += 1) {
+                const leftIdx = i;
+                const rightIdx = i + 4;
+                const left = byChannel[leftIdx] || { channel: leftIdx, tc_type: tcTypes[0], name: '' };
+                const right = byChannel[rightIdx] || { channel: rightIdx, tc_type: tcTypes[0], name: '' };
+                const leftCh = String(leftIdx);
+                const rightCh = String(rightIdx);
+                const leftName = esc(left.name || '');
+                const rightName = esc(right.name || '');
+
+                html += '<div class="tc-row">';
+                html += '<div class="tc-channel">' + esc(leftCh) + '</div>';
+
+                // left select
+                html += '<select class="tc-select-narrow" data-channel="' + leftCh + '">';
+                for (const type of tcTypes) {
+                    const selected = type === left.tc_type ? ' selected' : '';
+                    html += '<option value="' + type + '"' + selected + '>' + type + '</option>';
+                }
+                html += '</select>';
+
+                // left name input (per-channel)
+                html += '<input class="tc-name" data-channel="' + leftCh + '" placeholder="Name (optional)" value="' + leftName + '">';
+
+                // spacer for visual separation between left and right columns
+                html += '<div class="tc-pair-gap"></div>';
+
+                // right select
+                html += '<select class="tc-select-narrow" data-channel="' + rightCh + '">';
+                for (const type of tcTypes) {
+                    const selected = type === right.tc_type ? ' selected' : '';
+                    html += '<option value="' + type + '"' + selected + '>' + type + '</option>';
+                }
+                html += '</select>';
+
+                // right name input (per-channel)
+                html += '<input class="tc-name" data-channel="' + rightCh + '" placeholder="Name (optional)" value="' + rightName + '">';
+
+                html += '<div class="tc-channel">' + esc(rightCh) + '</div>';
+                html += '</div>';
+            }
+            html += '</div></div>';
+            setHtml('tcTable', html);
+        }
+
+        async function loadTc() {
+            setText("tcStatus", "Loading...");
+            const [tcRes, metaRes] = await Promise.all([
+                fetch(tcApi("config/tc")),
+                fetch("api/redlab/channels"),
+            ]);
+            const data = await tcRes.json();
+            const meta = await (metaRes.ok ? metaRes.json() : Promise.resolve({ channels: {} }));
+            if (!data.ok) {
+                setText("tcStatus", data.error || "error");
+                return;
+            }
+            // Merge names from channel meta into rows
+            const channelMeta = (meta && meta.channels) || {};
+            const rows = (data.channels || []).map((r) => {
+                const ch = "ch" + String(r.channel ?? "");
+                // Preference: device-specific key then global
+                const deviceKey = tcEditorDeviceId ? (tcEditorDeviceId + "|" + ch) : null;
+                let name = "";
+                if (deviceKey && channelMeta[deviceKey]) {
+                    const v = channelMeta[deviceKey];
+                    name = (typeof v === 'object') ? (v.name || "") : "";
+                }
+                if (!name && channelMeta[ch]) {
+                    const v = channelMeta[ch];
+                    name = (typeof v === 'object') ? (v.name || "") : "";
+                }
+                return Object.assign({}, r, { name });
+            });
+            renderTcTable(rows);
+            setText("tcStatus", "");
+        }
+
+        async function applyTc() {
+            const selects = document.querySelectorAll("select[data-channel]");
+            const updates = [];
+            selects.forEach((select) => updates.push({ channel: Number(select.dataset.channel), tc_type: select.value }));
+            setText("tcStatus", "Applying...");
+            const res = await fetch(tcApi("config/tc"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ updates }),
+            });
+            const data = await res.json();
+            // Also gather names and save channel meta (per-channel inputs: data-channel)
+            const nameInputs = document.querySelectorAll("input.tc-name[data-channel], input.tc-name-wide[data-channel-pair], input.tc-name-left[data-channel], input.tc-name-right[data-channel]");
+            const nameOverrides = {};
+            nameInputs.forEach((input) => {
+                const pair = input.dataset.channelPair || '';
+                const single = input.dataset.channel || '';
+                const val = String(input.value || "").trim();
+                if (!val || (!pair && !single)) return;
+                let channels = [];
+                if (single) channels = [String(single).replace(/\D/g, '')];
+                else channels = String(pair).split("|").map((s) => String(s).replace(/\D/g, '')).filter(Boolean);
+                channels.forEach((ch) => {
+                    if (!ch) return;
+                    const key = tcEditorDeviceId ? (tcEditorDeviceId + "|ch" + ch) : ("ch" + ch);
+                    nameOverrides[key] = val;
+                });
+            });
+            if (data.ok && Object.keys(nameOverrides).length) {
+                try {
+                    const stateRes = await fetch("api/redlab/channels");
+                    const stateData = await (stateRes.ok ? stateRes.json() : Promise.resolve({ channels: {} }));
+                    const payload = Object.assign({}, (stateData && stateData.channels) || {});
+                    Object.entries(nameOverrides).forEach(([key, name]) => {
+                        const prev = payload[key];
+                        const enabled = (prev && typeof prev === "object") ? (prev.enabled !== false) : (prev !== false);
+                        payload[key] = { enabled, name: String(name || "") };
+                    });
+                    await fetch("api/redlab/channels", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                    });
+                } catch (_) {
+                    // Keep thermocouple-type apply result visible even if name sync failed.
+                }
+            }
+            setText("tcStatus", data.ok ? "Saved" : (data.error || "error"));
+        }
+
+        async function loadMode() {
+            setText("pollingStatus", "Loading...");
+            const res = await fetch("api/config/read_mode");
+            const data = await res.json();
+            if (!data.ok) {
+                setText("pollingStatus", data.error || "error");
+                return;
+            }
+            const readModeSelect = byId("readModeSelect");
+            if (readModeSelect) readModeSelect.value = data.read_mode;
+            setText("pollingStatus", "");
+        }
+
+        async function applyMode() {
+            setText("pollingStatus", "Applying...");
+            const mode = (byId("readModeSelect") || {}).value;
+            const res = await fetch("api/config/read_mode", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ read_mode: mode }),
+            });
+            const data = await res.json();
+            setText("pollingStatus", data.ok ? "Saved" : (data.error || "error"));
+            if (data.ok) {
+                loadHealth();
+            }
+        }
+
+        async function loadLoopSleep() {
+            setText("pollingStatus", "Loading...");
+            const res = await fetch("api/config/loop_sleep");
+            const data = await res.json();
+            if (!data.ok) {
+                setText("pollingStatus", data.error || "error");
+                return;
+            }
+            setLoopSleepSelectValue(data.loop_sleep_seconds);
+            setText("loopSleep", data.loop_sleep_seconds);
+            setText("loopSleepSummary", data.loop_sleep_seconds);
+            setText("pollingStatus", "");
+        }
+
+        async function applyLoopSleep() {
+            setText("pollingStatus", "Applying...");
+            const value = Number((byId("loopSleepSelect") || {}).value);
+            if (!Number.isFinite(value)) {
+                setText("pollingStatus", "invalid loop sleep");
+                return;
+            }
+            const res = await fetch("api/config/loop_sleep", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ loop_sleep_seconds: value }),
+            });
+            const data = await res.json();
+            setText("pollingStatus", data.ok ? "Saved" : (data.error || "error"));
+            if (data.ok) {
+                setText("loopSleep", data.loop_sleep_seconds);
+                setText("loopSleepSummary", data.loop_sleep_seconds);
+                setLoopSleepSelectValue(data.loop_sleep_seconds);
+                loadHealth();
+            }
+        }
+
+        document.getElementById("deviceSelect").addEventListener("change", (event) => {
+            selectDevice(event.target.value || "");
+        });
+
+        refreshAll({ reloadConfig: true }).catch((error) => {
+            setHtml("deviceInventory",
+                "<div class=\"device-row\"><div class=\"device-row-main\"><div class=\"device-row-title\">Configurator unavailable</div><div class=\"device-row-meta\">" + esc(String(error)) + "</div></div></div>");
+        });
+        setInterval(() => {
+            refreshAll().catch(() => {});
+        }, 5000);
+    </script>
+</body>
+</html>

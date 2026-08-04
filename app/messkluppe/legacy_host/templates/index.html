@@ -1,0 +1,337 @@
+{% extends "base_layout.html" %} {% block title %}Messkluppe{% endblock %} 
+{% block page_title %}Messkluppe{% endblock %}
+{% block content %}
+
+		<div class="row">
+            <div class="col-lg-3 col-md-6">
+                <div class="panel panel-primary" id="ping_stats"> 
+                    <div class="panel-heading">
+                        <div class="row">
+                            <div class="col-xs-2">
+                                <i class="fa fa-signal fa-5x"></i>
+                            </div>
+                            <div class="col-xs-3 text-right" data-toggle="tooltip" title="Time between last two packages recived by the clip">
+                                <div class="huge" id="com_ping">0</div>
+                                <div>ms</div>
+                            </div>
+                            <div class="col-xs-3 text-right" data-toggle="tooltip" title="Sucessfully transfered packages">
+                                <div class="huge" id="com_success">0</div>
+                                <div>%</div>
+                            </div>
+                            <div class="col-xs-4 text-right" data-toggle="tooltip" title="Time between last two packages recived by the Raspberry">
+                                <div class="huge" id="com_noMsg">0</div>
+                                <div id="com_noMsg_unit">s</div>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="chart_ping">
+                        <div class="panel-footer">
+                            <span class="pull-left"><br></span>
+                            <!--span class="pull-right"><i class="fa fa-arrow-circle-right"></i></span-->
+                            <div class="clearfix"></div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="panel panel-primary">
+                    <div class="panel-heading">
+                        <div class="row">
+                            <div class="col-xs-3">
+                                <i class="fa fa-folder-open fa-5x"></i>
+                            </div>
+                            <div class="col-xs-5 text-right">
+                                <span class="huge" id="online_files_len">0</span>
+                                <div>Online</div>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="/online_files">
+                        <div class="panel-footer">
+                            <span class="pull-left">Show</span>
+                            <span class="pull-right"><i class="fa fa-th-list"></i></span>
+                            <div class="clearfix"></div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-4">
+                <div class="panel panel-success">
+                    <div class="panel-heading">
+                        Start Logging
+                    </div>
+                    <div class="panel-body">
+                        <div class="row" >
+                            <div class="col-xs-4">
+                                <div class="form-group" >
+                                    <label for="loggingSampleRate">Sample rate in Hz</label>
+                                    <input type="number" class="form-control" step="1" id="sampleRate" name="sampleRate" value="{{c['sampleRate']}}">
+                                </div> 
+                            </div>
+                            <div class="col-xs-4">
+                                <div class="form-group">
+                                    <label for="loggingTime">Logging time in sec</label>
+                                    <input type="number" class="form-control" step="1" id="loggingTime" name="loggingTime" value="{{c['loggingTime']}}">
+                                </div> 
+                            </div>
+
+                            <div class="col-xs-4 text-right">
+                                <div class="huge" style="font-size:15px">
+                                      <button type="button" class="btn btn-success btn-circle btn-xl" data-toggle="tooltip" title="Start logging" id="start_logging"><i class="fa fa-video-camera"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-2 col-md-4">
+                <div class="panel panel-success">
+                    <div class="panel-heading">
+                        Reset Clip Mode
+                    </div>
+                    <div class="panel-body">
+                        <div class="row">
+                            <div class="col-xs-3">
+                                <i class="fa fa-code fa-5x"></i>
+                            </div>
+                            <div class="col-xs-9 text-right">
+                                <div class="huge" style="font-size:15px">
+                                    <button type="button" class="btn btn-warning btn-circle btn-xl" data-toggle="tooltip" title="Reset Clip Modus to 0" id="reset_send_clip_modus"><i class="fa fa-times"></i></button>
+                                </div>
+                            </div>
+                        </div> 
+                    </div>
+                </div>
+            </div>
+        </div><!--row-->
+        {% block extra %} {% endblock %}
+        <hr></hr>
+        <div class ="row">
+            <div class="col-lg-12 col-md-12">
+                <div class="panel panel-info">
+                    <div class="panel-heading">
+                        Info Panel
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-bordered table-hover">
+                                <tbody>
+                                    <tr>
+                                        <th colspan="2">Modes</th>
+                                        <th colspan="2">Communication</th>
+                                        <th colspan="2">Download</th>
+                                    </tr>
+                                    <tr>
+                                        <td>Deep Sleep:</td>
+                                        <td id="g_deepSleep"></td>
+                                        <td>Raspberry Mode:</td>
+                                        <td id="g_mode_pi"></td>
+                                        <td>finished:</td>
+                                        <td id="g_dl_finished"></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Logging:</td>
+                                        <td id="g_logging"></td>
+                                        <td>Clip Mode:</td>
+                                        <td id="g_rcv_task"></td>
+                                        <td>started:</td>
+                                        <td id="g_dl_started"></td>
+                                    </tr>
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td>Clip ID:</td>
+                                        <td id="g_rcv_id"></td>
+                                        <td>successfull:</td>
+                                        <td id="g_dl_successfull"></td>
+                                    </tr>
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td>RPi new task:</td>
+                                        <td id="g_new_task"></td>
+                                        <td>Rpi dont answer:</td>
+                                        <td id="g_dontAnswer"></td>
+                                    </tr>
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td>lines:</td>
+                                        <td id="g_dl_lines"></td>
+                                        <td>filename:</td>
+                                        <td id="g_dl_filename"></td>
+                                    </tr>
+
+                                
+                                    
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div><!--row-->
+		
+
+		
+
+<script>
+
+var pathname = window.location.pathname; // Returns path only
+$.getJSON("/get_globals", function(result){
+
+			
+		});
+
+	$(document).ready(function(){
+        
+		setInterval(function(){
+            $.getJSON("/get_globals", function(result){
+                $("#com_ping").text(result.com_ping);
+                $("#com_success").text(result.com_success);
+                
+                $("#g_deepSleep").text(result.deepSleep);
+                $("#g_logging").text(result.logging);
+
+                $("#g_mode_pi").text(result.mode_pi);
+                $("#g_rcv_task").text(result.rcv_task);
+                $("#g_rcv_id").text(result.rcv_id);
+
+                $("#g_new_task").text(result.new_task);
+                $("#g_dontAnswer").text(result.dontAnswer);
+
+                $("#g_dl_finished").text(result.dl_finished);
+                $("#g_dl_started").text(result.dl_started);
+                $("#g_dl_successfull").text(result.dl_successfull);
+
+                $("#g_dl_lines").text(result.dl_lines);
+                $("#g_dl_filname").text(result.dl_filename);
+
+
+                $("#online_files_len").text(result.online_files_len);
+
+                // added THH 2022-03-16
+               // $("#g_sampleRate").text(result.sampleRate);
+               // $("#g_loggingTime").text(result.loggingTime);
+               
+                //$("#dl_file_len").text(result.dl_file_len);
+                $("#time_server").text(result.raspi_time);
+                $("#time_local").text(new Date().toISOString());
+                
+                
+                if (result.com_noMsg > 3600){
+                    secounds = result.com_noMsg % 60;
+                    minutes = (result.com_noMsg/60) % 60;
+                    hours = (result.com_noMsg/60/60) % 24;
+                    $("#com_noMsg").text(hours.toFixed(0) + ":" + minutes.toFixed(0) + ":" + secounds.toFixed(0));
+                    $("#com_noMsg_unit").text("hh:mm:ss");
+                }else if (result.com_noMsg > 60){
+                    secounds = result.com_noMsg % 60;
+                    minutes = (result.com_noMsg/60) % 60;
+                    $("#com_noMsg").text(minutes.toFixed(0) + ":" + secounds.toFixed(0));
+                    $("#com_noMsg_unit").text("mm:ss");
+                    
+                }else if (result.com_noMsg > 10){
+                    $("#com_noMsg").text(result.com_noMsg.toFixed(0));
+                    $("#ping_stats").removeClass("panel-primary");
+                    $("#ping_stats").removeClass("panel-warning");
+                    $("#ping_stats").addClass("panel-danger");
+                }else if (result.com_noMsg > 1){
+                    $("#com_noMsg").text(result.com_noMsg.toFixed(1));
+                    $("#ping_stats").removeClass("panel-primary");
+                    $("#ping_stats").removeClass("panel-danger");
+                    $("#ping_stats").addClass("panel-warning");
+                } else if (result.com_noMsg <= 1){
+                    $("#com_noMsg").text(result.com_noMsg.toFixed(1));
+                    $("#ping_stats").removeClass("panel-warning");
+                    $("#ping_stats").removeClass("panel-danger");
+                    $("#ping_stats").addClass("panel-primary");
+                    $("#com_noMsg_unit").text("s");
+                }
+                //if (result.logging == true) {
+                //    $('#start_logging').prop('checked', true);
+                //}else {
+                //    $('#start_logging').prop('checked', false);
+                //}
+                if (result.deepSleep == true) {
+                    $('#start_deepSleep').prop('checked', true);
+                }else {
+                    $('#start_deepSleep').prop('checked', false);
+                }
+                
+                
+                
+                if (pathname == '/online_files'){
+                    $("#dl_progress").css('width', result.dl_progress+'%');
+                    $("#dl_progress").text(result.dl_progress+'%');
+                    $("#dl_act").text(result.dl_file_len);
+                    $("#dl_until").text(result.dl_until);
+                    
+                    // Disable button until download finished
+                    if (result.dl_started == true && result.dl_finished == false){
+                        $("#dl_close").attr('disabled','disabled');
+                    } else {
+                        $("#dl_close").removeAttr('disabled');
+                    }
+                        
+                        
+                    // Change bar according dl_successfull    
+                    if (result.dl_successfull == true && result.dl_finished == true){
+                        $("#dl_progress").addClass("progress-bar-success");
+                    }
+                    if (result.dl_successfull == false && result.dl_finished == true) {
+                        $("#dl_progress").addClass("progress-bar-danger");
+                    }
+                        
+                    
+                    
+                }
+            })
+		}, 200);
+        $('[data-toggle="tooltip"]').tooltip();
+	});
+    
+    $('#reset_send_clip_modus').click(function() {
+        $.get("/reset_send_clip_modus");
+    });
+    
+   $('#start_logging').click(function() {
+        
+       var sampleRate = parseInt($("#sampleRate").val());
+       var loggingTime = parseInt($("#loggingTime").val());
+       var button = $(this);
+       button.attr('disabled', 'disabled');
+         
+        $.get("/start_logging/"+ sampleRate +"/"+ loggingTime);
+        
+        setTimeout(function() {          
+        $.get("/stop_logging");
+        button.removeAttr('disabled');
+        },3000);
+        
+    });
+                            
+
+	//$('#start_logging').change(function() {
+	//	if($(this).prop('checked')){
+	//		$.get("/start_logging");
+	//	} else {
+	//		$.get("/stop_logging");
+	//	}
+	//});
+    $('#start_deepSleep').change(function() {
+		if($(this).prop('checked')){
+			$.get("/start_deepSleep");
+		} else {
+			$.get("/stop_deepSleep");
+		}
+	});
+
+		
+	</script>
+	
+
+
+{% endblock %}

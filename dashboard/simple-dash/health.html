@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Health</title>
+  <link rel="stylesheet" href="/device-common.css">
+  <style>
+    :root {
+      /* Operations surface overrides */
+      --bg: #eaf0f6;
+      --accent: #264b73;
+      /* Backward-compat aliases used by this page's CSS */
+      --text: var(--ink);
+      --border: var(--line);
+      --border-strong: var(--line-strong);
+    }
+    body {
+      padding: 0;
+      background:
+        radial-gradient(circle at top left, rgba(38, 75, 115, 0.12), transparent 26%),
+        linear-gradient(180deg, #f7fbff 0%, var(--bg) 100%);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 40px;
+    }
+    .eyebrow { margin-bottom: 14px; }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(2.1rem, 5vw, 3.2rem);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+    .subtitle {
+      max-width: 74ch;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.55;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .hero-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+      min-height: 112px;
+    }
+    .hero-label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .hero-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+    }
+    .hero-note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .section {
+      margin-top: 20px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      margin: 0 0 12px;
+    }
+    .section-title {
+      margin: 0;
+      font-size: 1.22rem;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+    .section-subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      max-width: 68ch;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .card.wide {
+      grid-column: span 3;
+    }
+    .name {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .name-label {
+      display: grid;
+      gap: 4px;
+    }
+    .name-label strong {
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+    .name-sub {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    a.status {
+      cursor: pointer;
+    }
+    a.status:hover,
+    a.status:focus-visible {
+      text-decoration: none;
+      filter: brightness(0.97);
+      box-shadow: 0 0 0 3px rgba(31, 95, 154, 0.14);
+      outline: none;
+    }
+    .ok { background: var(--ok-bg); color: var(--ok); border-color: rgba(27, 125, 77, 0.12); }
+    .warn { background: var(--warn-bg); color: var(--warn); border-color: rgba(147, 93, 15, 0.12); }
+    .err { background: var(--err-bg); color: var(--err); border-color: rgba(180, 35, 24, 0.12); }
+    .details {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      word-break: break-word;
+      white-space: pre-wrap;
+      min-height: 88px;
+    }
+    @media (max-width: 900px) {
+      .card.wide { grid-column: span 1; }
+      .hero { grid-template-columns: 1fr; }
+      .top { flex-direction: column; }
+      .meta { text-align: left; white-space: normal; }
+      .section-head { flex-direction: column; }
+    }
+    .controls {
+      margin-top: 20px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .controls h2 {
+      margin: 0 0 10px;
+      font-size: 1.3rem;
+      color: var(--text);
+      letter-spacing: -0.03em;
+    }
+    .controls-sub {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .ctrl-row {
+      display: grid;
+      grid-template-columns: 160px repeat(3, 86px) 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .ctrl-row:last-child { border-bottom: 0; }
+    .ctrl-row .label { color: var(--text); font-weight: 700; }
+    .ctrl-row .state { color: var(--muted); font-size: 0.84rem; line-height: 1.4; }
+    .ctrl-row button {
+      background: linear-gradient(180deg, #ffffff 0%, #f3f7fb 100%);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      padding: 9px 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .ctrl-row button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .ctrl-note {
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+    .refresh-btn {
+      min-height: 42px;
+      padding: 0 16px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #2f80da 0%, #1f5f9a 100%);
+      border: 1px solid #1f5f9a;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    a { color: #2f6fb2; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .footer-note {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+    @media (max-width: 760px) {
+      .ctrl-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">Operations Surface</div>
+    <div class="top">
+      <div>
+        <h1>System Health</h1>
+        <p class="subtitle">Unified control-room view for service probes, host condition, stack dependencies, and manual recovery actions. This page complements device UIs and keeps the operational state readable at a glance.</p>
+      </div>
+      <div class="meta">
+        Auto-refresh: 10s<br />
+        <span id="updated">updated: -</span>
+      </div>
+    </div>
+
+    <div class="hero">
+      <div class="hero-card">
+        <div class="hero-label">Refresh Policy</div>
+        <div class="hero-value">5 s cadence</div>
+        <div class="hero-note">Probe cards and control states are updated together to keep operator context consistent.</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-label">Operational Focus</div>
+        <div class="hero-value">Services + guards</div>
+        <div class="hero-note">Treat degraded states as signals to inspect dependency chains before manual restarts.</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-label">Manual Control</div>
+        <div class="hero-value">Scoped actions</div>
+        <div class="hero-note">Start, stop, and restart buttons stay local to managed targets to avoid broad stack disruption.</div>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Platform Services</h2>
+          <div class="section-subtitle">Core stack and infrastructure services that support the whole system: host state, storage, dashboards, telemetry, and service orchestration.</div>
+        </div>
+      </div>
+      <div class="grid" id="platformGrid"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Device Control Applications</h2>
+          <div class="section-subtitle">Applications that talk to hardware directly or supervise device-side communication and acquisition paths.</div>
+        </div>
+      </div>
+      <div class="grid" id="deviceGrid"></div>
+    </section>
+
+    <div class="controls" id="service-control">
+      <h2>Service Control</h2>
+      <p class="controls-sub">Use manual actions sparingly. This area is for focused recovery, not for routine operation when guard logic is already healthy.</p>
+      <div id="controlRows"></div>
+      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage.</div>
+    </div>
+
+    <p class="footer-note"><a href="/">Back to Dashboard</a> · <button type="button" class="refresh-btn" id="refreshNow">Refresh now</button></p>
+  </div>
+
+  <script>
+    const services = [
+      { id: 'usb', name: 'Connected USB Devices', url: '/probe/svcctl', type: 'json', pass: (d) => d && d.status === 'ok', wide: true, group: 'platform' },
+      { id: 'host', name: 'Host CPU / RAM', url: '/probe/host', type: 'json', pass: (d) => d && d.status === 'ok' && d.memory, group: 'platform' },
+      { id: 'influx', name: 'InfluxDB', url: '/probe/influx', type: 'json', pass: (d) => d && d.status === 'pass', group: 'platform' },
+      { id: 'grafana', name: 'Grafana', url: '/probe/grafana', type: 'json', pass: (d) => d && String(d.database).toLowerCase() === 'ok', group: 'platform' },
+      { id: 'grafapp', name: 'Graf App Lite', url: '/probe/grafapp', type: 'json', pass: (d) => d && d.status === 'ok', group: 'platform' },
+      { id: 'svcctl', name: 'Service Control API', url: '/probe/svcctl', type: 'json', pass: (d) => d && d.status === 'ok', group: 'platform' },
+      { id: 'mscl', name: 'MSCL API', url: '/probe/mscl', type: 'json', pass: (d) => d && d.status === 'ok' && !!d.connected, group: 'device' },
+      { id: 'redlab', name: 'RedLab', url: '/probe/redlab', type: 'json', pass: (d) => d && (d.status === 'running' || d.status === 'degraded') && !!d.connected, group: 'device' },
+      { id: 'almemo', name: 'ALMEMO 2490', url: '/probe/almemo', type: 'json', pass: (d) => d && d.status === 'ok', group: 'device' },
+      { id: 'pyrometer', name: 'Pyrometers', url: '/probe/pyrometer', type: 'json', pass: (d) => d && (d.status === 'ok' || d.status === 'degraded') && Array.isArray(d.connected_devices) && d.connected_devices.length > 0, group: 'device' },
+      { id: 'messkluppe', name: 'Messkluppe', url: '/probe/messkluppe', type: 'json', pass: (d) => d && d.ok === true, group: 'device' },
+    ];
+    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana'];
+    const targetDisplayNames = {
+      redlab: 'RedLab',
+      almemo: 'ALMEMO',
+      mscl: 'MSCL',
+      pyrometer: 'Pyrometers',
+      messkluppe: 'Messkluppe',
+      grafana: 'Grafana',
+    };
+    const statusLinks = {
+      influx: `${window.location.protocol}//${window.location.hostname}:8086`,
+      grafana: '/grafana/',
+      grafapp: '/graf/',
+      svcctl: '#service-control',
+      mscl: '/mscl/',
+      redlab: '/redlab/',
+      almemo: '/almemo/',
+      pyrometer: '/pyrometer/',
+      messkluppe: '/messkluppe/',
+    };
+
+    const platformGrid = document.getElementById('platformGrid');
+    const deviceGrid = document.getElementById('deviceGrid');
+    const controlRows = document.getElementById('controlRows');
+    const ctrlNote = document.getElementById('ctrlNote');
+    let refreshInFlight = false;
+
+    function mkCard(s) {
+      const el = document.createElement('div');
+      el.className = `card${s.wide ? ' wide' : ''}`;
+      const statusLink = statusLinks[s.id];
+      const statusEl = statusLink
+        ? `<a class="status warn" id="st-${s.id}" href="${statusLink}" title="Open ${s.name}" aria-label="Open ${s.name}">checking</a>`
+        : `<span class="status warn" id="st-${s.id}">checking</span>`;
+      el.innerHTML = `
+        <div class="name">
+          <div class="name-label">
+            <strong>${s.name}</strong>
+            <span class="name-sub">${s.type === 'json' ? 'structured probe' : 'endpoint reachability'}</span>
+          </div>
+          ${statusEl}
+        </div>
+        <div class="details" id="dt-${s.id}">-</div>
+      `;
+      if (s.group === 'device') {
+        deviceGrid.appendChild(el);
+      } else {
+        platformGrid.appendChild(el);
+      }
+    }
+
+    services.forEach(mkCard);
+    function mkControlRows() {
+      controlRows.innerHTML = '';
+      controllableTargets.forEach((t) => {
+        const row = document.createElement('div');
+        row.className = 'ctrl-row';
+        const label = targetDisplayNames[t] || t;
+        row.innerHTML = `
+          <span class="label">${label}</span>
+          <button type="button" data-target="${t}" data-action="start">Start</button>
+          <button type="button" data-target="${t}" data-action="stop">Stop</button>
+          <button type="button" data-target="${t}" data-action="restart">Restart</button>
+          <span class="state" id="ctrl-st-${t}">state: unknown</span>
+        `;
+        controlRows.appendChild(row);
+      });
+    }
+
+    mkControlRows();
+
+    function setCtrlNote(text) {
+      ctrlNote.textContent = text;
+    }
+
+    function setTargetState(target, text) {
+      const el = document.getElementById(`ctrl-st-${target}`);
+      if (el) el.textContent = `state: ${text}`;
+    }
+
+    function setTargetButtons(target, states, paused) {
+      const rowButtons = controlRows.querySelectorAll(`button[data-target="${target}"]`);
+      if (!rowButtons.length) return;
+      const values = Object.values(states || {});
+      const hasAny = values.length > 0;
+      const runningCount = values.filter((v) => v === 'running').length;
+      const allRunning = hasAny && runningCount === values.length;
+      const allStoppedOrMissing = hasAny && values.every((v) => ['exited', 'dead', 'created', 'missing', 'removing'].includes(v));
+      rowButtons.forEach((btn) => {
+        const action = btn.getAttribute('data-action');
+        if (action === 'start') btn.disabled = allRunning && !paused;
+        if (action === 'stop') btn.disabled = paused || allStoppedOrMissing;
+        if (action === 'restart') btn.disabled = !hasAny;
+      });
+    }
+
+    function summarizeTargetState(states, paused) {
+      const values = Object.values(states || {});
+      if (!values.length) return paused ? 'user stopped | unknown' : 'unknown';
+      const counts = values.reduce((acc, state) => {
+        acc[state] = (acc[state] || 0) + 1;
+        return acc;
+      }, {});
+      const detail = Object.entries(counts).map(([state, count]) => `${state}:${count}`).join(', ');
+      if (paused) return `user stopped | ${detail}`;
+      if (values.some((v) => v === 'restarting')) return `restarting | ${detail}`;
+      if (values.some((v) => v === 'paused')) return `paused | ${detail}`;
+      if (values.some((v) => v === 'removing')) return `removing | ${detail}`;
+      if (values.some((v) => v === 'dead' || v === 'error')) return `attention | ${detail}`;
+      if (values.every((v) => v === 'running')) return values.length === 1 ? 'running' : `running | ${detail}`;
+      if (values.every((v) => ['exited', 'created', 'missing'].includes(v))) return `stopped | ${detail}`;
+      if (values.some((v) => v === 'running')) return `partial | ${detail}`;
+      return detail;
+    }
+
+    async function controlFetch(path, options = {}) {
+      const res = await fetch(path, options);
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 160)}`);
+      }
+      return res.json();
+    }
+
+    async function refreshControlStates() {
+      try {
+        const data = await controlFetch('/api/control/services', { cache: 'no-store' });
+        const svc = data.services || {};
+        const pauses = data.manual_pauses || {};
+        controllableTargets.forEach((target) => {
+          const states = svc[target] || {};
+          const paused = !!pauses[target];
+          setTargetState(target, summarizeTargetState(states, paused));
+          setTargetButtons(target, states, paused);
+        });
+      } catch (e) {
+        controllableTargets.forEach((target) => {
+          setTargetState(target, 'unavailable');
+          setTargetButtons(target, {});
+        });
+      }
+    }
+
+    function setState(id, level, text, details) {
+      const st = document.getElementById(`st-${id}`);
+      const dt = document.getElementById(`dt-${id}`);
+      st.className = `status ${level}`;
+      st.textContent = text;
+      dt.textContent = details;
+    }
+
+    function yn(v) {
+      return v ? 'yes' : 'no';
+    }
+
+    function summarizeJson(id, data) {
+      if (!data || typeof data !== 'object') return 'No data';
+      if (id === 'host') {
+        const m = data.memory || {};
+        return `CPU ${data.cpu_percent ?? '-'}% | RAM ${m.used_mb ?? '-'}/${m.total_mb ?? '-'} MB (${m.used_pct ?? '-'}%)`;
+      }
+      if (id === 'mscl') {
+        const connected = yn(!!data.connected);
+        const paused = yn(!!data.stream_paused);
+        const q = data.stream_queue_depth ?? '-';
+        const pingAge = data.ping_age_sec ?? '-';
+        return `Connected: ${connected} | Stream paused: ${paused} | Queue: ${q} | Ping age: ${pingAge}s`;
+      }
+      if (id === 'usb') {
+        const items = Array.isArray(data.usb_devices) ? data.usb_devices : [];
+        if (!items.length) return 'No external USB devices';
+        return items.map((item) => `${item.vendor_id}:${item.product_id} ${item.manufacturer || ''} ${item.product || ''}`.trim()).join('\n');
+      }
+      if (id === 'influx') {
+        return `Status: ${data.status ?? '-'} | Version: ${data.version ?? '-'}`;
+      }
+      if (id === 'grafana') {
+        return `Database: ${data.database ?? '-'} | Version: ${data.version ?? '-'}`;
+      }
+      if (id === 'grafapp') {
+        return `Status: ${data.status ?? '-'} | Bucket: ${data.influx_bucket ?? '-'} | Org: ${data.influx_org ?? '-'}`;
+      }
+      if (id === 'redlab') {
+        const channels = Array.isArray(data.last_channels) ? data.last_channels.length : 0;
+        const skipped = data.skipped_channels ?? 0;
+        const mode = data.read_mode ?? '-';
+        const hz = data.loop_hz ?? '-';
+        return `State: ${data.status ?? '-'} | Connected: ${yn(!!data.connected)} | Influx OK: ${yn(!!data.influx_ok)} | Channels: ${channels} | Skipped: ${skipped} | Mode: ${mode} | Hz: ${hz}`;
+      }
+      if (id === 'svcctl') {
+        const targets = Array.isArray(data.targets) ? data.targets.join(', ') : '-';
+        const pauses = data.manual_pauses || {};
+        const pausedTargets = Object.keys(pauses);
+        return `Status: ${data.status ?? '-'} | Targets: ${targets} | User stopped: ${pausedTargets.length ? pausedTargets.join(', ') : 'none'}`;
+      }
+      if (id === 'pyrometer') {
+        const devices = data.devices || {};
+        const lines = Object.values(devices).map((item) => {
+          const targetHz = item.logging_target_hz ?? '-';
+          const loggedHz = item.effective_logged_hz ?? '-';
+          return `${item.display_name || item.device_name || 'device'}: state=${item.status ?? '-'} port=${item.port ?? '-'} present=${yn(!!item.port_present)} connected=${yn(!!item.connected)} TObj=${item.object_temperature_c ?? item.last_measurement_c ?? '-'} C target=${targetHz} Hz logged=${loggedHz} Hz`;
+        });
+        return lines.length ? lines.join('\n') : 'No pyrometer devices configured';
+      }
+      if (id === 'messkluppe') {
+        return `Mode: ${data.fake_mode ? 'fake' : 'real'} | Running: ${yn(!!data.collector_running)} | Influx: ${yn(!!data.influx_configured)} | Packets: ${data.packets_received ?? 0} | Writes: ${data.records_written ?? 0} | Errors: ${data.last_error || 'none'}`;
+      }
+      return JSON.stringify(data);
+    }
+
+    function summarizeText(id, text) {
+      const t = String(text || '').trim();
+      if (!t) return 'No data';
+      return t.slice(0, 120).replace(/\s+/g, ' ');
+    }
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    function serviceIsPaused(target, sharedResponses) {
+      if (!target) return false;
+      const svcctlData = sharedResponses.get('/probe/svcctl-data');
+      return !!(svcctlData && svcctlData.manual_pauses && svcctlData.manual_pauses[target]);
+    }
+
+    async function probe(s, sharedResponses) {
+      try {
+        if (serviceIsPaused(s.target, sharedResponses)) {
+          setState(s.id, 'warn', 'paused', 'User stopped from Service Control');
+          return;
+        }
+        let cached = sharedResponses.get(s.url);
+        if (!cached) {
+          cached = fetchWithTimeout(s.url, { cache: 'no-store' })
+            .then(async (res) => ({
+              ok: res.ok,
+              status: res.status,
+              text: await res.text(),
+            }));
+          sharedResponses.set(s.url, cached);
+        }
+        const res = await cached;
+        if (!res.ok) {
+          setState(s.id, 'err', 'down', `HTTP ${res.status}`);
+          return;
+        }
+
+        if (s.type === 'json') {
+          const data = JSON.parse(res.text || '{}');
+          const ok = s.pass(data);
+          const details = summarizeJson(s.id, data);
+          setState(s.id, ok ? 'ok' : 'warn', ok ? 'up' : 'degraded', details);
+        } else {
+          const text = res.text;
+          const ok = s.pass(text);
+          const details = summarizeText(s.id, text);
+          setState(s.id, ok ? 'ok' : 'warn', ok ? 'up' : 'degraded', details);
+        }
+      } catch (e) {
+        setState(s.id, 'err', 'down', e.message || 'request failed');
+      }
+    }
+
+    async function refreshAll() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const sharedResponses = new Map();
+        try {
+          const svcctlRes = await fetchWithTimeout('/probe/svcctl', { cache: 'no-store' });
+          if (svcctlRes.ok) {
+            sharedResponses.set('/probe/svcctl-data', await svcctlRes.json());
+          }
+        } catch (_e) {
+          // Individual probes still render their own failure states.
+        }
+        await Promise.all(services.map((service) => probe(service, sharedResponses)));
+        await refreshControlStates();
+        document.getElementById('updated').textContent = `updated: ${new Date().toLocaleTimeString()}`;
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    controlRows.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-target][data-action]');
+      if (!btn) return;
+      const target = btn.getAttribute('data-target');
+      const action = btn.getAttribute('data-action');
+      try {
+        setCtrlNote(`Executing: ${action} ${target}...`);
+        await controlFetch(`/api/control/services/${target}/${action}`, { method: 'POST' });
+        await refreshAll();
+        setCtrlNote(`Done: ${action} ${target}`);
+      } catch (err) {
+        setCtrlNote(`Error: ${err.message || err}`);
+      }
+    });
+
+    refreshAll();
+    document.getElementById('refreshNow').addEventListener('click', refreshAll);
+    setInterval(refreshAll, 10000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+{% extends "index.html" %}
+
+{% block page_title %}Local File: {{file}}{% endblock %}
+
+{% block content %}
+<!--
+Weitere Scrips:
+    Diagramm:
+    http://dygraphs.com/
+-->
+<script src="{{ url_for('serveStaticResource', resource='js/dygraph.min.js')}}"></script>
+<link rel="stylesheet" href="{{ url_for('serveStaticResource', resource='css/dygraph.min.css') }}">
+<!--script src="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.js"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.css" /-->
+	<style type="text/css">
+      .dygraph-legend {
+        background-color: rgba(242, 242, 242, 0.95) !important;
+        padding: 10px;
+        border: 1px solid #000;
+        border-radius: 10px;
+        box-shadow: 4px 4px 4px #888;
+        pointer-events: none;
+        width: 100px;
+
+      }
+      pre {
+        margin-top: 30px;
+        margin-right: 40px;
+      }
+      #legend {
+        padding-left:20px;
+      }
+    </style>
+
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">{{file}}</div>
+                <div class="panel-body">
+                    <div class="chart-container" style="min-height: calc(100vh - 270px);">
+                        <div id="graphdiv2" style="position: absolute; left: 0px; right: 10px; top: 50px; bottom: 130px;"></div>
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <div class="row">
+                        <div class = "col-md-6 checkbox">
+                            <b>Left Scale:</b>
+                            <label><input type=checkbox id="0" checked onClick="change(this)">F(x) </label>
+                            <label><input type=checkbox id="1" checked onClick="change(this)">F(y) </label>
+                            <label><input type=checkbox id="2" checked onClick="change(this)">F(z) </label>
+                            <label><input type=checkbox id="3"  onClick="change(this)">A(x) </label>
+                            <label><input type=checkbox id="4"  onClick="change(this)">A(y) </label>
+                            <br>
+                            <b>Right Scale:</b>
+                            <label><input type=checkbox id="5"  onClick="change(this)">Yaw </label>
+                            <label><input type=checkbox id="6"  onClick="change(this)">T(int) </label>
+                            <label><input type=checkbox id="7"  onClick="change(this)">T(ext) </label>
+                            <label><input type=checkbox id="8"  onClick="change(this)">V(bat) </label>
+                            <label><input type=checkbox id="9"  checked onClick="change(this)">MDX </label>
+                        </div>
+                         <div class = "col-md-6">
+                            <b>Zoom: </b>Click + Drag<br>
+                            <b>Pan: </b>Shift + Click + Drag<br>
+                            <b>Restore Zoom: </b>double-click<br>
+                            
+
+                        </div>
+                    </div>
+                    
+
+
+            </div>
+        </div>
+    </div>
+
+<script type="text/javascript">
+
+    function legendFormatter(data) {
+        if (data.x == null) {
+            // This happens when there's no selection and {legend: 'always'} is set.
+            return '<br>' + data.series.map(function(series) { return series.dashHTML + ' ' + series.labelHTML }).join('<br>');
+        }
+
+        var html = this.getLabels()[0] + ': ' + data.xHTML;
+        data.series.forEach(function(series) {
+            if (!series.isVisible) return;
+            var labeledData = series.labelHTML + ': ' + series.yHTML;
+            if (series.isHighlighted) {
+                labeledData = '<b>' + labeledData + '</b>';
+            }
+            html += '<br>' + series.dashHTML + ' ' + labeledData;
+        });
+        return html;
+    }
+    
+  g2 = new Dygraph(
+    document.getElementById("graphdiv2"),
+         [
+            {% for row in data %}
+            [{{(row['s']*1000)|round|int}}, {{row['Fx']}}, {{row['Fy']}}, {{row['Fz']}}, {{row['Ax']}}, {{row['Ay']}}, {{row['Yaw']}}, {{row['Ti']}}, {{row['Te']}}, {{row['Vbat']}}, null], {% endfor %}
+            {% for row in mdx %}
+            [{{(row['pos']*1000)|round|int}}, null, null, null, null, null, null, null, null, null, {{row['mdx']}}], {% endfor %}
+              
+              ],
+              {
+                labels: ['Date', 'F(x)', 'F(y)', 'F(z)', 'A(x)', 'A(y)', 'Yaw', 'T(intern)', 'T(extern)', 'V(bat)', 'MDX'],
+                colors: ['rgb(80, 81, 79)', 'rgb(255, 0, 0)', 'rgb(0, 0, 255)', 'rgb(255, 216, 0)', 'rgb(0, 178, 59)', 'rgb(198, 100, 93)', 'rgb(0, 246, 255)', 'rgb(153, 102, 255)', 'rgb(51, 204, 51)', 'rgb(0, 0, 0)'],
+                labelsDiv: document.getElementById('legend'),
+                legend: 'always',
+                legendFormatter: legendFormatter,
+                animatedZooms: true,
+                
+                series: {
+                    'F(x)': {axis: 'y1'},
+                    'F(y)': {axis: 'y1'},
+                    'F(z)': {axis: 'y1'},
+                    'A(x)': {axis: 'y1'},
+                    'A(y)': {axis: 'y1'},
+                    'Yaw' : {axis: 'y2'},
+                    'T(intern)': {axis: 'y2'},
+                    'T(extern)': {axis: 'y2'},
+                    'V(bat)': {axis: 'y2'},
+                    'MDX': {axis: 'y2'},
+                },
+                visibility: [true, true, true, false, false, false, false, false, false, true],
+                axis : {
+                        x : {
+                            valueFormatter: Dygraph.dateString_,
+                            ticker: Dygraph.dateTicker
+                        }
+                }
+              }
+              
+              
+              
+              );
+              
+
+      function change(el) {
+        g2.setVisibility(parseInt(el.id), el.checked);
+        setStatus();
+      }
+</script>
+{% endblock %}
+

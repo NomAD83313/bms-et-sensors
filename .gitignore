@@ -1,0 +1,61 @@
+# Local agent and editor state
+/.agents/
+/.claude/
+/.codex
+.idea/
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temporary editor files
+*.log
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+
+# Local docs/media
+*.pdf
+
+# Local test run artifacts
+tests/runs/
+
+# ESP-IDF local firmware artifacts
+eim_config.toml
+sensors/
+nodes/**/main/thread_dataset.h
+
+# CMake / IDE build cache
+build/
+dist/
+
+
+# Local runtime state
+runtime/*
+!runtime/.gitkeep
+app/messkluppe/legacy_host/db.db
+app/messkluppe/legacy_host/static/_csv/*
+!app/messkluppe/legacy_host/static/_csv/.gitkeep

@@ -1,0 +1,97 @@
+{
+  "title": "BMS ET Sensors Dashboard",
+  "groups": [
+    {
+      "title": "VISUALISATION",
+      "items": [
+        {
+          "alt": "Grafana",
+          "icon": "fas fa-chart-line",
+          "link": "http://{{host}}/grafana/d/redlab_pro_dash/redlab-and-mscl-dashboard?orgId=1&from=now-5m&to=now&timezone=browser&refresh=5s",
+          "probe": "/probe/grafana"
+        },
+        {
+          "alt": "Graf App Lite",
+          "icon": "fas fa-wave-square",
+          "link": "http://{{host}}/graf/",
+          "probe": "/probe/grafapp"
+        }
+      ]
+    },
+    {
+      "title": "Services",
+      "items": [
+        {
+          "alt": "System Health",
+          "icon": "fas fa-stethoscope",
+          "link": "http://{{host}}/health.html"
+        },
+        {
+          "alt": "MSCL Configurator",
+          "icon": "fas fa-sliders-h",
+          "link": "http://{{host}}/mscl/",
+          "probe": "/probe/mscl"
+        },
+        {
+          "alt": "RedLab Config",
+          "icon": "fas fa-thermometer-half",
+          "link": "http://{{host}}/redlab/",
+          "probe": "/probe/redlab"
+        },
+        {
+          "alt": "ALMEMO 2490",
+          "icon": "fas fa-microchip",
+          "link": "http://{{host}}/almemo/",
+          "probe": "/probe/almemo"
+        },
+        {
+          "alt": "Pyrometers",
+          "icon": "fas fa-temperature-high",
+          "link": "http://{{host}}/pyrometer/",
+          "probe": "/probe/pyrometer"
+        },
+        {
+          "alt": "Messkluppe",
+          "icon": "fas fa-broadcast-tower",
+          "link": "http://{{host}}/messkluppe/",
+          "probe": "/probe/messkluppe"
+        },
+        {
+          "alt": "InfluxDB",
+          "icon": "fas fa-database",
+          "link": "http://{{host}}:8086",
+          "probe": "/probe/influx"
+        }
+      ]
+    },
+    {
+      "title": "Wlan / Matter / Thread",
+      "items": [
+        {
+          "alt": "AP Control",
+          "icon": "fas fa-wifi",
+          "link": "http://{{host}}/ap/",
+          "probe": "/probe/ap"
+        },
+        {
+          "alt": "Matter + Thread Console",
+          "icon": "fas fa-satellite-dish",
+          "link": "http://{{host}}/matter/",
+          "probe": "/probe/matterapp"
+        },
+        {
+          "alt": "OpenThread Border Router",
+          "icon": "fas fa-project-diagram",
+          "link": "http://{{host}}/otbr/",
+          "probe": "/probe/otbr"
+        },
+        {
+          "alt": "Python Matter Server",
+          "icon": "fas fa-network-wired",
+          "link": "http://{{host}}:5580/",
+          "probe": "/probe/matter-server"
+        }
+      ]
+    }
+  ]
+}

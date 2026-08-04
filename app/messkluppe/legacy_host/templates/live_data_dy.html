@@ -1,0 +1,297 @@
+{% extends "index.html" %}
+{% block page_title %}Live Data{% endblock %}
+{% block content %}
+
+<script src="{{ url_for('serveStaticResource', resource='js/dygraph.min.js')}}"></script>
+<link rel="stylesheet" href="{{ url_for('serveStaticResource', resource='css/dygraph.min.css') }}">
+<style type="text/css">
+    .dygraph-legend {
+      background-color: rgba(242, 242, 242, 0.95) !important;
+      padding: 10px;
+      border: 1px solid #000;
+      border-radius: 10px;
+      box-shadow: 4px 4px 4px #888;
+      pointer-events: none;
+      width: 100px;
+
+    }
+    pre {
+      margin-top: 30px;
+      margin-right: 40px;
+    }
+    #legend {
+      padding-left:20px;
+    }
+  </style>
+   
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="ct-chart ct-perfect-fourth"></div>
+                </div>
+                <div class="chart-container" style="min-height: 500px;">
+                    <div id="graph">
+                </div>
+            </div>
+
+
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(80, 81, 79);"><strong>Display Values</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-left">
+                            <select onchange="change_display(this);">
+                                <option value="linearForce">Force</option>
+                                <option value="raw">Bits</option>
+                                
+                            </select>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(0, 0, 255);"><label><input type=checkbox id="0" checked onClick="change(this)">Rear-Top(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F0">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading" >
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(255, 0, 0);"><label><input type=checkbox id="1" checked onClick="change(this)"> Front-Top(N)</label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F1">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(0, 240, 0);"><label><input type=checkbox id="2" checked onClick="change(this)"> Lever-Top(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F2">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                             <p style="color:rgb(0, 240, 240);"><label><input type=checkbox id="3" checked onClick="change(this)"> Rear-Bot(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F3">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(0, 0, 0);"><label><input type=checkbox id="4" checked onClick="change(this)">Front-Bot(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F4">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(255, 0, 255);"><label><input type=checkbox id="5" checked onClick="change(this)"> Lever-Bot(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F5">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(0,100,255);"><label><input type=checkbox id="6" checked onClick="change(this)"> Chain-Top(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F6">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+                <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(255, 100, 0);"><label><input type=checkbox id="7" checked onClick="change(this)"> Chain-Bot(N) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_F7">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(255, 60, 0);"><label><input type=checkbox id="7" checked onClick="change(this)"> Battery (V) </label></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="live_Vbat">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+       
+	
+
+<script>
+function legendFormatter(data) {
+        if (data.x == null) {
+            // This happens when there's no selection and {legend: 'always'} is set.
+            return '<br>' + data.series.map(function(series) { return series.dashHTML + ' ' + series.labelHTML }).join('<br>');
+        }
+
+        var html = this.getLabels()[0] + ': ' + data.xHTML;
+        data.series.forEach(function(series) {
+            if (!series.isVisible) return;
+            var labeledData = series.labelHTML + ': ' + series.yHTML;
+            if (series.isHighlighted) {
+                labeledData = '<b>' + labeledData + '</b>';
+            }
+            html += '<br>' + series.dashHTML + ' ' + labeledData;
+        });
+        return html;
+    }
+
+
+
+var data = [];
+var t = new Date();
+for (var i = 1000; i >= 0; i--) {
+    var x = new Date(t.getTime() - i * 100);
+    data.push([x, 0, 0, 0, 0, 0, 0 ]);
+}
+var last_mousemove_evt = null;
+var on_graph = false;
+
+var g = new Dygraph(document.getElementById("graph"), data, 
+    {
+        height:500,
+        labels: ['Date', 'F_B-Rear-Top', 'F_B-Frt-Top', 'F_Lev-Top', 'F_B-Rear-Bot', 'F_B-Frt-Bot', 'F_Lev-Bot'],
+        colors: ['rgb(0,0,255)', 'rgb(255, 0, 0)', 'rgb(0, 240, 0)', 'rgb(0, 240, 240)', 'rgb(0, 0, 0)', 'rgb(255, 0, 255)'],
+        visibility: [true, true, true, true, true, true, true, true, false, false, false, false, false, false],
+        labelsDiv: document.getElementById('legend'),
+        legend: 'always',
+        legendFormatter: legendFormatter,
+        series: {
+                    'F_B-Rear-Top': {axis: 'y2'},
+                    'F_B-Frt-Top': {axis: 'y2'},
+                    'F_Lev-Top': {axis: 'y2'},
+                    'F_B-Rear-Bot': {axis: 'y2'},
+                    'F_B-Frt-Bot': {axis: 'y2'},
+                    'F_Lev-Bot': {axis: 'y2'},
+                    'F_Chain-Top': {axis: 'y2'},
+                    'F_Chain-Bot': {axis: 'y2'},
+                    
+                },
+        axis : {
+                x : {
+                    valueFormatter: Dygraph.dateString_,
+                    ticker: Dygraph.dateTicker
+                }
+        }
+    });
+
+    window.setInterval(function() {
+
+        
+        $.getJSON("/get_globals", function(result){
+                //write the live data
+                $('#live_F0').text(result.live_F0);
+                $('#live_F1').text(result.live_F1);
+                $('#live_F2').text(result.live_F2);
+                $('#live_F3').text(result.live_F3);
+                $('#live_F4').text(result.live_F4);
+                $('#live_F5').text(result.live_F5);
+                $('#live_F6').text(result.live_F6);
+                $('#live_F7').text(result.live_F7);
+                $('#live_YawAngle').text(result.live_YawAngle);
+                $('#live_Hall1').text(result.live_Hall1);
+                $('#live_Hall2').text(result.live_Hall2);
+                $('#live_Vbat').text(result.live_Vbat);
+                $('#live_Ti').text(result.live_Ti);        
+                $("#time_server").text(result.raspi_time);
+                $("#time_local").text(new Date().toISOString());
+                data.shift();
+                data.push([new Date(), result.live_F0, result.live_F1, result.live_F2, result.live_F3, result.live_F4, result.live_F5]);
+            });
+        g.updateOptions( { 'file': data } );
+        
+    }, 150);
+
+
+    
+    
+    function change_display(sel){
+        $.getJSON('/change_live_display/'+sel.value);
+    }   
+    function change(el) {
+        g.setVisibility(parseInt(el.id), el.checked);
+        setStatus();
+      }
+</script>
+{% endblock %}
