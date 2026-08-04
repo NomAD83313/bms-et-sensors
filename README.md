@@ -390,6 +390,8 @@ curl -s http://localhost:5000/api/metrics
 ### Raspberry Pi AP local DNS alias
 
 - `scripts/rpi-nm-ap.sh` configures `NetworkManager + dnsmasq` alias on AP subnet.
+- By default, the built-in Wi-Fi is the AP on `10.42.0.1/24` and physical `eth0` is a shared Ethernet AP on `10.42.1.1/24`.
+- Set `AP_SECONDARY_INTERFACE` to override the secondary AP interface.
 - Numbered wrapper: `scripts/02-rpi-nm-ap.sh`
 - Alias is controlled by env vars:
 - `AP_LOCAL_DNS_ENABLE=true`

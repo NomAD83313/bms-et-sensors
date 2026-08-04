@@ -309,9 +309,14 @@ configure_extra_wifi_as_clients() {
 }
 
 ensure_ethernet_autoconnect() {
+  local ap_ifaces=("$@")
   local ifn=""
   while IFS= read -r ifn; do
     [[ -z "${ifn}" ]] && continue
+    local ap_if=""
+    for ap_if in "${ap_ifaces[@]}"; do
+      [[ "${ifn}" == "${ap_if}" ]] && continue 2
+    done
     echo ">>> Ensure Ethernet autoconnect on '${ifn}' (no IP mode rewrite)"
 
     local existing=""
@@ -319,10 +324,6 @@ ensure_ethernet_autoconnect() {
     existing="$(nmcli -t -f NAME,TYPE,DEVICE connection show | awk -F: -v dev="${ifn}" '$2=="802-3-ethernet" && $3==dev {print $1; exit}')"
     if [[ -z "${existing}" ]] && nmcli -t -f NAME connection show | grep -Fxq "${cname}"; then
       existing="${cname}"
-    fi
-
-    if [[ "${ifn}" == "${AP_INTERFACE}" ]]; then
-      continue
     fi
 
     if [[ -n "${existing}" ]]; then
@@ -450,6 +451,11 @@ main() {
       AP_SECONDARY_NAME="${AP_NAME}-wifi"
       configure_ap_on_builtin_wifi "${secondary_if}" "${AP_SECONDARY_NAME}" "${AP_WIFI_IPV4_CIDR}"
     fi
+  elif device_exists "eth0" && [[ "$(get_device_type "eth0")" == "ethernet" ]]; then
+    # Default Raspberry Pi setup: keep Wi-Fi as the AP and expose the same local network on Ethernet.
+    secondary_if="eth0"
+    AP_SECONDARY_NAME="${AP_NAME}-eth"
+    configure_ap_on_ethernet "${secondary_if}" "${AP_ETH_IPV4_CIDR}"
   fi
 
   # Prepare list of AP interfaces for auxiliary steps
@@ -459,7 +465,7 @@ main() {
   # Configure local DNS alias for the primary AP and adjust other Wi‑Fi devices
   configure_local_dns_alias "${ap_if}"
   configure_extra_wifi_as_clients "${ap_ifaces[@]}"
-  ensure_ethernet_autoconnect
+  ensure_ethernet_autoconnect "${ap_ifaces[@]}"
   print_summary
 }
 
