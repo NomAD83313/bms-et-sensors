@@ -431,16 +431,32 @@ function redlabLineKey(rawName) {
   return channel || "";
 }
 
+let redlabDeviceNumbers = new Map();
+
+function setRedlabDeviceOrder(series) {
+  const devices = [];
+  (series || []).forEach((item) => {
+    const device = redlabSeriesParts(item.name).device;
+    if (device && !devices.includes(device)) devices.push(device);
+  });
+  devices.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  redlabDeviceNumbers = new Map(devices.map((device, index) => [device, index + 1]));
+}
+
+function redlabChannelReference(device, channel) {
+  const channelText = String(channel || "").trim();
+  const deviceNumber = redlabDeviceNumbers.get(device);
+  if (deviceNumber && channelText) return `d${deviceNumber}${channelText}`;
+  return channelText || String(device || "").replace(/^redlab[_-]/i, "").trim();
+}
+
 function redlabLineLabel(rawName) {
   const { device, channel } = redlabSeriesParts(rawName);
-  const dbName = String(seriesTagValue(rawName, "channel_name") || "").trim();
-  if (dbName) return dbName;
   const lineKey = redlabLineKey(rawName);
   const customName = redlabDisplayNameForKey(lineKey);
-  if (customName) return customName;
-  const displayDevice = String(device || "").replace(/^redlab[_-]/i, "").trim();
-  if (displayDevice && channel) return `${displayDevice} ${channel}`;
-  return channel || displayDevice || "RedLab";
+  const reference = redlabChannelReference(device, channel);
+  if (customName && reference) return `${customName} (${reference})`;
+  return customName || reference || "RedLab";
 }
 
 function redlabDeviceStyleIndex(deviceLabel) {

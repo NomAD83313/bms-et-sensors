@@ -157,15 +157,19 @@ def register_routes(app, ctx: dict):
         resolved, error_response, status_code = resolve_export_or_error()
         if error_response is not None:
             return error_response, status_code
+        redlab_channels = ctx["load_redlab_channels"](
+            ctx["redlab_channel_state_path"],
+            ctx["redlab_channel_keys"],
+        )
+        redlab_device_numbers = {}
         return ctx["build_single_export_response"](
             resolved=resolved,
             load_series_fn=ctx["load_redlab_series_fn"],
-            naming_fn=ctx["redlab_csv_column_name_fn"],
+            naming_fn=lambda name: ctx["redlab_csv_column_name_fn"](name, redlab_channels, redlab_device_numbers),
             append_series_rows_fn=ctx["append_series_rows_fn"],
             csv_export_response_fn=ctx["csv_export_response_fn"],
             precision=2,
             filename_prefix="redlab_temperature",
-            column_prefix="value_",
         )
 
     @app.route("/api/export/almemo.csv")
@@ -234,6 +238,11 @@ def register_routes(app, ctx: dict):
         resolved, error_response, status_code = resolve_export_or_error()
         if error_response is not None:
             return error_response, status_code
+        redlab_channels = ctx["load_redlab_channels"](
+            ctx["redlab_channel_state_path"],
+            ctx["redlab_channel_keys"],
+        )
+        redlab_device_numbers = {}
         return ctx["build_all_export_response"](
             resolved=resolved,
             load_mscl_series_fn=ctx["load_mscl_series_fn"],
@@ -245,7 +254,7 @@ def register_routes(app, ctx: dict):
             append_series_rows_fn=ctx["append_series_rows_fn"],
             csv_export_response_fn=ctx["csv_export_response_fn"],
             mscl_csv_column_name_fn=lambda name: ctx["mscl_csv_column_name_fn"](name, ctx["mscl_source"], ctx["mscl_source_extra"]),
-            redlab_csv_column_name_fn=ctx["redlab_csv_column_name_fn"],
+            redlab_csv_column_name_fn=lambda name: ctx["redlab_csv_column_name_fn"](name, redlab_channels, redlab_device_numbers),
             pyrometers_csv_column_name_fn=ctx["pyrometers_csv_column_name_fn"],
             messkluppe_csv_column_name_fn=ctx["messkluppe_csv_column_name_fn"],
             matter_csv_column_name_fn=ctx["matter_csv_column_name_fn"],

@@ -21,13 +21,18 @@ def csv_timestamp_fields(raw_ts: str | None, parse_iso_ts_fn) -> tuple[str, str]
 
 def append_series_rows(
     by_ts: dict[str, dict[str, Any]],
-    cols: set[str],
+    cols: list[str],
     series_list: list[dict[str, Any]],
     column_name_fn: Callable[[str], str],
 ) -> None:
     for series in series_list:
-        col = column_name_fn(str(series.get("name") or ""))
-        cols.add(col)
+        base_col = column_name_fn(str(series.get("name") or ""))
+        col = base_col
+        suffix = 2
+        while col in cols:
+            col = f"{base_col}_{suffix}"
+            suffix += 1
+        cols.append(col)
         for point in (series.get("points") or []):
             ts_utc = str(point.get("t") or "")
             row = by_ts.setdefault(ts_utc, {})
@@ -217,7 +222,11 @@ def matter_csv_column_name(series_name: str) -> str:
     return "_".join(parts) if len(parts) > 1 else "matter_unknown"
 
 
-def redlab_csv_column_name(series_name: str, custom_names: dict[str, str] | None = None) -> str:
+def redlab_csv_column_name(
+    series_name: str,
+    custom_names: dict[str, Any] | None = None,
+    device_numbers: dict[str, int] | None = None,
+) -> str:
     device = ""
     channel = ""
     for part in str(series_name or "").split(" | "):
@@ -227,6 +236,11 @@ def redlab_csv_column_name(series_name: str, custom_names: dict[str, str] | None
         if part.startswith("channel="):
             channel = part.split("=", 1)[1]
 
+    channel_prefix = _sanitize(channel).lower()
+    if device and device_numbers is not None:
+        device_number = device_numbers.setdefault(device, len(device_numbers) + 1)
+        channel_prefix = f"d{device_number}{channel_prefix}"
+
     if custom_names:
         lookup_keys = []
         if device and channel:
@@ -234,14 +248,19 @@ def redlab_csv_column_name(series_name: str, custom_names: dict[str, str] | None
         if channel:
             lookup_keys.append(channel)
         for key in lookup_keys:
-            name = str(custom_names.get(key, "") or "").strip()
+            raw_name = custom_names.get(key, "")
+            if isinstance(raw_name, bool):
+                continue
+            if isinstance(raw_name, dict):
+                raw_name = raw_name.get("name", "")
+            name = str(raw_name or "").strip()
             if name:
+                if channel_prefix:
+                    return f"{_sanitize(name).lower()}_({channel_prefix})"
                 return _sanitize(name).lower()
 
-    if device and channel:
-        return f"{_sanitize(device)}_{_sanitize(channel)}"
-    if channel:
-        return _sanitize(channel)
+    if channel_prefix:
+        return channel_prefix
     return "unknown"
 
 

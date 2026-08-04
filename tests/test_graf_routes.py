@@ -127,7 +127,7 @@ def _build_ctx(**overrides):
         "append_series_rows_fn": lambda *_args: None,
         "csv_export_response_fn": lambda **_kwargs: Response("csv-response", mimetype="text/csv"),
         "mscl_csv_column_name_fn": lambda name, *_args: name,
-        "redlab_csv_column_name_fn": lambda name: name,
+        "redlab_csv_column_name_fn": lambda name, *_args: name,
         "pyrometers_csv_column_name_fn": lambda name: name,
         "messkluppe_csv_column_name_fn": lambda name: name,
         "matter_csv_column_name_fn": lambda name: name,

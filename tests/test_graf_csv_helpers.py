@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from app.graf.graf_csv_helpers import build_csv_content, make_csv_response
+from app.graf.graf_csv_helpers import append_series_rows, build_csv_content, make_csv_response
 
 
 def _parse_iso_ts(value):
@@ -26,6 +26,22 @@ class GrafCsvHelpersTests(unittest.TestCase):
         response = make_csv_response("name,value\r\nДатчик,1\r\n", "export.csv")
         self.assertTrue(response.get_data().startswith("\xef\xbb\xbf".encode("latin1")))
         self.assertEqual(response.mimetype, "text/csv")
+
+    def test_append_series_rows_keeps_duplicate_channel_columns_distinct_and_ordered(self):
+        by_ts = {}
+        cols = []
+        append_series_rows(
+            by_ts,
+            cols,
+            [
+                {"name": "device=redlab_A | channel=ch0", "points": [{"t": "2026-05-07T10:00:00Z", "v": 10}]},
+                {"name": "device=redlab_B | channel=ch0", "points": [{"t": "2026-05-07T10:00:00Z", "v": 20}]},
+            ],
+            lambda _name: "outdoor_(d1ch0)",
+        )
+
+        self.assertEqual(cols, ["outdoor_(d1ch0)", "outdoor_(d1ch0)_2"])
+        self.assertEqual(by_ts["2026-05-07T10:00:00Z"], {"outdoor_(d1ch0)": 10, "outdoor_(d1ch0)_2": 20})
 
 
 if __name__ == "__main__":

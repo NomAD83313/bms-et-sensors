@@ -230,6 +230,7 @@ function prettySeriesName(rawName) {
     return prettyMatterName(name);
   }
   if (name.startsWith("redlab:")) {
+    if (typeof redlabLineLabel === "function") return redlabLineLabel(name);
     const rest = name.slice("redlab:".length);
     if (rest.startsWith("channel=")) return `RedLab ${rest.split("=", 2)[1] || "channel"}`;
     const { device = "", channel = "", channel_name: channelName = "" } = parseSeriesTags(rest);

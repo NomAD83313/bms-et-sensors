@@ -536,7 +536,7 @@ def build_backend_services(
     def csv_export_response(
         *,
         by_ts: dict[str, dict[str, Any]],
-        cols: set[str],
+        cols: list[str],
         precision: int,
         filename_prefix: str,
         sample_key: str,
@@ -545,7 +545,7 @@ def build_backend_services(
         delimiter: str = ",",
         decimal_separator: str = ".",
     ):
-        ordered_cols = [f"{column_prefix}{col}" for col in sorted(cols)]
+        ordered_cols = [f"{column_prefix}{col}" for col in cols]
         csv_content = build_csv_content(
             by_ts,
             ordered_cols,
