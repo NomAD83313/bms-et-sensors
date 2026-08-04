@@ -1391,7 +1391,7 @@
                 const pair = input.dataset.channelPair || '';
                 const single = input.dataset.channel || '';
                 const val = String(input.value || "").trim();
-                if (!val || (!pair && !single)) return;
+                if (!pair && !single) return;
                 let channels = [];
                 if (single) channels = [String(single).replace(/\D/g, '')];
                 else channels = String(pair).split("|").map((s) => String(s).replace(/\D/g, '')).filter(Boolean);

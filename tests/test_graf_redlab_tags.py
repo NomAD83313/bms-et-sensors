@@ -75,17 +75,44 @@ class GrafRedLabTagTests(unittest.TestCase):
 
     def test_redlab_csv_column_name_uses_device_and_channel(self):
         name = "device=redlab_01A31CE0 | channel=ch0"
-        self.assertEqual(redlab_csv_column_name(name), "redlab_01A31CE0_ch0")
+        self.assertEqual(redlab_csv_column_name(name), "ch0")
+        self.assertEqual(redlab_csv_column_name(name, device_numbers={}), "d1ch0")
 
     def test_redlab_csv_column_name_uses_custom_channel_names(self):
         name = "device=redlab_01A31CE0 | channel=ch0"
         self.assertEqual(
             redlab_csv_column_name(name, {"redlab_01A31CE0|ch0": "Left Sensor"}),
-            "left_sensor",
+            "left_sensor_(ch0)",
         )
         self.assertEqual(
             redlab_csv_column_name(name, {"ch0": "Left Sensor"}),
-            "left_sensor",
+            "left_sensor_(ch0)",
+        )
+        self.assertEqual(
+            redlab_csv_column_name(
+                name,
+                {"redlab_01A31CE0|ch0": {"enabled": True, "name": "Left Sensor"}},
+            ),
+            "left_sensor_(ch0)",
+        )
+        self.assertEqual(
+            redlab_csv_column_name(name, {"redlab_01A31CE0|ch0": True}),
+            "ch0",
+        )
+
+    def test_redlab_csv_column_name_assigns_device_numbers_in_first_seen_order(self):
+        device_numbers = {}
+        self.assertEqual(
+            redlab_csv_column_name("device=redlab_A | channel=ch0", device_numbers=device_numbers),
+            "d1ch0",
+        )
+        self.assertEqual(
+            redlab_csv_column_name("device=redlab_A | channel=ch1", device_numbers=device_numbers),
+            "d1ch1",
+        )
+        self.assertEqual(
+            redlab_csv_column_name("device=redlab_B | channel=ch0", device_numbers=device_numbers),
+            "d2ch0",
         )
 
     def test_pyrometers_flux_selects_only_object_temperature(self):

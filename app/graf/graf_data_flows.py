@@ -99,7 +99,7 @@ def build_single_export_response(
 
     series_list = load_series_fn(start_expr, stop_expr, window, raw_mode)
     by_ts: dict[str, dict[str, Any]] = {}
-    cols: set[str] = set()
+    cols: list[str] = []
     append_series_rows_fn(by_ts, cols, series_list, naming_fn)
     return csv_export_response_fn(
         by_ts=by_ts,
@@ -147,7 +147,7 @@ def build_all_export_response(
     matter_series = load_matter_environment_series_fn(start_expr, stop_expr, window, raw_mode)
 
     by_ts: dict[str, dict[str, Any]] = {}
-    cols: set[str] = set()
+    cols: list[str] = []
     append_series_rows_fn(by_ts, cols, mscl_series, mscl_csv_column_name_fn)
     append_series_rows_fn(by_ts, cols, redlab_series, lambda name: f"redlab_{redlab_csv_column_name_fn(name)}")
     append_series_rows_fn(by_ts, cols, pyrometers_series, pyrometers_csv_column_name_fn)

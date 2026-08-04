@@ -68,6 +68,7 @@
           c12: toXY(data.panels.matter_pressure || []),
           c13: toXY(data.panels.matter_pm || []),
         };
+        if (typeof setRedlabDeviceOrder === "function") setRedlabDeviceOrder(chartSeries.c1);
         const panelMeta = data.panel_meta || {};
         panelMetaByChart.c1 = panelMeta.redlab_temperature || {};
         panelMetaByChart.c2 = panelMeta.mscl_temperature || {};
