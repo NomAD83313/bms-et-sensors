@@ -5,10 +5,18 @@ from app.pyrometers.pyrometers_config import load_config, logging_interval_ms, n
 
 class PyrometersConfigTest(unittest.TestCase):
     def test_load_config_keeps_logging_frequency_user_controlled(self):
-        config = load_config({"THERMOMETER_LOG_HZ": "20", "THERMOMETER_STREAM_STALE_SEC": "4.5"})
+        config = load_config({
+            "THERMOMETER_LOG_HZ": "20",
+            "THERMOMETER_STREAM_STALE_SEC": "4.5",
+            "THERMOMETER_STARTUP_DISCARD_SAMPLES": "3",
+        })
 
         self.assertEqual(config.log_hz, 20.0)
         self.assertEqual(config.stream_stale_sec, 4.5)
+        self.assertEqual(config.startup_discard_samples, 3)
+
+    def test_load_config_discards_twenty_startup_samples_by_default(self):
+        self.assertEqual(load_config({}).startup_discard_samples, 20)
 
     def test_normalize_logging_hz_accepts_full_stream_aliases(self):
         for value in ("0", "0.0", "full", "max", "unlimited"):

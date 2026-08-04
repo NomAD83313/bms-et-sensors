@@ -64,6 +64,7 @@ THERMOMETER_OPTRIS_STALE_REOPEN_SEC = float(os.getenv("PYROMETERS_OPTRIS_STALE_R
 THERMOMETER_EMPTY_STREAM_SLEEP_SEC = CONFIG.empty_stream_sleep_sec
 THERMOMETER_STREAM_CHUNK_SIZE = CONFIG.stream_chunk_size
 THERMOMETER_LOG_HZ = CONFIG.log_hz
+THERMOMETER_STARTUP_DISCARD_SAMPLES = CONFIG.startup_discard_samples
 THERMOMETER_INFLUX_BATCH_SIZE = CONFIG.influx_batch_size
 THERMOMETER_INFLUX_FLUSH_MS = CONFIG.influx_flush_ms
 THERMOMETER_MEASUREMENT = CONFIG.measurement
@@ -95,6 +96,7 @@ class DeviceRuntime:
     stale_started_monotonic: float | None = None
     last_stale_reopen_monotonic: float | None = None
     next_log_due_ts: float | None = None
+    startup_discard_remaining: int = 0
     consecutive_poll_misses: int = 0
 
 
@@ -156,6 +158,8 @@ DEVICE_STATES: dict[str, dict[str, Any]] = {
         "optris_stale_reopen_sec": THERMOMETER_OPTRIS_STALE_REOPEN_SEC,
         "logging_target_hz": THERMOMETER_LOG_HZ,
         "logging_interval_ms": round(1000.0 / THERMOMETER_LOG_HZ, 3) if THERMOMETER_LOG_HZ > 0 else 0.0,
+        "startup_discard_samples": THERMOMETER_STARTUP_DISCARD_SAMPLES,
+        "startup_discard_remaining": 0,
         "influx_batch_size": THERMOMETER_INFLUX_BATCH_SIZE,
         "influx_flush_ms": THERMOMETER_INFLUX_FLUSH_MS,
         "frames_total": 0,
@@ -342,6 +346,26 @@ def _record_logged_sample_metrics(runtime: DeviceRuntime, observed_ts: float) ->
     }
     _update_device_state(runtime.profile.id, **metrics)
     return metrics
+
+
+def _begin_measurement_session(runtime: DeviceRuntime) -> None:
+    runtime.next_log_due_ts = None
+    runtime.startup_discard_remaining = THERMOMETER_STARTUP_DISCARD_SAMPLES
+    _update_device_state(
+        runtime.profile.id,
+        startup_discard_remaining=runtime.startup_discard_remaining,
+    )
+
+
+def _discard_startup_sample(runtime: DeviceRuntime) -> bool:
+    if runtime.startup_discard_remaining <= 0:
+        return False
+    runtime.startup_discard_remaining -= 1
+    _update_device_state(
+        runtime.profile.id,
+        startup_discard_remaining=runtime.startup_discard_remaining,
+    )
+    return True
 
 
 def _open_serial(profile: DeviceProfile, runtime: DeviceRuntime, timeout_ms: int | None = None) -> serial.Serial:
@@ -832,10 +856,12 @@ def _device_loop(runtime: DeviceRuntime) -> None:
                         time.sleep(0.05)
                     _verify_sensor_identity(profile, ser)
                     _prepare_stream(profile, ser)
+                    _begin_measurement_session(runtime)
                     runtime.stream_opened_monotonic = time.monotonic()
                 if _process_ir_setting_requests(profile, runtime, ser):
                     frame_buffer.clear()
                     _reset_stream_runtime(runtime)
+                    _begin_measurement_session(runtime)
                     runtime.stream_opened_monotonic = time.monotonic()
                 chunk = _read_serial_chunk(ser)
             except Exception as exc:
@@ -912,27 +938,28 @@ def _device_loop(runtime: DeviceRuntime) -> None:
                         while next_due <= observed_ts:
                             next_due += min_interval
                         runtime.next_log_due_ts = next_due
-                    log_metric_state = _record_logged_sample_metrics(runtime, observed_ts)
-                    _update_device_state(profile.id, **log_metric_state)
-                    try:
-                        _write_measurement(
-                            profile,
-                            write_api,
-                            value_c,
-                            frame_hex,
-                            observed_at,
-                            "binary stream",
-                            {
-                                "channel_1_c": parsed.get("channel_1_c"),
-                                "channel_2_c": parsed.get("channel_2_c"),
-                                "channel_3_c": parsed.get("channel_3_c"),
-                                "sensor_head_temperature_c": parsed.get("sensor_head_temperature_c"),
-                                "controller_box_temperature_c": parsed.get("controller_box_temperature_c"),
-                                "object_temperature_c": parsed.get("object_temperature_c"),
-                            },
-                        )
-                    except Exception as exc:
-                        _update_device_state(profile.id, last_error=f"influx write failed: {exc}")
+                    if not _discard_startup_sample(runtime):
+                        log_metric_state = _record_logged_sample_metrics(runtime, observed_ts)
+                        _update_device_state(profile.id, **log_metric_state)
+                        try:
+                            _write_measurement(
+                                profile,
+                                write_api,
+                                value_c,
+                                frame_hex,
+                                observed_at,
+                                "binary stream",
+                                {
+                                    "channel_1_c": parsed.get("channel_1_c"),
+                                    "channel_2_c": parsed.get("channel_2_c"),
+                                    "channel_3_c": parsed.get("channel_3_c"),
+                                    "sensor_head_temperature_c": parsed.get("sensor_head_temperature_c"),
+                                    "controller_box_temperature_c": parsed.get("controller_box_temperature_c"),
+                                    "object_temperature_c": parsed.get("object_temperature_c"),
+                                },
+                            )
+                        except Exception as exc:
+                            _update_device_state(profile.id, last_error=f"influx write failed: {exc}")
             elif _stream_is_stale(runtime):
                 _handle_stale_stream(profile, runtime, frame_buffer)
                 if _stale_stream_reopen_due(profile, runtime):
@@ -993,6 +1020,7 @@ def _device_loop_poll(runtime: DeviceRuntime) -> None:
                             _write_serial_commands(ser, build_classic_ct_burst_stop_commands(profile.checksum_enabled))
                             time.sleep(0.05)
                         _verify_sensor_identity(profile, ser)
+                        _begin_measurement_session(runtime)
                     with POLL_SERIAL_BUS_LOCK:
                         _process_ir_setting_requests(profile, runtime, ser)
                         _drain_serial_input(ser)
@@ -1088,15 +1116,16 @@ def _device_loop_poll(runtime: DeviceRuntime) -> None:
                     while next_due <= observed_ts:
                         next_due += min_interval
                     runtime.next_log_due_ts = next_due
-                log_metric_state = _record_logged_sample_metrics(runtime, observed_ts)
-                _update_device_state(profile.id, **log_metric_state)
-                try:
-                    _write_measurement(
-                        profile, write_api, float(value_c), frame_hex, observed_at, "poll",
-                        {"object_temperature_c": value_c},
-                    )
-                except Exception as exc:
-                    _update_device_state(profile.id, last_error=f"influx write failed: {exc}")
+                if not _discard_startup_sample(runtime):
+                    log_metric_state = _record_logged_sample_metrics(runtime, observed_ts)
+                    _update_device_state(profile.id, **log_metric_state)
+                    try:
+                        _write_measurement(
+                            profile, write_api, float(value_c), frame_hex, observed_at, "poll",
+                            {"object_temperature_c": value_c},
+                        )
+                    except Exception as exc:
+                        _update_device_state(profile.id, last_error=f"influx write failed: {exc}")
 
             time.sleep(max(0.001, poll_interval_sec))
     finally:

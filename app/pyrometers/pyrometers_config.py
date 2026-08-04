@@ -27,6 +27,7 @@ class PyrometerConfig:
     empty_stream_sleep_sec: float
     stream_chunk_size: int
     log_hz: float
+    startup_discard_samples: int
     influx_batch_size: int
     influx_flush_ms: int
     measurement: str
@@ -52,6 +53,7 @@ def load_config(env: Mapping[str, str] | None = None) -> PyrometerConfig:
         empty_stream_sleep_sec=float(_env(raw_env, "THERMOMETER_EMPTY_STREAM_SLEEP_SEC", "0.02")),
         stream_chunk_size=int(_env(raw_env, "THERMOMETER_STREAM_CHUNK_SIZE", "512")),
         log_hz=float(_env(raw_env, "THERMOMETER_LOG_HZ", "10")),
+        startup_discard_samples=max(0, int(_env(raw_env, "THERMOMETER_STARTUP_DISCARD_SAMPLES", "20"))),
         influx_batch_size=int(_env(raw_env, "THERMOMETER_INFLUX_BATCH_SIZE", "500")),
         influx_flush_ms=int(_env(raw_env, "THERMOMETER_INFLUX_FLUSH_MS", "1000")),
         measurement=_env(raw_env, "THERMOMETER_MEASUREMENT", "pyrometers"),
