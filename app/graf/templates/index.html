@@ -427,11 +427,14 @@
     {% if show_redlab %}
     {{ render_panel("c1", "Measurement Computing Corp. USB-TC", "redlab", "tempChannelList", "tempChannelToggleAll") }}
     {% endif %}
-    {% if show_almemo %}
-    {{ render_panel("c4", "ALMEMO Live", "series", "seriesChannelList-c4", "seriesChannelToggleAll-c4") }}
-    {% endif %}
     {% if show_pyrometers %}
     {{ render_panel("c5", "Pyrometers", "series", "seriesChannelList-c5", "seriesChannelToggleAll-c5") }}
+    {% endif %}
+    {% if show_mscl %}
+    {{ render_panel("c2", "MSCL Temperature", "series", "seriesChannelList-c2", "seriesChannelToggleAll-c2") }}
+    {% endif %}
+    {% if show_almemo %}
+    {{ render_panel("c4", "ALMEMO Live", "series", "seriesChannelList-c4", "seriesChannelToggleAll-c4") }}
     {% endif %}
     {% if show_messkluppe %}
     {{ render_panel("c6", "Messkluppe Force", "series", "seriesChannelList-c6", "seriesChannelToggleAll-c6") }}
@@ -444,9 +447,6 @@
     {% endif %}
     {% if show_messkluppe_temperatures %}
     {{ render_panel("c9", "Messkluppe Temperatures", "series", "seriesChannelList-c9", "seriesChannelToggleAll-c9") }}
-    {% endif %}
-    {% if show_mscl %}
-    {{ render_panel("c2", "MSCL Temperature", "series", "seriesChannelList-c2", "seriesChannelToggleAll-c2") }}
     {% endif %}
     {% if show_matter %}
     {{ render_panel("c3", "Matter Temperature", "series", "seriesChannelList-c3", "seriesChannelToggleAll-c3") }}

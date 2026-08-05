@@ -50,6 +50,14 @@
 				var itemlistHTML = '';
 				var currentHost = window.location.hostname || "localhost";
 				var globalIndex = 0;
+				function renderItem(item, index) {
+					var itemLink = (item.link || '').replace(/\{\{host\}\}/g, currentHost);
+					var itemName = item.alt || '';
+					return '<a id="dash-item-'+index+'" class="dash-item" href="'+itemLink+'" title="'+itemName+'">' +
+						'<i class="'+item.icon+' fa-fw"></i>' +
+						'<span class="dash-item-label">'+itemName+'</span>' +
+						'</a>';
+				}
 				if (config.groups && Array.isArray(config.groups)) {
 					for (var g = 0; g < config.groups.length; g++) {
 						var group = config.groups[g];
@@ -58,8 +66,7 @@
 						itemlistHTML += '<div class="dash-row-items">';
 						for (var i = 0; i < group.items.length; i++) {
 							var item = group.items[i];
-							var itemLink = (item.link || '').replace(/\{\{host\}\}/g, currentHost);
-							itemlistHTML += '<a id="dash-item-'+globalIndex+'" href="'+itemLink+'" title="'+item.alt+'"><i class="'+item.icon+' fa-fw"></i></a>';
+							itemlistHTML += renderItem(item, globalIndex);
 							globalIndex++;
 						}
 						itemlistHTML += '</div></div>';
@@ -68,8 +75,7 @@
 					itemlistHTML += '<div class="dash-row"><div class="dash-row-title"></div><div class="dash-row-items">';
 					for (var j = 0; j < config.items.length; j++) {
 						var itemSolo = config.items[j];
-						var itemLinkSolo = (itemSolo.link || '').replace(/\{\{host\}\}/g, currentHost);
-						itemlistHTML += '<a id="dash-item-'+j+'" href="'+itemLinkSolo+'" title="'+itemSolo.alt+'"><i class="'+itemSolo.icon+' fa-fw"></i></a>';
+						itemlistHTML += renderItem(itemSolo, j);
 					}
 					itemlistHTML += '</div></div>';
 				}

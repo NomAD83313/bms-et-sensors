@@ -61,9 +61,24 @@ body {
 	}
 }
 
-.dash-row-items > * {
-	padding: 15px;
+.dash-item {
+	display: grid;
+	justify-items: center;
+	align-content: center;
+	gap: 7px;
+	min-width: 104px;
+	padding: 12px 8px;
 	margin: 0 auto;
+	text-align: center;
+	text-decoration: none;
+}
+
+.dash-item-label {
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 0.24em;
+	font-weight: 600;
+	line-height: 1.2;
+	max-width: 132px;
 }
 
 

@@ -5,10 +5,10 @@ from flask import render_template
 
 _PANEL_ORDER: list[tuple[str, str]] = [
     ("show_redlab", "c1"),
-    ("show_mscl", "c2"),
-    ("show_matter", "c3"),
-    ("show_almemo", "c4"),
     ("show_pyrometers", "c5"),
+    ("show_mscl", "c2"),
+    ("show_almemo", "c4"),
+    ("show_matter", "c3"),
     ("show_messkluppe", "c6"),
     ("show_messkluppe_orientation", "c7"),
     ("show_messkluppe_battery", "c8"),
