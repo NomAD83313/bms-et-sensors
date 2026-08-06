@@ -15,8 +15,17 @@ from influxdb_client.client.write_api import SYNCHRONOUS  # type: ignore
 
 app = Flask(__name__)
 
+
+def _no_cache_headers(content_type: str) -> dict[str, str]:
+    return {
+        "Content-Type": content_type,
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
 ALMEMO_PORT_ENV = os.getenv("ALMEMO_PORT", "").strip()
-ALMEMO_BAUD = 9600
+ALMEMO_BAUD = int(os.getenv("ALMEMO_BAUD", "9600"))
 ALMEMO_TIMEOUT_MS = int(os.getenv("ALMEMO_TIMEOUT_MS", "1500"))
 ALMEMO_EOL = os.getenv("ALMEMO_EOL", "\\r\\n")
 ALMEMO_PROBE_TIMEOUT_MS = int(os.getenv("ALMEMO_PROBE_TIMEOUT_MS", "2000"))
@@ -837,13 +846,25 @@ def _send_command_sequence(steps: list[dict[str, Any]]) -> dict[str, Any]:
                     except Exception as exc:
                         _close_pser()
                         return {"ok": False, "error": f"ALMEMO session switch failed: {exc}", "sequence": sequence}
-                for step in normalized_steps:
+                for idx, step in enumerate(normalized_steps):
+                    is_write_only_step = step["read_lines"] <= 0
+                    if idx == 0:
+                        pre_drain_max_sec = 0.35
+                        pre_drain_quiet_sec = 0.10
+                    elif is_write_only_step:
+                        pre_drain_max_sec = 0.06
+                        pre_drain_quiet_sec = 0.03
+                    else:
+                        pre_drain_max_sec = 0.15
+                        pre_drain_quiet_sec = 0.05
                     result = _send_command_on_active_serial(
                         step["command"],
                         timeout_ms=step["timeout_ms"],
                         read_lines=step["read_lines"],
                         raw=step["raw"],
                         eol=step["eol"],
+                        pre_drain_max_sec=pre_drain_max_sec,
+                        pre_drain_quiet_sec=pre_drain_quiet_sec,
                     )
                     sequence.append(result)
                     if not result.get("ok"):
@@ -880,6 +901,8 @@ def _send_command_on_active_serial(
     read_lines: int,
     raw: bool,
     eol: str | None = None,
+    pre_drain_max_sec: float = 0.35,
+    pre_drain_quiet_sec: float = 0.10,
 ) -> dict[str, Any]:
     payload = command
     if not raw:
@@ -889,7 +912,7 @@ def _send_command_on_active_serial(
     for attempt in range(2):
         try:
             ser = _get_pser()
-            _discard_input_until_quiet(ser, max_sec=0.35, quiet_sec=0.10)
+            _discard_input_until_quiet(ser, max_sec=pre_drain_max_sec, quiet_sec=pre_drain_quiet_sec)
             ser.reset_input_buffer()
             ser.reset_output_buffer()
             # reset_input_buffer() clears the OS-side queue but does not
@@ -923,27 +946,30 @@ def _send_command_on_active_serial(
 @app.get("/")
 def index():
     path = Path(__file__).with_name("ui.html")
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8"), 200, _no_cache_headers("text/html; charset=utf-8")
 
 
 @app.get("/ui.js")
 def ui_js():
     path = Path(__file__).with_name("ui.js")
-    return path.read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript"}
+    return path.read_text(encoding="utf-8"), 200, _no_cache_headers("application/javascript")
 
 
 @app.get("/device-common.css")
 def device_common_css():
     path = Path(__file__).with_name("device-common.css")
-    return path.read_text(encoding="utf-8"), 200, {"Content-Type": "text/css"}
+    return path.read_text(encoding="utf-8"), 200, _no_cache_headers("text/css")
 
 
 def _cache_health_result(res: dict[str, Any]):
     global _LAST_HEALTH_DATA, _LAST_HEALTH_AT
+    enriched = dict(res)
+    enriched["serial_baud"] = ALMEMO_BAUD
+    enriched["serial_flow_control"] = "XON/XOFF"
     with HEALTH_CACHE_LOCK:
-        _LAST_HEALTH_DATA = res
+        _LAST_HEALTH_DATA = enriched
         _LAST_HEALTH_AT = time.monotonic()
-    return jsonify(res)
+    return jsonify(enriched)
 
 
 @app.get("/health")
@@ -981,7 +1007,7 @@ def health():
             if _LAST_HEALTH_DATA:
                 return jsonify(_LAST_HEALTH_DATA)
         status = "ok" if _device_recently_ok(max_age_sec=max(5.0, float(ALMEMO_TIMEOUT_MS) / 300.0)) else "cable_only"
-        return jsonify({"status": status, "port": port, "port_present": True, "reason": "probe_busy"})
+        return _cache_health_result({"status": status, "port": port, "port_present": True, "reason": "probe_busy"})
 
     try:
         # Re-check cache under probe lock: another thread may have just updated it
@@ -993,7 +1019,7 @@ def health():
         acquired = SERIAL_LOCK.acquire(timeout=3.0)
         if not acquired:
             status = "ok" if _device_recently_ok(max_age_sec=max(5.0, float(ALMEMO_TIMEOUT_MS) / 300.0)) else "cable_only"
-            return jsonify({"status": status, "port": port, "port_present": True, "reason": "serial_busy"})
+            return _cache_health_result({"status": status, "port": port, "port_present": True, "reason": "serial_busy"})
 
         device_ok = False
         version = ""

@@ -1,4 +1,9 @@
 let loadingCount = 0;
+const LIVE_POLL_INTERVAL_MS = 500;
+const FAST_LIVE_POLL_INTERVAL_MS = 350;
+let livePollInFlight = false;
+let fastLivePollInFlight = false;
+
 function setLoading(isLoading, statusText = 'Processing...') {
     if (isLoading) loadingCount++;
     else loadingCount--;
@@ -34,6 +39,13 @@ async function loadHealth(force = false){
         const data = await res.json();
         const status = data.status;
         const ok = status === 'ok';
+        const serialBaud = data && data.serial_baud ? String(data.serial_baud) + ' baud' : '-';
+        const serialBaudEl = document.getElementById('heroSerialBaud');
+        if (serialBaudEl) {
+            serialBaudEl.textContent = serialBaud;
+            const blk = serialBaudEl.closest('.stat-block');
+            if (blk) blk.style.display = '';
+        }
         const _portFull = data.port || '';
         document.getElementById('devicePort').textContent = 'CP210x UART Bridge' + (_portFull ? ' (' + _portFull + ')' : '');
         const pill = document.getElementById('deviceStatus');
@@ -447,10 +459,23 @@ function sensorInfoFromP00(data){
 const lines=Array.isArray(data.lines)?data.lines:[];
 for(const line of lines){
 const txt=stripCtrl(line);
-const m=txt.match(/^(\d{2}):\s*([A-Za-z0-9\.\-]+)/);
-if(m){return {ch:m[1],type:m[2],unit:extractUnit(txt)};}
+const m=txt.match(/^(\d{2}):\s*(.+)$/);
+if(m){
+const rawType=String(m[2]||'').trim();
+return {ch:m[1],type:normalizeSensorType(rawType),unit:extractUnit(txt)};
+}
 }
 return {ch:'-',type:'-',unit:'-'};
+}
+function normalizeSensorType(rawType){
+const text=String(rawType||'').replace(/\s+/g,' ').trim();
+if(!text){return '-';}
+// Keep full descriptor for current-shunt plug family to avoid truncation in UI.
+if(/(?:^|\s)(?:ZA)?9601-FS2\s+Shunt\s+E4(?:\b|\s)/i.test(text)){
+return '9601-FS2 Shunt E4';
+}
+const token=text.match(/^([A-Za-z0-9\.\-]+)/);
+return token?token[1]:text;
 }
 function extractUnit(text){
 const t=String(text||'');
@@ -558,7 +583,9 @@ el.scrollTop=el.scrollHeight;
 }
 function _makeLivePoller(cycle){
     return async()=>{
+        if (livePollInFlight) return;
         if (document.body.style.cursor === 'wait') return;
+        livePollInFlight = true;
         try{
             const res=await fetch('api/live/poll');
             const data=await res.json();
@@ -581,12 +608,16 @@ function _makeLivePoller(cycle){
             setOverview('overviewLiveState', _hasData ? 'running ('+liveCycleLabel(activeCycle)+')' : 'waiting for data');
         }catch(err){
             appendLiveLine('Poll: ' + String(err));
+        } finally {
+            livePollInFlight = false;
         }
     };
 }
 function _makeFastLivePoller(rate){
     return async()=>{
+        if (fastLivePollInFlight) return;
         if (document.body.style.cursor === 'wait') return;
+        fastLivePollInFlight = true;
         try{
             const res=await fetch('api/fast-live/poll');
             const data=await res.json();
@@ -609,6 +640,8 @@ function _makeFastLivePoller(rate){
             setOverview('overviewLiveState', _hasData ? 'running (continuous query '+activeRate+' M/s)' : 'waiting for data');
         }catch(err){
             appendLiveLine('Fast poll: ' + String(err));
+        } finally {
+            fastLivePollInFlight = false;
         }
     };
 }
@@ -624,7 +657,7 @@ async function startLive(cycle){
     clearLive();
     try{
         await fetch('api/live/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cycle})});
-        liveTimer=setInterval(_makeLivePoller(cycle),500);
+        liveTimer=setInterval(_makeLivePoller(cycle),LIVE_POLL_INTERVAL_MS);
     } catch(err) {
         console.error('Start live failed', err);
     }
@@ -654,7 +687,7 @@ async function startFastLive(rate){
     clearLive();
     try{
         await fetch('api/fast-live/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rate})});
-        fastLiveTimer=setInterval(_makeFastLivePoller(rate),200);
+        fastLiveTimer=setInterval(_makeFastLivePoller(rate),FAST_LIVE_POLL_INTERVAL_MS);
     } catch(err) {
         console.error('Start fast live failed', err);
     }
@@ -713,7 +746,7 @@ const sel=document.getElementById('liveMode');
 if(sel){const v='print:'+cycle;if([...sel.options].some(o=>o.value===v)){sel.value=v;}}
 document.getElementById('liveStatus').textContent='running ('+liveCycleLabel(cycle)+' print cycle)';
 setOverview('overviewLiveState','running ('+liveCycleLabel(cycle)+')');
-if(!liveTimer){liveTimer=setInterval(_makeLivePoller(cycle),500);}
+if(!liveTimer){liveTimer=setInterval(_makeLivePoller(cycle),LIVE_POLL_INTERVAL_MS);}
 return;
 }
 }catch(_){}
@@ -725,7 +758,7 @@ const sel=document.getElementById('liveMode');
 if(sel){const v='fast:'+rate;if([...sel.options].some(o=>o.value===v)){sel.value=v;}}
 document.getElementById('liveStatus').textContent='running (Continuous Query '+rate+' M/s)';
 setOverview('overviewLiveState','running (CQ '+rate+' M/s)');
-if(!fastLiveTimer){fastLiveTimer=setInterval(_makeFastLivePoller(rate),200);}
+if(!fastLiveTimer){fastLiveTimer=setInterval(_makeFastLivePoller(rate),FAST_LIVE_POLL_INTERVAL_MS);}
 }
 }catch(_){}
 }

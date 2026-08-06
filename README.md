@@ -152,6 +152,10 @@ Note:
   - keeps `mscl-collector` stopped while the configured MSCL base serial path is absent
   - starts `mscl-collector` only after the MSCL serial path is present and stable
   - uses `MSCL_PORT` first, then falls back to a `WSDA-Base-200` path in `/dev/serial/by-id`
+- ALMEMO serial link settings:
+  - set `ALMEMO_BAUD=9600` in `.env` (or keep the default from `.env.example`) to pin UART speed explicitly.
+  - `ALMEMO_BAUD` controls host-to-device serial transport only.
+  - device-side `Conversion Rate` (visible in ALMEMO UI) is a measurement setting and is independent from UART baud.
 - Matter commissioning uses either internal `hci0` BLE or `MATTER_BLE_MODE=disabled` for network-only commissioning.
   - External USB BLE is not used by design.
   - Start Matter services via `./scripts/restart-matter-server.sh` so the selected BLE mode is applied before container recreation.
