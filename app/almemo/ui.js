@@ -600,6 +600,7 @@ function _makeLivePoller(cycle){
             }
             const activeCycle=data&&data.cycle?String(data.cycle):cycle;
             const _hasData = liveLines.length > 0;
+            _setLiveRunning(true);
             if (_hasData) _setLiveStarting(false);
             const _liveLabel = _hasData
                 ? 'running ('+liveCycleLabel(activeCycle)+' print cycle)'
@@ -632,6 +633,7 @@ function _makeFastLivePoller(rate){
             }
             const activeRate=data&&data.rate?String(data.rate):rate;
             const _hasData = liveLines.length > 0;
+            _setLiveRunning(true);
             if (_hasData) _setLiveStarting(false);
             const _fastLabel = _hasData
                 ? 'running (Continuous Query '+activeRate+' M/s)'
@@ -671,6 +673,7 @@ async function stopLive(){
     } catch(err) {
         console.error('Stop live failed', err);
     } finally {
+        _setLiveRunning(false);
         document.getElementById('liveStatus').textContent='stopped';
         setOverview('overviewLiveState','stopped');
     }
@@ -701,6 +704,7 @@ async function stopFastLive(){
     } catch(err) {
         console.error('Stop fast live failed', err);
     } finally {
+        _setLiveRunning(false);
         document.getElementById('liveStatus').textContent='stopped';
         setOverview('overviewLiveState','stopped');
     }
@@ -711,6 +715,12 @@ function _setLiveStarting(starting) {
     btn.disabled = starting;
     btn.textContent = starting ? 'Starting...' : 'Start';
 }
+function _setLiveRunning(running) {
+    const btn = document.getElementById('liveStartBtn');
+    if (!btn) return;
+    btn.classList.toggle('btn-live-running', running);
+    btn.classList.toggle('btn-outline-secondary', !running);
+}
 async function startSelected(){
     const val=document.getElementById('liveMode').value;
     const idx=val.indexOf(':');
@@ -718,6 +728,7 @@ async function startSelected(){
     const param=val.slice(idx+1);
 
     _setLiveStarting(true);
+    _setLiveRunning(true);
     setLoading(true, 'Preparing live stream...');
     try {
         if(mode==='print'){await startLive(param);}
@@ -733,6 +744,7 @@ async function stopSelected(){
         if(liveTimer){await stopLive();}
         if(fastLiveTimer){await stopFastLive();}
     } finally {
+        _setLiveRunning(false);
         setLoading(false);
     }
 }
@@ -744,6 +756,7 @@ if(d.running){
 const cycle=d.cycle||'000001';_lastLiveCycle=cycle;
 const sel=document.getElementById('liveMode');
 if(sel){const v='print:'+cycle;if([...sel.options].some(o=>o.value===v)){sel.value=v;}}
+_setLiveRunning(true);
 document.getElementById('liveStatus').textContent='running ('+liveCycleLabel(cycle)+' print cycle)';
 setOverview('overviewLiveState','running ('+liveCycleLabel(cycle)+')');
 if(!liveTimer){liveTimer=setInterval(_makeLivePoller(cycle),LIVE_POLL_INTERVAL_MS);}
@@ -756,11 +769,14 @@ if(d.running){
 const rate=d.rate||'10';_lastFastRate=rate;
 const sel=document.getElementById('liveMode');
 if(sel){const v='fast:'+rate;if([...sel.options].some(o=>o.value===v)){sel.value=v;}}
+_setLiveRunning(true);
 document.getElementById('liveStatus').textContent='running (Continuous Query '+rate+' M/s)';
 setOverview('overviewLiveState','running (CQ '+rate+' M/s)');
 if(!fastLiveTimer){fastLiveTimer=setInterval(_makeFastLivePoller(rate),FAST_LIVE_POLL_INTERVAL_MS);}
+return;
 }
 }catch(_){}
+_setLiveRunning(false);
 }
 async function readCh(ch, withTime){
     const out=document.getElementById('out');const pretty=document.getElementById('outPretty');
