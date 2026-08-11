@@ -96,9 +96,10 @@ UART interface mode before these pins are connected.
 Current lab node:
 
 - Serial: `BMS-C6P-53AC5C`
-- Matter node id after 2026-05-05 UI commissioning: `6`
-- Commissioned with Matter.js server before the project switched to the
-  internal-`hci0` / no-BLE commissioning policy.
+- Factory-erased and reflashed on 2026-08-11.
+- Current state after erase: uncommissioned, Thread not attached, BLE
+  commissioning window open.
+- Commission through Matter.js Server using the Raspberry Pi internal `hci0`.
 
 ## Thread Mode
 

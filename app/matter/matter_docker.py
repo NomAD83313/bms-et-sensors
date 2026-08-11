@@ -10,6 +10,12 @@ def _docker_not_found_error():
     return getattr(getattr(docker, "errors", None), "NotFound", Exception)
 
 
+def create_client() -> Any:
+    if docker is None:
+        raise RuntimeError("Docker SDK is unavailable")
+    return docker.from_env()
+
+
 def container_status(client: Any, name: str) -> str:
     try:
         container = client.containers.get(name)

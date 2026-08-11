@@ -102,14 +102,16 @@ Expected outputs:
 - `build-ota-next/esp32c6_devkitc_matter_node-v1.1.9-ota1.local-update.json`
   is a Matter Server local-update descriptor for the first OTA transfer test.
 
-To make `python-matter-server` find a local update, place both files in its
-`--ota-provider-dir` and restart the server so it reloads local `*.json`
-descriptors:
+The following files were prepared for the earlier local OTA prototype:
 
 ```text
 esp32c6_devkitc_matter_node-ota.bin
 esp32c6_devkitc_matter_node-v1.1.9-ota1.local-update.json
 ```
+
+The current Matter.js Server deployment does not configure a local OTA provider
+directory. Revalidate and document the Matter.js OTA-provider workflow before
+using these files for an OTA transfer.
 
 Serial-flash the first OTA-layout image without erasing flash:
 

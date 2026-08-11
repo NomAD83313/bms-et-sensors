@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SYSCTL_CONF="${BMS_OTBR_SYSCTL_CONF:-/etc/sysctl.d/99-bms-openthread.conf}"
 RCP_BRIDGE_SERVICE="${BMS_OTBR_RCP_BRIDGE_SERVICE:-/etc/systemd/system/bms-otbr-rcp-bridge.service}"
+RCP_WEB_ALIAS_SERVICE="${BMS_OTBR_RCP_WEB_ALIAS_SERVICE:-/etc/systemd/system/bms-otbr-rcp-web-alias.service}"
+LEGACY_RCP_PROXY_SERVICE="${BMS_OTBR_LEGACY_RCP_PROXY_SERVICE:-/etc/systemd/system/bms-otbr-rcp-proxy.service}"
+RCP_WEB_RELAY_ADDRESS="${BMS_OTBR_RCP_WEB_RELAY_ADDRESS:-172.17.0.1}"
+RCP_WEB_RELAY_PORT="${BMS_OTBR_RCP_WEB_RELAY_PORT:-18080}"
 PROC_ROOT="${BMS_OTBR_PROC_ROOT:-/proc}"
 SYS_CLASS_NET_ROOT="${BMS_OTBR_SYS_CLASS_NET_ROOT:-/sys/class/net}"
 DEV_ROOT="${BMS_OTBR_DEV_ROOT:-/dev}"
@@ -176,6 +180,67 @@ EOF
   log_ok "Persistent RCP TCP bridge service is enabled: bms-otbr-rcp-bridge.service"
 }
 
+install_rcp_web_alias_service() {
+  local alias_interface="$1"
+  local alias_address="$2"
+  local alias_host="${alias_address%/*}"
+
+  if [[ -z "${alias_address}" ]]; then
+    return
+  fi
+  if [[ ! "${alias_address}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+    log_error "OpenThread RCP web alias address is invalid: ${alias_address}"
+    failures=$((failures + 1))
+    return
+  fi
+  check_path "RCP web alias network interface" "${SYS_CLASS_NET_ROOT}/${alias_interface}"
+
+  if [[ "${MODE}" != "apply" ]]; then
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled bms-otbr-rcp-web-alias.service >/dev/null 2>&1; then
+      log_ok "Persistent RCP web alias service is enabled: bms-otbr-rcp-web-alias.service"
+    else
+      log_warn "Persistent RCP web alias service is not installed/enabled."
+      log_warn "Run $0 --apply to expose the RCP web panel at http://${alias_host}/."
+    fi
+    return
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    log_warn "systemctl is not available; cannot install persistent RCP web alias service."
+    return
+  fi
+
+  if systemctl list-unit-files bms-otbr-rcp-proxy.service >/dev/null 2>&1 || [[ -f "${LEGACY_RCP_PROXY_SERVICE}" ]]; then
+    log_info "Removing legacy RCP TCP proxy service."
+    run_sudo systemctl disable --now bms-otbr-rcp-proxy.service >/dev/null 2>&1 || true
+    run_sudo rm -f "${LEGACY_RCP_PROXY_SERVICE}"
+  fi
+
+  log_info "Installing persistent RCP web alias service: ${RCP_WEB_ALIAS_SERVICE}"
+  cat <<EOF | run_sudo tee "${RCP_WEB_ALIAS_SERVICE}" >/dev/null
+[Unit]
+Description=BMS OpenThread RCP web alias
+Documentation=file://${PROJECT_ROOT}/docs/openthread.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/ip address replace ${alias_address} dev ${alias_interface}
+ExecStart=/usr/bin/socat TCP-LISTEN:${RCP_WEB_RELAY_PORT},bind=${RCP_WEB_RELAY_ADDRESS},reuseaddr,fork TCP:10.42.0.2:80
+ExecStopPost=-/usr/sbin/ip address del ${alias_address} dev ${alias_interface}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  run_sudo systemctl daemon-reload
+  run_sudo systemctl enable bms-otbr-rcp-web-alias.service >/dev/null
+  run_sudo systemctl restart bms-otbr-rcp-web-alias.service
+  log_ok "RCP web alias is available at http://${alias_host}/ via ${alias_interface}."
+}
+
 ensure_tun() {
   local tun_path="${DEV_ROOT}/net/tun"
   if [[ -e "$tun_path" ]]; then
@@ -291,6 +356,8 @@ ensure_ipv6_forwarding() {
 RCP_DEVICE="$(read_env_var OTBR_RCP_DEVICE /dev/ttyACM0)"
 RCP_TCP_ENDPOINT="$(read_env_var OTBR_RCP_TCP_ENDPOINT "")"
 INFRA_IF="$(read_env_var OTBR_INFRA_IF wlan0)"
+RCP_WEB_ALIAS_INTERFACE="$(read_env_var OTBR_RCP_WEB_ALIAS_INTERFACE eth0)"
+RCP_WEB_ALIAS_ADDRESS="$(read_env_var OTBR_RCP_WEB_ALIAS_ADDRESS "")"
 
 log_info "OpenThread host check mode: ${MODE}"
 log_info "RCP device: ${RCP_DEVICE}"
@@ -307,6 +374,7 @@ if [[ -n "${RCP_TCP_ENDPOINT}" ]]; then
   check_command socat
   check_network_rcp_endpoint "${RCP_TCP_ENDPOINT}"
   install_network_rcp_bridge_service "${RCP_TCP_ENDPOINT}" "${RCP_DEVICE}"
+  install_rcp_web_alias_service "${RCP_WEB_ALIAS_INTERFACE}" "${RCP_WEB_ALIAS_ADDRESS}"
 elif is_network_rcp_endpoint "${RCP_DEVICE}"; then
   log_warn "Direct TCP RCP in OTBR_RCP_DEVICE is not supported by the stock OTBR image."
   log_warn "Set OTBR_RCP_TCP_ENDPOINT=${RCP_DEVICE} and OTBR_RCP_DEVICE=/dev/ttyOTBR instead."

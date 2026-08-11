@@ -17,7 +17,7 @@ Produce one stable topology snapshot that:
 
 The topology builder merges three classes of evidence:
 
-1. Matter inventory from `python-matter-server`
+1. Matter inventory from Matter.js Server
 2. Matter-side Thread diagnostics (`ThreadNetworkDiagnostics`)
 3. OTBR diagnostics:
    - router table

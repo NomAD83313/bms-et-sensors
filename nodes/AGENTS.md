@@ -35,7 +35,7 @@ This repository contains firmware projects for BMS DOA Matter nodes.
 ## Firmware Rules
 
 - `ESP32-C6-Zero` is a powered Thread node and should remain `Minimal End Device`.
-- Do not switch `ESP32-C6-Zero` to `Sleepy End Device` in the main firmware profile without explicitly validating post-commissioning interview/subscription behavior against `python-matter-server`.
+- Do not switch `ESP32-C6-Zero` to `Sleepy End Device` in the main firmware profile without explicitly validating post-commissioning interview/subscription behavior against Matter.js Server.
 - A future battery-powered Thread node should use a separate low-power profile or separate firmware target.
 
 ## Pairing / Flashing Rules

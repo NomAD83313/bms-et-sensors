@@ -32,7 +32,9 @@ class OpenThreadHostSetupTests(unittest.TestCase):
         (fake_dev / "net").mkdir(parents=True)
         (fake_dev / "ttyACM0").touch()
         (fake_dev / "net" / "tun").touch()
-        (fake_sys_net / "wlan1").mkdir(parents=True)
+        (fake_sys_net / "wlan0").mkdir(parents=True)
+        (fake_sys_net / "wlan1").mkdir()
+        (fake_sys_net / "eth0").mkdir()
         fake_sysctl_conf.write_text("net.ipv6.conf.all.forwarding=1\n", encoding="utf-8")
 
         self._write_executable(fake_bin / "docker", "#!/usr/bin/env bash\nexit 0\n")
@@ -69,6 +71,7 @@ class OpenThreadHostSetupTests(unittest.TestCase):
                 "BMS_OTBR_DEV_ROOT": str(fake_dev),
                 "BMS_OTBR_SYS_CLASS_NET_ROOT": str(fake_sys_net),
                 "BMS_OTBR_SYSCTL_CONF": str(fake_sysctl_conf),
+                "OTBR_INFRA_IF": "wlan0",
                 "ENV_FILE": str(tmp / "missing.env"),
             }
         )
@@ -149,6 +152,47 @@ class OpenThreadHostSetupTests(unittest.TestCase):
                 "PTY,raw,echo=0,link=/dev/ttyOTBR,ignoreeof",
                 service,
             )
+
+    def test_rcp_web_alias_service_adds_only_ethernet_address(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            env_file = tmp / ".env"
+            bridge_service = tmp / "bms-otbr-rcp-bridge.service"
+            web_alias_service = tmp / "bms-otbr-rcp-web-alias.service"
+            legacy_proxy_service = tmp / "bms-otbr-rcp-proxy.service"
+            env_file.write_text(
+                "OTBR_RCP_DEVICE=/dev/ttyOTBR\n"
+                "OTBR_RCP_TCP_ENDPOINT=10.42.0.2:6638\n"
+                "OTBR_RCP_WEB_ALIAS_INTERFACE=eth0\n"
+                "OTBR_RCP_WEB_ALIAS_ADDRESS=10.42.1.2/24\n",
+                encoding="utf-8",
+            )
+            env = self._make_base_env(tmp)
+            env["ENV_FILE"] = str(env_file)
+            env["BMS_OTBR_RCP_BRIDGE_SERVICE"] = str(bridge_service)
+            env["BMS_OTBR_RCP_WEB_ALIAS_SERVICE"] = str(web_alias_service)
+            env["BMS_OTBR_LEGACY_RCP_PROXY_SERVICE"] = str(legacy_proxy_service)
+
+            result = subprocess.run(
+                [str(SCRIPT), "--apply"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            service = web_alias_service.read_text(encoding="utf-8")
+            self.assertIn("Type=simple", service)
+            self.assertIn("ExecStartPre=/usr/sbin/ip address replace 10.42.1.2/24 dev eth0", service)
+            self.assertIn(
+                "ExecStart=/usr/bin/socat TCP-LISTEN:18080,bind=172.17.0.1,reuseaddr,fork TCP:10.42.0.2:80",
+                service,
+            )
+            self.assertIn("ExecStopPost=-/usr/sbin/ip address del 10.42.1.2/24 dev eth0", service)
+            self.assertNotIn("6638", service)
 
 
 if __name__ == "__main__":
