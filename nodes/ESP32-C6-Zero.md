@@ -140,7 +140,7 @@ This node is intentionally treated as a powered Thread node and should stay
 
 Why:
 
-- `python-matter-server` must finish post-commissioning interview and subscriptions
+- Matter.js Server must finish post-commissioning interview and subscriptions
 - forcing this firmware into `Sleepy End Device` caused successful commissioning
   followed by interview/subscription timeouts
 

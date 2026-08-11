@@ -12,6 +12,8 @@ This document describes the OTBR side of the optional Matter/Thread stack used i
 - The restart script prepares `hci0` by stopping stale scans, powering Bluetooth on, unblocking Bluetooth, and bringing `hci0` up before recreating `matter-server`.
 - If `hci0` remains blocked or down, run `sudo rfkill unblock bluetooth && sudo hciconfig hci0 up` from a local shell.
 - Set `MATTER_INTERNAL_BLE_PREPARE=0` only when the host Bluetooth stack must not be touched.
+- Trusted development nodes using test attestation certificates require
+  `MATTER_SERVER_ENABLE_TEST_NET_DCL=true`; keep it disabled for production-only deployments.
 - Use `MATTER_BLE_MODE=disabled ./scripts/restart-matter-server.sh` for network-only commissioning; pair with `network_only: true`.
 - Start or restart `matter-server` with `./scripts/restart-matter-server.sh`; raw `docker restart` preserves stale `BLUETOOTH_ADAPTER` values after HCI renumbering.
 
@@ -97,6 +99,10 @@ OTBR_RCP_BAUD=460800
 OTBR_RCP_DEVICE=/dev/ttyOTBR
 OTBR_RCP_TCP_ENDPOINT=10.42.0.2:6638
 OTBR_RCP_BAUD=460800
+
+# Optional Ethernet alias for the RCP web panel
+OTBR_RCP_WEB_ALIAS_INTERFACE=eth0
+OTBR_RCP_WEB_ALIAS_ADDRESS=10.42.1.2/24
 ```
 
 For network RCPs, `scripts/restart-openthread.sh` starts a host-side `socat` bridge from
@@ -107,6 +113,14 @@ When `scripts/openthread-host-setup.sh --apply` is used with `OTBR_RCP_TCP_ENDPO
 it also installs `bms-otbr-rcp-bridge.service`. The service waits for the RCP TCP
 endpoint before exposing `/dev/ttyOTBR`, which prevents OTBR from starting on an
 unconnected pseudo-tty after host reboot.
+
+When `OTBR_RCP_WEB_ALIAS_ADDRESS` is set, the same setup command installs
+`bms-otbr-rcp-web-alias.service`. It adds the configured address to the Ethernet
+interface. Dashboard nginx recognizes requests for `10.42.1.2` and proxies them
+through an internal host relay to the RCP web panel at `http://10.42.0.2`. OTBR
+continues to use the original RCP socket at `10.42.0.2:6638`; that raw RCP port
+is not exposed on Ethernet. Dashboard remains the default HTTP service on
+`10.42.0.1` and `10.42.1.1`.
 
 ## Host preparation
 
@@ -178,6 +192,32 @@ Security note:
 
 It contains Thread network credentials.
 
+## Dataset location and inspection
+
+The active Thread dataset belongs to OTBR, not Matter.js Server. The pinned OTBR
+container stores it under `/var/lib/thread`; Compose persists that directory on
+the host as `runtime/openthread/thread/`. The files in that directory are OTBR
+runtime state, are not intended for manual editing, and must never be committed.
+
+Show a non-secret operational summary:
+
+```bash
+docker exec openthread-border-router ot-ctl state
+docker exec openthread-border-router ot-ctl dataset networkname
+docker exec openthread-border-router ot-ctl dataset channel
+```
+
+The complete active dataset can be read as an operational TLV with the following
+command, but its output contains the network key and other Thread credentials:
+
+```bash
+docker exec openthread-border-router ot-ctl dataset active -x
+```
+
+Do not paste that output into logs, chat, issue trackers, or tracked files. If a
+local backup is required, redirect it to a root-readable file outside the Git
+worktree and protect it with mode `0600`.
+
 ## Useful checks
 
 Container and service state:
@@ -200,7 +240,7 @@ OTBR is one side of the topology model, but it is not the only source of truth.
 
 The canonical `/thread-topology` snapshot is built by merging:
 
-- Matter inventory from `python-matter-server`
+- Matter inventory from Matter.js Server
 - OTBR router/neighbor/meshdiag diagnostics
 - ordered backend association rules
 

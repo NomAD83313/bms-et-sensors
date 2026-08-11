@@ -1,10 +1,15 @@
 import re
 import unittest
 
-from app.matter.matter_ui import INDEX_HTML
+from app.matter.matter_ui import INDEX_HTML, TEMPLATE_PATH
 
 
 class MatterUiTests(unittest.TestCase):
+    def test_ui_is_loaded_from_external_template(self) -> None:
+        self.assertEqual(TEMPLATE_PATH.name, "index.html")
+        self.assertEqual(TEMPLATE_PATH.parent.name, "templates")
+        self.assertEqual(INDEX_HTML, TEMPLATE_PATH.read_text(encoding="utf-8"))
+
     def test_inline_script_avoids_known_compatibility_breakers(self) -> None:
         script = self._extract_script()
 

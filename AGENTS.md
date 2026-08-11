@@ -35,12 +35,12 @@ RU: Сторонние сервисы: `influxdb`, `grafana`, `dashboard` (`ngin
 
 EN: Optional profile-gated services (Thread / Matter):
 - `openthread-border-router`: OpenThread Border Router; Compose profile `thread`; SonoffE RCP dongle; host networking.
-- `matter-server`: Home Assistant python-matter-server; Compose profile `matter`; host networking.
+- `matter-server`: Matter.js Server; Compose profile `matter`; host networking.
 - `matter-collector`: Matter collector app; Compose profile `matter`; writes normalized sensor values to InfluxDB from Matter Server websocket events.
 
 RU: Опциональные сервисы (профили Thread / Matter):
 - `openthread-border-router`: OpenThread Border Router; профиль `thread`; донгл SonoffE RCP; host networking.
-- `matter-server`: Home Assistant python-matter-server; профиль `matter`; host networking.
+- `matter-server`: Matter.js Server; профиль `matter`; host networking.
 - `matter-collector`: коллектор Matter; профиль `matter`; пишет нормализованные значения датчиков в InfluxDB из websocket-событий Matter Server.
 
 ## Repository map / Карта репозитория

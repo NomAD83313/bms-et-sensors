@@ -2,18 +2,19 @@ import json
 import os
 import threading
 import time
-from copy import deepcopy
 from typing import Any
 
-import docker
 from flask import Flask, Response, jsonify, request, send_from_directory
 from influxdb_client import InfluxDBClient, Point, WritePrecision  # type: ignore
 from influxdb_client.client.write_api import SYNCHRONOUS  # type: ignore
-from websocket import WebSocketApp, create_connection  # type: ignore
+from websocket import WebSocketApp  # type: ignore
 
 try:
-    from .matter_docker import container_status, set_container_running
+    from .matter_control import control_target_action, control_target_payload, get_docker_client
+    from .matter_commands import MatterCommandClient, supports_air_reboot, supports_standard_command
     from .matter_nodes import fetch_matter_node_snapshot
+    from .matter_polling import MatterPollingService, PollingConfig
+    from .matter_snapshot_cache import MatterNodeSnapshotCache
     from .otbr_diag import otbr_diag_snapshot
     from .matter_payload import extract_event
     from .thread_diag import parse_thread_diag_lines, record_to_dict
@@ -22,8 +23,11 @@ try:
     from .thread_topology import build_thread_topology
     from .matter_ui import INDEX_HTML
 except ImportError:
-    from matter_docker import container_status, set_container_running
+    from matter_control import control_target_action, control_target_payload, get_docker_client
+    from matter_commands import MatterCommandClient, supports_air_reboot, supports_standard_command
     from matter_nodes import fetch_matter_node_snapshot
+    from matter_polling import MatterPollingService, PollingConfig
+    from matter_snapshot_cache import MatterNodeSnapshotCache
     from otbr_diag import otbr_diag_snapshot
     from matter_payload import extract_event
     from thread_diag import parse_thread_diag_lines, record_to_dict
@@ -61,38 +65,23 @@ MATTER_NODE_REBOOT_ENABLE_KEY_B64 = os.getenv(
 MATTER_NODE_REBOOT_EVENT_TRIGGER = int(os.getenv("MATTER_NODE_REBOOT_EVENT_TRIGGER", "0xFFF10001"), 0)
 
 app = Flask(__name__)
-DOCKER_CLIENT = docker.from_env()
-MATTER_CONTROL_TARGETS: dict[str, list[str]] = {
-    "openthread": ["openthread-border-router"],
-    "matter-server": ["matter-server"],
-}
 MATTER_STANDARD_COMMANDS: dict[tuple[int, str], dict[str, Any]] = {
     (3, "Identify"): {"payload": {"identifyTime": 5}},
     (6, "Off"): {"payload": {}},
     (6, "On"): {"payload": {}},
     (6, "Toggle"): {"payload": {}},
 }
-MATTER_POLL_ENVIRONMENT_ATTRIBUTES: tuple[tuple[int, str, str], ...] = (
-    (1, "1026", "0"),
-    (2, "1029", "0"),
-    (3, "1027", "0"),
-    (3, "1027", "16"),
-    (3, "1068", "0"),
-    (3, "1066", "0"),
-    (3, "1069", "0"),
-)
-
 _state_lock = threading.Lock()
 _influx_lock = threading.Lock()
 _otbr_diag_lock = threading.Lock()
-_matter_nodes_snapshot_lock = threading.Lock()
 _influx_client: InfluxDBClient | None = None
 _influx_write_api: Any = None
 _last_good_otbr_diag: dict[str, Any] | None = None
-_last_good_matter_nodes_snapshot: list[dict[str, Any]] | None = None
-_last_good_matter_nodes_snapshot_at: float | None = None
-_matter_nodes_snapshot_refresh_inflight = False
-_matter_nodes_snapshot_refresh_thread: threading.Thread | None = None
+_matter_command_client = MatterCommandClient(MATTER_SERVER_WS_URL)
+_matter_nodes_cache = MatterNodeSnapshotCache(
+    fetch_snapshot=lambda: fetch_matter_node_snapshot(MATTER_SERVER_WS_URL),
+    ttl_sec=lambda: MATTER_NODE_SNAPSHOT_TTL_SEC,
+)
 _stop_event = threading.Event()
 _collector_thread: threading.Thread | None = None
 _poller_thread: threading.Thread | None = None
@@ -270,45 +259,13 @@ def _collect_forever() -> None:
 
 
 def _read_attribute_once(node_id: int, attribute_path: str) -> Any | None:
-    ws = None
-    try:
-        ws = create_connection(MATTER_SERVER_WS_URL, timeout=8)
-        # Initial message contains server info.
-        ws.recv()
-        ws.send(
-            json.dumps(
-                {
-                    "message_id": "1",
-                    "command": "read_attribute",
-                    "args": {
-                        "node_id": node_id,
-                        "attribute_path": attribute_path,
-                    },
-                }
-            )
-        )
-        raw = ws.recv()
-        payload = json.loads(raw)
-        if not isinstance(payload, dict):
-            return None
-        result = payload.get("result")
-        if not isinstance(result, dict):
-            return None
-        return result.get(attribute_path)
-    except Exception:
-        return None
-    finally:
-        if ws is not None:
-            try:
-                ws.close()
-            except Exception:
-                pass
+    return _matter_command_client.read_attribute(node_id, attribute_path)
 
 
 def _fetch_otbr_diag_snapshot(timeout_sec: float = 5.0) -> dict[str, Any]:
     global _last_good_otbr_diag
     try:
-        diag = otbr_diag_snapshot(DOCKER_CLIENT)
+        diag = otbr_diag_snapshot(get_docker_client())
     except Exception:
         with _otbr_diag_lock:
             return dict(_last_good_otbr_diag or {})
@@ -329,239 +286,67 @@ def _fetch_otbr_diag_snapshot(timeout_sec: float = 5.0) -> dict[str, Any]:
     return diag
 
 
-def _control_target_payload(target: str) -> dict[str, Any]:
-    services = {name: container_status(DOCKER_CLIENT, name) for name in MATTER_CONTROL_TARGETS.get(target, [])}
-    return {
-        "all_running": bool(services) and all(state == "running" for state in services.values()),
-        "services": services,
-    }
-
-
-def _control_target_action(target: str, action: str) -> dict[str, Any]:
-    if target not in MATTER_CONTROL_TARGETS:
-        return {"success": False, "error": "unknown_target"}
-    if action not in {"start", "stop", "restart"}:
-        return {"success": False, "error": "unknown_action"}
-    if target == "matter-server" and action in {"start", "restart"}:
-        return {
-            "success": False,
-            "error": "host_restart_required",
-            "details": "Start or restart matter-server with ./scripts/restart-matter-server.sh so the selected BLE mode is applied before container recreation.",
-        }
-
-    actions: list[str] = []
-    try:
-        for service_name in MATTER_CONTROL_TARGETS[target]:
-            if action == "restart":
-                actions.append(set_container_running(DOCKER_CLIENT, service_name, False))
-                actions.append(set_container_running(DOCKER_CLIENT, service_name, True))
-            else:
-                actions.append(set_container_running(DOCKER_CLIENT, service_name, action == "start"))
-    except Exception as exc:
-        return {"success": False, "error": str(exc)}
-
-    state = _control_target_payload(target)
-    return {"success": True, "target": target, "action": action, "actions": actions, **state}
-
-
 def _matter_ws_request(command: str, args: dict[str, Any], timeout_sec: float = 8.0) -> dict[str, Any]:
-    message_id = str(int(time.time() * 1000))
-    ws = None
-    try:
-        ws = create_connection(MATTER_SERVER_WS_URL, timeout=timeout_sec)
-        ws.recv()
-        ws.send(json.dumps({"message_id": message_id, "command": command, "args": args}))
-        deadline = time.time() + timeout_sec
-        while time.time() < deadline:
-            raw = ws.recv()
-            payload = json.loads(raw)
-            if not isinstance(payload, dict) or str(payload.get("message_id") or "") != message_id:
-                continue
-            return payload
-        return {"error_code": 408, "details": "matter command timed out"}
-    finally:
-        if ws is not None:
-            try:
-                ws.close()
-            except Exception:
-                pass
+    return _matter_command_client.request(command, args, timeout_sec=timeout_sec)
 
 
 def _node_supports_standard_command(node_id: int, endpoint_id: int, cluster_id: int, command_name: str) -> bool:
     nodes = _get_matter_node_snapshot_cached(blocking=True)
-    for node in nodes:
-        if node.get("node_id") != node_id:
-            continue
-        if not node.get("available"):
-            return False
-        for control in node.get("standard_controls") or []:
-            if (
-                control.get("endpoint_id") == endpoint_id
-                and control.get("cluster_id") == cluster_id
-                and command_name in (control.get("commands") or [])
-            ):
-                return True
-    return False
+    return supports_standard_command(nodes, node_id, endpoint_id, cluster_id, command_name)
 
 
 def _node_supports_air_reboot(node_id: int) -> bool:
     nodes = _get_matter_node_snapshot_cached(blocking=True)
-    for node in nodes:
-        if node.get("node_id") != node_id:
-            continue
-        if not node.get("available"):
-            return False
-        return bool(node.get("air_reboot_supported"))
-    return False
+    return supports_air_reboot(nodes, node_id)
 
 
 def _reset_matter_nodes_snapshot_cache() -> None:
-    global _last_good_matter_nodes_snapshot, _last_good_matter_nodes_snapshot_at
-    global _matter_nodes_snapshot_refresh_inflight, _matter_nodes_snapshot_refresh_thread
-    with _matter_nodes_snapshot_lock:
-        _last_good_matter_nodes_snapshot = None
-        _last_good_matter_nodes_snapshot_at = None
-        _matter_nodes_snapshot_refresh_inflight = False
-        _matter_nodes_snapshot_refresh_thread = None
+    _matter_nodes_cache.reset()
 
 
 def _refresh_matter_node_snapshot_cache() -> list[dict[str, Any]]:
-    global _last_good_matter_nodes_snapshot, _last_good_matter_nodes_snapshot_at
-    global _matter_nodes_snapshot_refresh_inflight
-    try:
-        snapshot = fetch_matter_node_snapshot(MATTER_SERVER_WS_URL)
-        now = time.time()
-        with _matter_nodes_snapshot_lock:
-            _last_good_matter_nodes_snapshot = deepcopy(snapshot)
-            _last_good_matter_nodes_snapshot_at = now
-        return deepcopy(snapshot)
-    finally:
-        with _matter_nodes_snapshot_lock:
-            _matter_nodes_snapshot_refresh_inflight = False
+    return _matter_nodes_cache.refresh()
 
 
 def _trigger_matter_node_snapshot_refresh(force: bool = False, blocking: bool = False) -> bool:
-    global _matter_nodes_snapshot_refresh_inflight, _matter_nodes_snapshot_refresh_thread
-    with _matter_nodes_snapshot_lock:
-        ttl_sec = max(0.0, MATTER_NODE_SNAPSHOT_TTL_SEC)
-        now = time.time()
-        is_fresh = (
-            not force
-            and ttl_sec > 0
-            and _last_good_matter_nodes_snapshot is not None
-            and _last_good_matter_nodes_snapshot_at is not None
-            and (now - _last_good_matter_nodes_snapshot_at) < ttl_sec
-        )
-        if is_fresh or _matter_nodes_snapshot_refresh_inflight:
-            return False
-        _matter_nodes_snapshot_refresh_inflight = True
-
-    if blocking:
-        _refresh_matter_node_snapshot_cache()
-        return True
-
-    def _runner() -> None:
-        try:
-            _refresh_matter_node_snapshot_cache()
-        except Exception as exc:
-            _set_state(last_error=f"matter_snapshot_refresh_error: {exc}")
-
-    thread = threading.Thread(target=_runner, name="matter-node-snapshot-refresh", daemon=True)
-    with _matter_nodes_snapshot_lock:
-        _matter_nodes_snapshot_refresh_thread = thread
-    thread.start()
-    return True
+    return _matter_nodes_cache.trigger_refresh(
+        force=force,
+        blocking=blocking,
+        on_error=lambda exc: _set_state(last_error=f"matter_snapshot_refresh_error: {exc}"),
+    )
 
 
 def _get_matter_node_snapshot_cached(force: bool = False, blocking: bool = True) -> list[dict[str, Any]]:
-    ttl_sec = max(0.0, MATTER_NODE_SNAPSHOT_TTL_SEC)
-    now = time.time()
-    with _matter_nodes_snapshot_lock:
-        cached = deepcopy(_last_good_matter_nodes_snapshot) if _last_good_matter_nodes_snapshot is not None else None
-        fetched_at = _last_good_matter_nodes_snapshot_at
-    if cached is None and not blocking and not force:
-        _trigger_matter_node_snapshot_refresh(force=True, blocking=False)
-        return []
-    if cached is None or force or ttl_sec <= 0:
-        try:
-            return _refresh_matter_node_snapshot_cache()
-        except Exception:
-            if cached is not None:
-                return cached
-            raise
-    if fetched_at is not None and (now - fetched_at) >= ttl_sec:
-        _trigger_matter_node_snapshot_refresh()
-    return cached
+    return _matter_nodes_cache.get(
+        force=force,
+        blocking=blocking,
+        on_error=lambda exc: _set_state(last_error=f"matter_snapshot_refresh_error: {exc}"),
+    )
 
 
 def _matter_node_snapshot_pending() -> bool:
-    with _matter_nodes_snapshot_lock:
-        return _last_good_matter_nodes_snapshot is None and bool(_matter_nodes_snapshot_refresh_inflight)
+    return _matter_nodes_cache.pending()
 
 
-def _poll_target_node_ids() -> list[int]:
-    node_ids: list[int] = []
-    if MATTER_POLL_NODE_ID > 0:
-        node_ids.append(MATTER_POLL_NODE_ID)
-    try:
-        for node in _get_matter_node_snapshot_cached(blocking=False):
-            node_id = node.get("node_id")
-            if isinstance(node_id, int) and node_id > 0 and node_id not in node_ids:
-                node_ids.append(node_id)
-    except Exception as exc:
-        _log(f"matter poll target discovery failed: {exc}")
-    return node_ids
-
-
-def _poll_numeric_attribute(node_id: int, endpoint_id: int, cluster_id: str, attribute_id: str = "0") -> None:
-    value = _read_attribute_once(node_id, f"{endpoint_id}/{cluster_id}/{attribute_id}")
-    if not isinstance(value, (int, float)):
-        return
-    record = {
-        "event_type": "poll_attribute",
-        "tags": {
-            "node_id": str(node_id),
-            "endpoint_id": str(endpoint_id),
-            "cluster_id": cluster_id,
-            "attribute_id": attribute_id,
-        },
-        "fields": {"value": float(value)},
-    }
+def _record_poll_event(record: dict[str, Any]) -> None:
     _bump("events_received")
-    _set_state(last_message_at=time.time(), last_event_type="poll_attribute")
+    _set_state(last_message_at=time.time(), last_event_type=record["event_type"])
     _write_event(record)
 
 
 def _poll_node_snapshot_once() -> None:
-    if MATTER_POLL_INTERVAL_SEC <= 0:
-        return
-
-    target_node_ids = _poll_target_node_ids()
-
-    local_temp_centi = _read_attribute_once(MATTER_POLL_NODE_ID, "1/513/0")
-    heat_setpoint_centi = _read_attribute_once(MATTER_POLL_NODE_ID, "1/513/18")
-    fields: dict[str, float] = {}
-    if isinstance(local_temp_centi, (int, float)):
-        fields["thermostat_local_temperature_c"] = round(float(local_temp_centi) / 100.0, 2)
-    if isinstance(heat_setpoint_centi, (int, float)):
-        fields["thermostat_occupied_heating_setpoint_c"] = round(float(heat_setpoint_centi) / 100.0, 2)
-    if fields:
-        record = {
-            "event_type": "poll_snapshot",
-            "tags": {"node_id": str(MATTER_POLL_NODE_ID)},
-            "fields": fields,
-        }
-        _bump("events_received")
-        _set_state(last_message_at=time.time(), last_event_type="poll_snapshot")
-        _write_event(record)
-
-    if MATTER_POLL_NODE_ID > 0:
-        for attribute_id in (11, 12, 26):
-            _poll_numeric_attribute(MATTER_POLL_NODE_ID, MATTER_POLL_BATTERY_ENDPOINT_ID, "47", str(attribute_id))
-
-    for node_id in target_node_ids:
-        for endpoint_id, cluster_id, attribute_id in MATTER_POLL_ENVIRONMENT_ATTRIBUTES:
-            _poll_numeric_attribute(node_id, endpoint_id, cluster_id, attribute_id)
+    service = MatterPollingService(
+        PollingConfig(
+            interval_sec=MATTER_POLL_INTERVAL_SEC,
+            primary_node_id=MATTER_POLL_NODE_ID,
+            battery_endpoint_id=MATTER_POLL_BATTERY_ENDPOINT_ID,
+        ),
+        read_attribute=_read_attribute_once,
+        get_node_snapshot=lambda: _get_matter_node_snapshot_cached(blocking=False),
+        record_event=_record_poll_event,
+        log=_log,
+    )
+    service.poll_once()
 
 
 def _poll_forever() -> None:
@@ -727,26 +512,26 @@ def openthread_diag_snapshot() -> Any:
 
 @app.route("/control/openthread/health", methods=["GET"])
 def openthread_control_health() -> Any:
-    payload = _control_target_payload("openthread")
+    payload = control_target_payload("openthread")
     return jsonify(success=True, openthread=payload, services=payload["services"])
 
 
 @app.route("/control/openthread/<action>", methods=["POST"])
 def openthread_control_action(action: str) -> Any:
-    result = _control_target_action("openthread", action)
+    result = control_target_action("openthread", action)
     status_code = 200 if result.get("success") else 400
     return jsonify(result), status_code
 
 
 @app.route("/control/matter-server/health", methods=["GET"])
 def matter_server_control_health() -> Any:
-    payload = _control_target_payload("matter-server")
+    payload = control_target_payload("matter-server")
     return jsonify(success=True, matter_server=payload, services=payload["services"])
 
 
 @app.route("/control/matter-server/<action>", methods=["POST"])
 def matter_server_control_action(action: str) -> Any:
-    result = _control_target_action("matter-server", action)
+    result = control_target_action("matter-server", action)
     status_code = 200 if result.get("success") else 400
     return jsonify(result), status_code
 

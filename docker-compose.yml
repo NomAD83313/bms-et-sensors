@@ -150,6 +150,7 @@ services:
       - BLUETOOTH_ADAPTER=${MATTER_BLUETOOTH_ADAPTER:-999}
       - LOG_LEVEL=${MATTER_SERVER_LOG_LEVEL:-info}
       - PRODUCTION_MODE=${MATTER_SERVER_PRODUCTION_MODE:-true}
+      - ENABLE_TEST_NET_DCL=${MATTER_SERVER_ENABLE_TEST_NET_DCL:-false}
     restart: unless-stopped
 
   matter-collector:
