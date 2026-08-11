@@ -21,6 +21,11 @@ The repository includes Matter/Thread stack documentation:
 - `docs/openthread.md`: OpenThread Border Router setup and hardware notes.
 - `docs/matter-thread-topology.md`: protocol-aligned Matter + OTBR topology model.
 
+Known-good Matter baseline (validated 2026-08-11): Matter.js Server `1.4.0`
+with `@matter/main` `0.17.9` and Matter `1.5.1` compatibility, using
+`ghcr.io/matter-js/matterjs-server:stable`. The resolved image ID and validation
+details are recorded in `docs/openthread.md`.
+
 ESP32/Matter/Thread node workspace is included in this repository under `nodes`.
 
 ## Matter Server status

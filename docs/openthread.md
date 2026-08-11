@@ -45,6 +45,30 @@ Do not use this for a fresh Thread device:
 }
 ```
 
+## Known-good Matter.js Server baseline
+
+The following combination was validated on 2026-08-11 and is the current
+known-good baseline for this project:
+
+- Container image reference: `ghcr.io/matter-js/matterjs-server:stable`
+- Resolved local image ID: `sha256:54232d0d3e7dff5a54759469d2753399270412b4c30c55b31750a4595e4cb236`
+- Matter.js Server version: `1.4.0`
+- `matter.js` SDK version (`@matter/main`): `0.17.9`
+- Matter protocol compatibility: Matter `1.5.1`
+- Commissioning interface: Raspberry Pi internal BLE `hci0`
+- Thread network: `BMS-Thread`, channel `20`
+
+This baseline was verified by commissioning the ESP32-C6 Pico node
+`BMS-C6P-53AC5C` as Matter Node ID `1`, attaching it to Thread, and receiving
+its Matter events through `matter-server -> matter-collector -> InfluxDB`.
+Test Net DCL was enabled for the development node's test attestation
+certificate.
+
+The `stable` tag is mutable. The versions and image ID above record the exact
+working build observed during validation; re-check them after pulling a newer
+`stable` image. Do not replace the current image solely to test a newer SDK
+while this baseline remains the required working configuration.
+
 ## Scope
 
 The OTBR service is optional and runs only under the Compose `thread` profile.
