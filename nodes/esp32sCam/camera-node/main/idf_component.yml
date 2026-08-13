@@ -1,1 +1,2 @@
-dependencies: {}
+dependencies:
+  espressif/esp32-camera: "^2.0.16"

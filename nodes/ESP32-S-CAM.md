@@ -1,14 +1,18 @@
 # ESP32-S-CAM
 
-Matter-only firmware profile for AI Thinker `ESP32-CAM`.
+Matter-over-Wi-Fi and HTTP camera firmware for AI Thinker `ESP32-CAM`.
 
 ## Scope
 
 - Matter over Wi-Fi
+- OV2640 capture using the AI Thinker pin map
+- HTTP JPEG snapshot at `/snapshot.jpg`
+- HTTP MJPEG stream at `/stream.mjpeg`
 - GPIO `4` flash LED exposed as Matter `OnOff`
 - Status LED on GPIO `33` for local commissioning/runtime indication
 
-Camera capture and HTTP streaming are intentionally disabled in this branch.
+The web camera starts before Matter commissioning. It becomes reachable after
+Matter commissioning provisions the Raspberry Pi AP Wi-Fi credentials.
 
 ## Current status
 
@@ -18,10 +22,10 @@ Working:
 - Node can be commissioned into `matter-server`
 - `OnOff` controls GPIO `4` flash LED
 
-Not in scope for now:
-- `esp_camera` initialization
-- `snapshot`/`stream` HTTP endpoints
-- camera-side transport/integration logic
+Camera defaults:
+- JPEG VGA (`640x480`)
+- one PSRAM frame buffer to preserve memory for Matter/BLE commissioning
+- HTTP port `80`
 
 ## Commissioning data
 

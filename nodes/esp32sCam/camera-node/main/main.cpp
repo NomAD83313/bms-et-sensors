@@ -16,6 +16,7 @@
 #include "nvs_flash.h"
 
 #include "bms_node_core/device_info.h"
+#include "camera_web.h"
 
 #include <app/server/Server.h>
 #include <clusters/BasicInformation/AttributeIds.h>
@@ -419,6 +420,7 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "on_off_light endpoint id=%u (GPIO %d)", s_device.led_ep_id, static_cast<int>(kFlashLedGpio));
 
     esp_matter::start(matter_event_callback);
+    ESP_ERROR_CHECK(camera_web_start());
     update_network_state_cache();
     log_commissioning_state("after-start");
     log_onboarding_codes();
