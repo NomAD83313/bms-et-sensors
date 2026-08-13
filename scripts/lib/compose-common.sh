@@ -4,7 +4,7 @@
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml)
-DEFAULT_APP_BUILD_SERVICES=(mscl-collector redlab-collector graf-lite service-controller almemo-collector pyrometer-collector ap-control)
+DEFAULT_APP_BUILD_SERVICES=(mscl-collector redlab-collector graf-lite service-controller almemo-collector pyrometer-collector ap-control cameras-app)
 OPTIONAL_APP_BUILD_SERVICES=(matter-collector)
 APP_BUILD_SERVICES=("${DEFAULT_APP_BUILD_SERVICES[@]}" "${OPTIONAL_APP_BUILD_SERVICES[@]}")
 

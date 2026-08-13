@@ -74,6 +74,12 @@
           "probe": "/probe/ap"
         },
         {
+          "alt": "Cameras & AI Inspection",
+          "icon": "fas fa-video",
+          "link": "http://{{host}}/cameras/",
+          "probe": "/probe/cameras"
+        },
+        {
           "alt": "Matter + Thread Console",
           "icon": "fas fa-satellite-dish",
           "link": "http://{{host}}/matter/",

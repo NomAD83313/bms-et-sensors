@@ -17,6 +17,11 @@ services:
       context: .
       dockerfile: Dockerfile.graf-app
 
+  cameras-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.cameras-app
+
   pyrometer-collector:
     build:
       context: .
