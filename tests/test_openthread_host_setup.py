@@ -35,6 +35,8 @@ class OpenThreadHostSetupTests(unittest.TestCase):
         (fake_sys_net / "wlan0").mkdir(parents=True)
         (fake_sys_net / "wlan1").mkdir()
         (fake_sys_net / "eth0").mkdir()
+        env_file = tmp / "test.env"
+        env_file.write_text("OTBR_INFRA_IF=wlan1\n", encoding="utf-8")
         fake_sysctl_conf.write_text("net.ipv6.conf.all.forwarding=1\n", encoding="utf-8")
 
         self._write_executable(fake_bin / "docker", "#!/usr/bin/env bash\nexit 0\n")
@@ -72,7 +74,7 @@ class OpenThreadHostSetupTests(unittest.TestCase):
                 "BMS_OTBR_SYS_CLASS_NET_ROOT": str(fake_sys_net),
                 "BMS_OTBR_SYSCTL_CONF": str(fake_sysctl_conf),
                 "OTBR_INFRA_IF": "wlan0",
-                "ENV_FILE": str(tmp / "missing.env"),
+                "ENV_FILE": str(env_file),
             }
         )
         return env
@@ -127,6 +129,7 @@ class OpenThreadHostSetupTests(unittest.TestCase):
             env_file = tmp / ".env"
             service_file = tmp / "bms-otbr-rcp-bridge.service"
             env_file.write_text(
+                "OTBR_INFRA_IF=wlan1\n"
                 "OTBR_RCP_DEVICE=/dev/ttyOTBR\n"
                 "OTBR_RCP_TCP_ENDPOINT=10.42.0.2:6638\n",
                 encoding="utf-8",
@@ -161,6 +164,7 @@ class OpenThreadHostSetupTests(unittest.TestCase):
             web_alias_service = tmp / "bms-otbr-rcp-web-alias.service"
             legacy_proxy_service = tmp / "bms-otbr-rcp-proxy.service"
             env_file.write_text(
+                "OTBR_INFRA_IF=wlan1\n"
                 "OTBR_RCP_DEVICE=/dev/ttyOTBR\n"
                 "OTBR_RCP_TCP_ENDPOINT=10.42.0.2:6638\n"
                 "OTBR_RCP_WEB_ALIAS_INTERFACE=eth0\n"

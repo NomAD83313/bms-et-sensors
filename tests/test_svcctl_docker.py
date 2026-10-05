@@ -1,7 +1,7 @@
-import importlib
-import sys
 import types
 import unittest
+
+from tests.isolated_import import load_isolated_module
 
 
 class FakeNotFound(Exception):
@@ -9,15 +9,10 @@ class FakeNotFound(Exception):
 
 
 def _load_module():
-    sys.modules.pop("app.svcctl.svcctl_docker", None)
-    sys.modules.pop("svcctl_docker", None)
-
     fake_docker = types.ModuleType("docker")
     fake_docker.DockerClient = lambda *_args, **_kwargs: object()
     fake_docker.errors = types.SimpleNamespace(NotFound=FakeNotFound)
-    sys.modules["docker"] = fake_docker
-
-    return importlib.import_module("app.svcctl.svcctl_docker")
+    return load_isolated_module("app.svcctl.svcctl_docker", {"docker": fake_docker})
 
 
 class MissingContainerActionTests(unittest.TestCase):

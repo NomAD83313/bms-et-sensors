@@ -15,42 +15,80 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision  # type: ignor
 from influxdb_client.client.write_api import WriteOptions  # type: ignore
 import serial  # type: ignore
 
-from pyrometer_profiles import (
-    STREAM_FRAME_FORMAT_BURST_WORDS,
-    STREAM_FRAME_FORMAT_MARKED_BURST_WORDS,
-    DeviceProfile,
-    build_device_profiles,
-    preferred_device_id,
-    summarize_devices_status,
-)
-from pyrometers_config import (
-    LOGGING_PRESETS_HZ,
-    THERMOMETER_PROTOCOL,
-    load_config,
-    logging_interval_ms,
-    normalize_logging_hz,
-)
-from pyrometers_protocol import (
-    build_classic_ct_burst_start_commands,
-    build_classic_ct_burst_stop_commands,
-    build_optris_burst_start_commands,
-    build_optris_burst_stop_commands,
-    build_optris_read_emissivity_command,
-    build_optris_read_transmissivity_command,
-    build_optris_set_ambient_fixed_temperature_command,
-    build_optris_set_ambient_source_command,
-    build_optris_set_emissivity_command,
-    build_optris_set_transmissivity_command,
-    build_read_serial_number_command,
-    normalize_hex_commands,
-    parse_binary_frame,
-    parse_binary_frames,
-    parse_burst_word_frames,
-    parse_marked_burst_word_frames,
-    parse_poll_response,
-    parse_serial_number_response,
-)
-from pyrometers_stream_state import stream_is_stale
+if __package__:
+    from .pyrometer_profiles import (
+        STREAM_FRAME_FORMAT_BURST_WORDS,
+        STREAM_FRAME_FORMAT_MARKED_BURST_WORDS,
+        DeviceProfile,
+        build_device_profiles,
+        preferred_device_id,
+        summarize_devices_status,
+    )
+    from .pyrometers_config import (
+        LOGGING_PRESETS_HZ,
+        THERMOMETER_PROTOCOL,
+        load_config,
+        logging_interval_ms,
+        normalize_logging_hz,
+    )
+    from .pyrometers_protocol import (
+        build_classic_ct_burst_start_commands,
+        build_classic_ct_burst_stop_commands,
+        build_optris_burst_start_commands,
+        build_optris_burst_stop_commands,
+        build_optris_read_emissivity_command,
+        build_optris_read_transmissivity_command,
+        build_optris_set_ambient_fixed_temperature_command,
+        build_optris_set_ambient_source_command,
+        build_optris_set_emissivity_command,
+        build_optris_set_transmissivity_command,
+        build_read_serial_number_command,
+        normalize_hex_commands,
+        parse_binary_frame,
+        parse_binary_frames,
+        parse_burst_word_frames,
+        parse_marked_burst_word_frames,
+        parse_poll_response,
+        parse_serial_number_response,
+    )
+    from .pyrometers_stream_state import stream_is_stale
+else:
+    from pyrometer_profiles import (
+        STREAM_FRAME_FORMAT_BURST_WORDS,
+        STREAM_FRAME_FORMAT_MARKED_BURST_WORDS,
+        DeviceProfile,
+        build_device_profiles,
+        preferred_device_id,
+        summarize_devices_status,
+    )
+    from pyrometers_config import (
+        LOGGING_PRESETS_HZ,
+        THERMOMETER_PROTOCOL,
+        load_config,
+        logging_interval_ms,
+        normalize_logging_hz,
+    )
+    from pyrometers_protocol import (
+        build_classic_ct_burst_start_commands,
+        build_classic_ct_burst_stop_commands,
+        build_optris_burst_start_commands,
+        build_optris_burst_stop_commands,
+        build_optris_read_emissivity_command,
+        build_optris_read_transmissivity_command,
+        build_optris_set_ambient_fixed_temperature_command,
+        build_optris_set_ambient_source_command,
+        build_optris_set_emissivity_command,
+        build_optris_set_transmissivity_command,
+        build_read_serial_number_command,
+        normalize_hex_commands,
+        parse_binary_frame,
+        parse_binary_frames,
+        parse_burst_word_frames,
+        parse_marked_burst_word_frames,
+        parse_poll_response,
+        parse_serial_number_response,
+    )
+    from pyrometers_stream_state import stream_is_stale
 
 app = Flask(__name__)
 
@@ -813,6 +851,41 @@ def _frame_times_for_batch(runtime: DeviceRuntime, frame_count: int) -> list[flo
     return [batch_start_wall + (frame_step * (idx + 1)) for idx in range(frame_count)]
 
 
+def _open_influx_writer():
+    if not _influx_enabled():
+        return None, None
+    client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
+    try:
+        writer = client.write_api(
+            write_options=WriteOptions(
+                batch_size=max(1, THERMOMETER_INFLUX_BATCH_SIZE),
+                flush_interval=max(100, THERMOMETER_INFLUX_FLUSH_MS),
+                jitter_interval=0,
+                retry_interval=5_000,
+                max_retries=3,
+                max_retry_delay=30_000,
+                exponential_base=2,
+            )
+        )
+    except Exception:
+        client.close()
+        raise
+    return client, writer
+
+
+def _close_influx_writer(writer) -> None:
+    if writer is None:
+        return
+    try:
+        writer.flush()
+    except Exception:
+        pass
+    try:
+        writer.close()
+    except Exception:
+        pass
+
+
 def _device_loop(runtime: DeviceRuntime) -> None:
     profile = runtime.profile
     influx_client = None
@@ -820,19 +893,7 @@ def _device_loop(runtime: DeviceRuntime) -> None:
     ser: serial.Serial | None = None
     frame_buffer = bytearray()
     try:
-        if _influx_enabled():
-            influx_client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
-            write_api = influx_client.write_api(
-                write_options=WriteOptions(
-                    batch_size=max(1, THERMOMETER_INFLUX_BATCH_SIZE),
-                    flush_interval=max(100, THERMOMETER_INFLUX_FLUSH_MS),
-                    jitter_interval=0,
-                    retry_interval=5_000,
-                    max_retries=3,
-                    max_retry_delay=30_000,
-                    exponential_base=2,
-                )
-            )
+        influx_client, write_api = _open_influx_writer()
         while not POLL_STOP.is_set():
             port = _resolve_port(profile)
             port_present = os.path.exists(port)
@@ -967,15 +1028,7 @@ def _device_loop(runtime: DeviceRuntime) -> None:
                     ser = None
                 time.sleep(THERMOMETER_POLL_SEC)
     finally:
-        if write_api is not None:
-            try:
-                write_api.flush()
-            except Exception:
-                pass
-            try:
-                write_api.close()
-            except Exception:
-                pass
+        _close_influx_writer(write_api)
         if ser is not None:
             _stop_configured_stream(profile, ser)
             _close_serial(ser)
@@ -989,24 +1042,13 @@ def _device_loop_poll(runtime: DeviceRuntime) -> None:
     write_api = None
     ser: serial.Serial | None = None
     try:
-        if _influx_enabled():
-            influx_client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
-            write_api = influx_client.write_api(
-                write_options=WriteOptions(
-                    batch_size=max(1, THERMOMETER_INFLUX_BATCH_SIZE),
-                    flush_interval=max(100, THERMOMETER_INFLUX_FLUSH_MS),
-                    jitter_interval=0,
-                    retry_interval=5_000,
-                    max_retries=3,
-                    max_retry_delay=30_000,
-                    exponential_base=2,
-                )
-            )
+        influx_client, write_api = _open_influx_writer()
         while not POLL_STOP.is_set():
             port = _resolve_port(profile)
             port_present = os.path.exists(port)
             _update_device_state(profile.id, port=port, port_present=port_present)
             if not port_present:
+                _close_serial(ser)
                 ser = None
                 _reset_stream_runtime(runtime)
                 _update_device_state(profile.id, status="missing", connected=False, last_error="device path not present")
@@ -1037,6 +1079,7 @@ def _device_loop_poll(runtime: DeviceRuntime) -> None:
                             max(0.05, THERMOMETER_TIMEOUT_MS / 1000.0),
                         )
             except Exception as exc:
+                _close_serial(ser)
                 ser = None
                 _reset_stream_runtime(runtime)
                 _update_device_state(profile.id, status="degraded", connected=False, last_error=str(exc))
@@ -1129,15 +1172,8 @@ def _device_loop_poll(runtime: DeviceRuntime) -> None:
 
             time.sleep(max(0.001, poll_interval_sec))
     finally:
-        if write_api is not None:
-            try:
-                write_api.flush()
-            except Exception:
-                pass
-            try:
-                write_api.close()
-            except Exception:
-                pass
+        _close_influx_writer(write_api)
+        _close_serial(ser)
         if influx_client is not None:
             influx_client.close()
 
@@ -1318,8 +1354,6 @@ def _startup() -> None:
         thread.start()
 
 
-_startup()
-
-
 if __name__ == "__main__":
+    _startup()
     app.run(host="0.0.0.0", port=THERMOMETER_HTTP_PORT)

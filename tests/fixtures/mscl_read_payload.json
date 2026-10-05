@@ -1,0 +1,264 @@
+{
+  "success": true,
+  "model": "TC-Link-200-OEM",
+  "sn": "16904",
+  "fw": "1.2",
+  "region": null,
+  "last_comm": null,
+  "state": null,
+  "state_text": "Unknown",
+  "node_address": 16904,
+  "frequency": null,
+  "storage_pct": null,
+  "storage_capacity_raw": null,
+  "sampling_mode": null,
+  "sampling_mode_raw": null,
+  "current_data_mode": null,
+  "data_mode_text": null,
+  "data_mode_options": [
+    {
+      "value": 1,
+      "label": "Live Radio"
+    },
+    {
+      "value": 2,
+      "label": "Datalog Only"
+    },
+    {
+      "value": 3,
+      "label": "Live Radio + Datalog"
+    }
+  ],
+  "current_collection_method": null,
+  "current_collection_method_text": null,
+  "current_data_format": null,
+  "current_data_type": "float",
+  "current_input_range": null,
+  "supported_input_ranges": [
+    {
+      "value": 99,
+      "label": "+/-1.35 V or 0 to 1 mega-ohms (Gain: 1)",
+      "primary": true
+    },
+    {
+      "value": 100,
+      "label": "+/-1.25 V or 0 to 10000 ohms (Gain: 2)",
+      "primary": true
+    },
+    {
+      "value": 101,
+      "label": "+/-625 mV or 0 to 3333.3 ohms (Gain: 4)",
+      "primary": true
+    },
+    {
+      "value": 102,
+      "label": "+/-312.5 mV or 0 to 1428.6 ohms (Gain: 8)",
+      "primary": true
+    },
+    {
+      "value": 103,
+      "label": "+/-156.25 mV or 0 to 666.67 ohms (Gain: 16)",
+      "primary": true
+    }
+  ],
+  "current_unit": null,
+  "unit_options": [],
+  "current_cjc_unit": null,
+  "cjc_unit_options": [],
+  "current_rate": 112,
+  "current_power": 16,
+  "current_power_enum": null,
+  "tx_power_options": [
+    {
+      "value": 16,
+      "label": "16 dBm"
+    },
+    {
+      "value": 10,
+      "label": "10 dBm"
+    },
+    {
+      "value": 5,
+      "label": "5 dBm"
+    },
+    {
+      "value": 0,
+      "label": "0 dBm"
+    }
+  ],
+  "comm_protocol": null,
+  "comm_protocol_text": null,
+  "supported_rates": [
+    {
+      "enum_val": 112,
+      "str_val": "1 Hz"
+    }
+  ],
+  "channels": [
+    {
+      "id": 1,
+      "enabled": true
+    },
+    {
+      "id": 2,
+      "enabled": false
+    }
+  ],
+  "current_low_pass": 294,
+  "low_pass_options": [
+    {
+      "value": 294,
+      "label": "294 Hz"
+    }
+  ],
+  "current_storage_limit_mode": 0,
+  "storage_limit_options": [
+    {
+      "value": 0,
+      "label": "Overwrite"
+    },
+    {
+      "value": 1,
+      "label": "Stop"
+    }
+  ],
+  "current_lost_beacon_timeout": 2,
+  "current_lost_beacon_enabled": true,
+  "current_diagnostic_interval": 60,
+  "current_diagnostic_enabled": true,
+  "supports_default_mode": false,
+  "supports_inactivity_timeout": false,
+  "supports_check_radio_interval": false,
+  "supports_transducer_type": false,
+  "supports_temp_sensor_options": false,
+  "current_default_mode": null,
+  "current_inactivity_timeout": null,
+  "current_inactivity_enabled": false,
+  "current_check_radio_interval": null,
+  "default_mode_options": [],
+  "current_transducer_type": 0,
+  "current_sensor_type": null,
+  "current_wire_type": null,
+  "transducer_options": [
+    {
+      "value": 0,
+      "label": "Thermocouple"
+    },
+    {
+      "value": 1,
+      "label": "RTD"
+    },
+    {
+      "value": 2,
+      "label": "Thermistor"
+    }
+  ],
+  "rtd_sensor_options": [
+    {
+      "value": 0,
+      "label": "Uncompensated (Resistance)"
+    },
+    {
+      "value": 1,
+      "label": "PT10"
+    },
+    {
+      "value": 2,
+      "label": "PT50"
+    },
+    {
+      "value": 3,
+      "label": "PT100"
+    },
+    {
+      "value": 4,
+      "label": "PT200"
+    },
+    {
+      "value": 5,
+      "label": "PT500"
+    },
+    {
+      "value": 6,
+      "label": "PT1000"
+    }
+  ],
+  "thermistor_sensor_options": [
+    {
+      "value": 0,
+      "label": "Uncompensated"
+    },
+    {
+      "value": 1,
+      "label": "44004 / 44033"
+    },
+    {
+      "value": 2,
+      "label": "44005 / 44030"
+    },
+    {
+      "value": 3,
+      "label": "44007 / 44034"
+    },
+    {
+      "value": 4,
+      "label": "44006 / 44031"
+    },
+    {
+      "value": 5,
+      "label": "44008 / 44032"
+    },
+    {
+      "value": 6,
+      "label": "YSI 400"
+    }
+  ],
+  "thermocouple_sensor_options": [
+    {
+      "value": 0,
+      "label": "Type J"
+    },
+    {
+      "value": 1,
+      "label": "Type K"
+    },
+    {
+      "value": 2,
+      "label": "Type T"
+    },
+    {
+      "value": 3,
+      "label": "Type E"
+    },
+    {
+      "value": 4,
+      "label": "Type R"
+    },
+    {
+      "value": 5,
+      "label": "Type S"
+    },
+    {
+      "value": 6,
+      "label": "Type B"
+    },
+    {
+      "value": 7,
+      "label": "Type N"
+    }
+  ],
+  "rtd_wire_options": [
+    {
+      "value": 0,
+      "label": "2 Wire"
+    },
+    {
+      "value": 1,
+      "label": "3 Wire"
+    },
+    {
+      "value": 2,
+      "label": "4 Wire"
+    }
+  ]
+}

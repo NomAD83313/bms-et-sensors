@@ -1,9 +1,11 @@
-import sys
-import types
 import unittest
+from unittest.mock import patch
+
+from app.mscl import mscl_backfill_service
+from app.mscl.mscl_backfill_service import backfill_rows_to_influx_stream
 
 
-def _install_fake_influx_modules():
+def _build_fake_influx_types():
     class FakePoint:
         def __init__(self, measurement):
             self.measurement = measurement
@@ -53,29 +55,18 @@ def _install_fake_influx_modules():
             _ = write_options
             return self._write
 
-    root = types.ModuleType("influxdb_client")
-    root.InfluxDBClient = FakeInfluxDBClient
-    root.Point = FakePoint
-    sys.modules["influxdb_client"] = root
-
-    write_api_mod = types.ModuleType("influxdb_client.client.write_api")
-    write_api_mod.SYNCHRONOUS = object()
-    sys.modules["influxdb_client.client.write_api"] = write_api_mod
-
-    precision_mod = types.ModuleType("influxdb_client.domain.write_precision")
-    precision_mod.WritePrecision = type("WritePrecision", (), {"NS": "ns"})
-    sys.modules["influxdb_client.domain.write_precision"] = precision_mod
-
-    return FakeWriteApi
+    return FakeWriteApi, FakeInfluxDBClient, FakePoint
 
 
-FakeWriteApi = _install_fake_influx_modules()
-from app.mscl.mscl_backfill_service import backfill_rows_to_influx_stream  # noqa: E402
-
+FakeWriteApi, FakeInfluxDBClient, FakePoint = _build_fake_influx_types()
 
 class BackfillServiceTests(unittest.TestCase):
     def setUp(self):
         FakeWriteApi.writes = []
+        for name, value in (("InfluxDBClient", FakeInfluxDBClient), ("Point", FakePoint)):
+            patcher = patch.object(mscl_backfill_service, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_backfill_writes_with_batch_split(self):
         rows = [

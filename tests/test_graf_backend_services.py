@@ -1,13 +1,7 @@
-import sys
-import types
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 
-sys.modules.setdefault("influxdb_client", types.SimpleNamespace(InfluxDBClient=object))
-sys.modules.setdefault("flask", types.SimpleNamespace(Response=object))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "graf"))
 
 from app.graf.graf_backend_services import _cadence_range_bounds
 

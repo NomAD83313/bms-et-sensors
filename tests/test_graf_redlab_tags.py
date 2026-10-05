@@ -1,13 +1,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-import sys
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-GRAF_APP_DIR = ROOT_DIR / "app" / "graf"
-if str(GRAF_APP_DIR) not in sys.path:
-    sys.path.insert(0, str(GRAF_APP_DIR))
-
 from app.graf.graf_csv_helpers import matter_csv_column_name, messkluppe_csv_column_name, pyrometers_csv_column_name, redlab_csv_column_name
 from app.graf.graf_backend_services import _annotate_pyrometer_serials
 from app.graf.graf_query_builders import (

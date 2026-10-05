@@ -8,6 +8,11 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, render_template
+
+if __package__:
+    from ..shared.redlab_channels import ChannelState, load_redlab_channels, save_redlab_channels
+else:
+    from redlab_channels import ChannelState, load_redlab_channels, save_redlab_channels
 from uldaq import (get_daq_device_inventory, DaqDevice, InterfaceType,  # type: ignore
                    TcType)
 from uldaq.daq_device_config import DevVersionType  # type: ignore
@@ -246,57 +251,12 @@ def _active_runtime():
     return None
 
 
-def _is_redlab_selection_key(key: str) -> bool:
-    if key in REDLAB_CHANNEL_KEYS:
-        return True
-    if "|" not in key:
-        return False
-    device, channel = key.split("|", 1)
-    return bool(device.strip()) and channel in REDLAB_CHANNEL_KEYS
+def _load_channel_state() -> ChannelState:
+    return load_redlab_channels(REDLAB_CHANNEL_STATE_PATH, REDLAB_CHANNEL_KEYS)
 
 
-def _default_channel_state() -> dict[str, object]:
-    return {key: True for key in REDLAB_CHANNEL_KEYS}
-
-
-def _load_channel_state() -> dict[str, object]:
-    try:
-        raw = json.loads(REDLAB_CHANNEL_STATE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return _default_channel_state()
-    except Exception:
-        return _default_channel_state()
-
-    out: dict[str, object] = _default_channel_state()
-    for key, value in raw.items():
-        if not _is_redlab_selection_key(str(key)):
-            continue
-        if isinstance(value, dict):
-            out[str(key)] = {
-                "enabled": bool(value.get("enabled", True)),
-                "name": str(value.get("name", "")),
-            }
-        else:
-            out[str(key)] = bool(value)
-    return out
-
-
-def _save_channel_state(payload: dict) -> dict[str, object]:
-    out: dict[str, object] = _default_channel_state()
-    for raw_key, value in payload.items():
-        key = str(raw_key)
-        if not _is_redlab_selection_key(key):
-            continue
-        if isinstance(value, dict):
-            enabled = bool(value.get("enabled", True))
-            name = str(value.get("name", "")).strip()
-            out[key] = {"enabled": enabled, "name": name} if name else enabled
-        else:
-            out[key] = bool(value)
-
-    REDLAB_CHANNEL_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REDLAB_CHANNEL_STATE_PATH.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
-    return out
+def _save_channel_state(payload: dict) -> ChannelState:
+    return save_redlab_channels(REDLAB_CHANNEL_STATE_PATH, REDLAB_CHANNEL_KEYS, payload)
 
 
 @app.get("/")

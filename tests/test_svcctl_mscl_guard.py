@@ -1,11 +1,11 @@
-import importlib
 import os
-import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from tests.isolated_import import load_isolated_module
 
 
 def _load_module():
@@ -13,7 +13,6 @@ def _load_module():
     fake_docker.DockerClient = lambda *_args, **_kwargs: object()
     fake_errors = types.SimpleNamespace(NotFound=Exception)
     fake_docker.errors = fake_errors
-    sys.modules["docker"] = fake_docker
 
     fake_svcctl_docker = types.ModuleType("svcctl_docker")
     fake_svcctl_docker.container_status = lambda *_args, **_kwargs: "exited"
@@ -22,21 +21,23 @@ def _load_module():
     fake_svcctl_docker.set_container_running = lambda *_args, **_kwargs: "noop"
     fake_svcctl_docker.started_at_epoch = lambda *_args, **_kwargs: None
     fake_svcctl_docker.status_payload = lambda *_args, **_kwargs: {}
-    sys.modules["svcctl_docker"] = fake_svcctl_docker
 
     fake_svcctl_host = types.ModuleType("svcctl_host")
     fake_svcctl_host.cpu_percent = lambda *_args, **_kwargs: (0.0, 0, 0)
     fake_svcctl_host.memory_stats = lambda: {}
     fake_svcctl_host.serial_devices_by_id = lambda: []
     fake_svcctl_host.usb_devices = lambda: []
-    sys.modules["svcctl_host"] = fake_svcctl_host
 
     fake_svcctl_usb = types.ModuleType("svcctl_usb")
     fake_svcctl_usb.build_usb_guard_state = lambda **kwargs: kwargs
     fake_svcctl_usb.usb_device_present = lambda *_args, **_kwargs: False
-    sys.modules["svcctl_usb"] = fake_svcctl_usb
 
-    return importlib.import_module("app.svcctl.svcctl_app")
+    return load_isolated_module("app.svcctl.svcctl_app", {
+        "docker": fake_docker,
+        "svcctl_docker": fake_svcctl_docker,
+        "svcctl_host": fake_svcctl_host,
+        "svcctl_usb": fake_svcctl_usb,
+    })
 
 
 class SvcctlMsclGuardTests(unittest.TestCase):

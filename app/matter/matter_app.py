@@ -645,7 +645,7 @@ def device_common_css() -> Any:
 
 @app.after_request
 def add_no_store_headers(response: Response) -> Response:
-    if request.path in _NO_STORE_PATHS:
+    if request.path in _NO_STORE_PATHS or request.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"

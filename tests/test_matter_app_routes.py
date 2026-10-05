@@ -1,19 +1,25 @@
 import unittest
 from unittest.mock import patch
 
-try:
-    from app.matter import matter_app
-except ModuleNotFoundError as exc:
-    matter_app = None
-    _IMPORT_ERROR = exc
-else:
-    _IMPORT_ERROR = None
+from app.matter import matter_app
 
 
-@unittest.skipIf(matter_app is None, f"matter_app import unavailable: {_IMPORT_ERROR}")
 class MatterAppRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         matter_app._reset_matter_nodes_snapshot_cache()
+
+    def test_ui_static_assets_are_served_with_correct_types_and_no_cache(self):
+        client = matter_app.app.test_client()
+        response = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        for name, mimetypes in (("matter.css", {"text/css"}), ("matter.js", {"text/javascript", "application/javascript"})):
+            response = client.get(f"/static/{name}")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(response.mimetype, mimetypes)
+            self.assertIn("no-store", response.headers["Cache-Control"])
+            self.assertTrue(response.get_data())
+            response.close()
+        self.assertEqual(client.get("/static/missing.js").status_code, 404)
 
     def test_openthread_diag_route_returns_local_proxy_payload(self) -> None:
         diag = {

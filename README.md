@@ -517,6 +517,16 @@ Or run a single test module:
 Note:
 - `requirements-dev.txt` intentionally covers the common Python test/import dependencies used by local Flask services.
 - Hardware/vendor-specific runtime packages such as `uldaq` are not included there, because they are typically validated through container/service flows on the target host.
+- Unit tests use real Flask and scoped fakes for external services; importing ALMEMO or pyrometer applications does not start hardware threads.
+
+### Collector module boundaries
+
+- MSCL configuration reads use `mscl_read_service`: one request-local read attempt groups device parameters and builds the existing API payload. Device ordering, lock scope, retries, and cache fallbacks remain unchanged.
+- ALMEMO separates environment settings, pure V6/V7 parsing, serial discovery/command sessions, and live streaming. The serial session and streaming service each own their mutable state; command batches retain pause/rearm/resume and XON/XOFF handling.
+- Graf Lite and RedLab share `app/shared/redlab_channels.py` for legacy boolean selections and `{enabled, name}` metadata. Saves trim names and replace the existing runtime JSON atomically; no state-file migration is required.
+- Matter serves its HTML template with separate `static/matter.css` and `static/matter.js` resources. Relative links work both directly and under `/matter/`; page and asset responses disable caching.
+
+After rebuilding UI images, use a browser hard refresh. Before deploying changes to device session logic, verify disconnect/reconnect and live-mode switching on the target hardware.
 
 ## Sampling Validation Snapshot
 

@@ -7,23 +7,42 @@ from typing import Any
 
 from influxdb_client import InfluxDBClient
 
-from graf_csv_helpers import build_csv_content, make_csv_filename, make_csv_response
-from graf_query_builders import (
-    almemo_flux,
-    matter_flux,
-    matter_battery_flux,
-    messkluppe_flux,
-    mscl_flux,
-    redlab_flux,
-    redlab_flux_raw,
-    split_env_list,
-    tail_flux,
-    pyrometers_flux,
-)
-from graf_series_helpers import (
-    normalize_mscl_display_series,
-    series_median_interval_ms,
-)
+if __package__:
+    from .graf_csv_helpers import build_csv_content, make_csv_filename, make_csv_response
+    from .graf_query_builders import (
+        almemo_flux,
+        matter_flux,
+        matter_battery_flux,
+        messkluppe_flux,
+        mscl_flux,
+        redlab_flux,
+        redlab_flux_raw,
+        split_env_list,
+        tail_flux,
+        pyrometers_flux,
+    )
+    from .graf_series_helpers import (
+        normalize_mscl_display_series,
+        series_median_interval_ms,
+    )
+else:
+    from graf_csv_helpers import build_csv_content, make_csv_filename, make_csv_response
+    from graf_query_builders import (
+        almemo_flux,
+        matter_flux,
+        matter_battery_flux,
+        messkluppe_flux,
+        mscl_flux,
+        redlab_flux,
+        redlab_flux_raw,
+        split_env_list,
+        tail_flux,
+        pyrometers_flux,
+    )
+    from graf_series_helpers import (
+        normalize_mscl_display_series,
+        series_median_interval_ms,
+    )
 
 
 PYROMETERS_REGISTRY_PATH = os.getenv("PYROMETERS_REGISTRY", "/runtime/pyrometers-devices.json")

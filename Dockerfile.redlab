@@ -37,6 +37,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/shared/device-common.css static/device-common.css
 COPY app/redlab/ .
 
+COPY app/shared/redlab_channels.py .
+
 ENV PYTHONUNBUFFERED=1
 # Run the renamed main script
 CMD ["python", "redlab_main.py"]

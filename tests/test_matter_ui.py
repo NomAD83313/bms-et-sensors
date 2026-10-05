@@ -3,14 +3,20 @@ import unittest
 
 from app.matter.matter_ui import INDEX_HTML, TEMPLATE_PATH
 
+STATIC_DIR = TEMPLATE_PATH.parent.parent / "static"
+CSS_TEXT = (STATIC_DIR / "matter.css").read_text(encoding="utf-8")
+SCRIPT_TEXT = (STATIC_DIR / "matter.js").read_text(encoding="utf-8")
+
 
 class MatterUiTests(unittest.TestCase):
     def test_ui_is_loaded_from_external_template(self) -> None:
         self.assertEqual(TEMPLATE_PATH.name, "index.html")
         self.assertEqual(TEMPLATE_PATH.parent.name, "templates")
         self.assertEqual(INDEX_HTML, TEMPLATE_PATH.read_text(encoding="utf-8"))
+        self.assertIn('href="./static/matter.css"', INDEX_HTML)
+        self.assertNotIn("<style>", INDEX_HTML)
 
-    def test_inline_script_avoids_known_compatibility_breakers(self) -> None:
+    def test_external_script_avoids_known_compatibility_breakers(self) -> None:
         script = self._extract_script()
 
         self.assertIn("UI_BUILD_ID", script)
@@ -80,9 +86,9 @@ class MatterUiTests(unittest.TestCase):
         self.assertIn("${parentActions}", tree.group("body") if tree else "")
 
     def test_topology_tree_actions_use_full_width_rows(self) -> None:
-        self.assertIn(".tree-parent > .service-actions", INDEX_HTML)
-        self.assertIn(".tree-child-row > .service-actions", INDEX_HTML)
-        self.assertIn("grid-column: 1 / -1", INDEX_HTML)
+        self.assertIn(".tree-parent > .service-actions", CSS_TEXT)
+        self.assertIn(".tree-child-row > .service-actions", CSS_TEXT)
+        self.assertIn("grid-column: 1 / -1", CSS_TEXT)
 
     def test_air_reboot_control_is_rendered_from_inventory(self) -> None:
         script = self._extract_script()
@@ -145,28 +151,28 @@ class MatterUiTests(unittest.TestCase):
 
         self.assertIn("function badgeTokenClass", script)
         self.assertIn("${badgeTokenClass(label)}", script)
-        self.assertIn(".topology-badge.badge-matter", INDEX_HTML)
-        self.assertIn(".topology-badge.badge-wifi", INDEX_HTML)
-        self.assertIn(".topology-badge.badge-rssi", INDEX_HTML)
-        self.assertIn(".topology-badge.badge-rloc", INDEX_HTML)
-        self.assertIn(".topology-badge.badge-parent-child", INDEX_HTML)
-        self.assertNotIn("linear-gradient(135deg, #eaf2ff", INDEX_HTML)
+        self.assertIn(".topology-badge.badge-matter", CSS_TEXT)
+        self.assertIn(".topology-badge.badge-wifi", CSS_TEXT)
+        self.assertIn(".topology-badge.badge-rssi", CSS_TEXT)
+        self.assertIn(".topology-badge.badge-rloc", CSS_TEXT)
+        self.assertIn(".topology-badge.badge-parent-child", CSS_TEXT)
+        self.assertNotIn("linear-gradient(135deg, #eaf2ff", CSS_TEXT)
 
     def test_topology_links_frame_is_not_rendered(self) -> None:
         self.assertNotIn("Topology Links", INDEX_HTML)
         self.assertNotIn('id="topologyEdges"', INDEX_HTML)
-        self.assertNotIn("renderTopologyEdges", INDEX_HTML)
+        self.assertNotIn("renderTopologyEdges", SCRIPT_TEXT)
 
     def test_topology_counters_frame_is_not_rendered(self) -> None:
         self.assertNotIn('id="topologyCounters"', INDEX_HTML)
-        self.assertNotIn("renderTopologyCounters", INDEX_HTML)
+        self.assertNotIn("renderTopologyCounters", SCRIPT_TEXT)
 
     def test_topology_tree_shows_explicit_thread_identifiers(self) -> None:
         script = self._extract_script()
 
         self.assertIn("function threadIdMeta", script)
         self.assertIn("function nodeBadge", script)
-        self.assertIn("node-id", INDEX_HTML)
+        self.assertIn("node-id", CSS_TEXT)
         self.assertIn("node ${nodeId}", script)
         self.assertIn("ext ${esc(record.ext_address || \"unknown\")}", script)
         self.assertIn("rloc ${esc(record.rloc16 || \"unknown\")}", script)
@@ -276,9 +282,9 @@ class MatterUiTests(unittest.TestCase):
         self.assertIn('setStackService("matterConsoleStatus"', script)
 
     def _extract_script(self) -> str:
-        match = re.search(r"<script>(?P<script>.*)</script>", INDEX_HTML, re.S)
-        self.assertIsNotNone(match)
-        return match.group("script") if match else ""
+        self.assertIn('<script src="./static/matter.js"></script>', INDEX_HTML)
+        self.assertNotIn("<script>", INDEX_HTML)
+        return SCRIPT_TEXT
 
 
 if __name__ == "__main__":
