@@ -12,7 +12,7 @@ Firmware workspace for BMS DOA Matter nodes.
 - `esp32c3SuperMini/matter-node` - Matter over Wi-Fi node for `ESP32-C3-SuperMini`
 - `m5stickc/matter-node` - Matter over Wi-Fi node for first-generation `M5StickC`
 - `m5stickcPlus2/matter-node` - Matter over Wi-Fi node for `M5StickC Plus2`
-- `esp32sCam/camera-node` - Matter over Wi-Fi node for `ESP32-S-CAM` (camera runtime intentionally disabled)
+- `esp32sCam/camera-node` - Matter over Wi-Fi node with OV2640 HTTP snapshot/MJPEG streaming for `ESP32-S-CAM`
 - `lilygoTEnergyS3/matter-wifi-node` - Matter over Wi-Fi node for `LILYGO T-Energy-S3`
 
 ## Documentation
@@ -46,9 +46,8 @@ Each board's `main.cpp` declares a `constexpr BoardIdentity` and a static `Devic
   OTBR for Thread nodes, and Matter over Wi-Fi for Wi-Fi nodes.
 - If a proposed feature, diagnostic path, or integration would add data outside
   those protocols, call that out explicitly before implementing it.
-- `ESP32-S-CAM` is currently used as a Matter-only Wi-Fi node.
-- Camera capture and HTTP streaming are intentionally removed from this branch
-  and will be reintroduced later in a dedicated phase.
+- `ESP32-S-CAM` exposes OV2640 snapshot and MJPEG endpoints after Matter over
+  Wi-Fi commissioning connects it to the local AP.
 
 ## OTA Status
 

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp"
+    SRCS "main.cpp" "camera_web.cpp"
     INCLUDE_DIRS "."
     REQUIRES
         esp_matter
@@ -8,6 +8,8 @@ idf_component_register(
         esp_event
         esp_netif
         esp_wifi
+        esp_http_server
+        esp32-camera
         bms_node_core
 )
 

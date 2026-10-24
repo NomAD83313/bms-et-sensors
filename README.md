@@ -13,6 +13,7 @@ Docker stack for sensor data acquisition and visualization:
 - `dashboard`: lightweight start page based on `simple-dash`, served by `nginx`.
 - `matter-server`: Matter.js Server for controlled Matter diagnostics and collection.
 - `matter-collector`: collector that bridges Matter events to InfluxDB.
+- `cameras-app`: AP camera discovery, RTSP browser preview, inspection media uploads, and AI analysis integration boundary.
 - `openthread-border-router`: Border Router for Thread mesh (requires OpenThread RCP, USB or network socket).
 - `messkluppe-collector`: Messkluppe host-side collector; decodes nRF24 binary payloads and writes InfluxDB records, with fake mode available before node hardware is connected.
 
@@ -95,6 +96,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 - Graf App Lite: `http://<host>/graf/`
 - Matter + Thread Console: `http://<host>/matter/`
 - Matter Graf (5m shortcut): `http://<host>/graf/matter?range=5m`
+- Cameras & AI Inspection: `http://<host>/cameras/`
 - Messkluppe Graf (5m shortcut): `http://<host>/graf/messkluppe?range=5m`
 - Messkluppe collector (profile `messkluppe`): `http://<host>:3080`
 - Messkluppe collector via dashboard proxy: `http://<host>/messkluppe/`
@@ -214,6 +216,12 @@ Note:
 
 ```bash
 ./scripts/build-local-pyrometers.sh
+```
+
+- Build/restart Cameras & AI Inspection:
+
+```bash
+./scripts/build-local-cameras-app.sh
 ```
 
 - Configure persistent USB aliases/rules for Micro-Epsilon thermoMETER CT and Optris:

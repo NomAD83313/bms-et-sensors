@@ -312,6 +312,25 @@ services:
       - /var/lib/NetworkManager:/host/var/lib/NetworkManager:ro
     restart: unless-stopped
 
+  cameras-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.cameras-app
+    image: nomad375/bms-cameras-app:latest
+    container_name: cameras-app
+    network_mode: host
+    environment:
+      - TZ=UTC
+      - CAMERAS_PORT=${CAMERAS_PORT:-3090}
+      - CAMERAS_DATA_DIR=/runtime/cameras
+      - CAMERAS_AP_SUBNET=${CAMERAS_AP_SUBNET:-10.42.0.0/24}
+      - CAMERAS_DEFAULT_RTSP_USERNAME=${CAMERAS_DEFAULT_RTSP_USERNAME:-thingino}
+      - CAMERAS_DEFAULT_RTSP_PASSWORD=${CAMERAS_DEFAULT_RTSP_PASSWORD:-thingino}
+      - CAMERAS_MAX_UPLOAD_MB=${CAMERAS_MAX_UPLOAD_MB:-2048}
+    volumes:
+      - ./runtime/cameras:/runtime/cameras
+    restart: unless-stopped
+
   service-controller:
     build:
       context: .
@@ -345,6 +364,7 @@ services:
     depends_on:
       - service-controller
       - ap-control
+      - cameras-app
     restart: unless-stopped
 
 
