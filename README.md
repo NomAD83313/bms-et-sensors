@@ -523,6 +523,7 @@ Note:
 
 - MSCL configuration reads use `mscl_read_service`: one request-local read attempt groups device parameters and builds the existing API payload. Device ordering, lock scope, retries, and cache fallbacks remain unchanged.
 - ALMEMO separates environment settings, pure V6/V7 parsing, serial discovery/command sessions, and live streaming. The serial session and streaming service each own their mutable state; command batches retain pause/rearm/resume and XON/XOFF handling.
+- RedLab separates service startup, HTTP routes, shared read settings, per-device acquisition runtimes, the bounded InfluxDB write queue, and USB discovery/re-enumeration recovery. Read mode and loop cadence remain shared across devices; existing HTTP routes, measurement tags, warm-up filtering, and retry/overflow policies are unchanged. Unit tests use scoped ULDAQ substitutes and do not open sensor hardware.
 - Graf Lite and RedLab share `app/shared/redlab_channels.py` for legacy boolean selections and `{enabled, name}` metadata. Saves trim names and replace the existing runtime JSON atomically; no state-file migration is required.
 - Matter serves its HTML template with separate `static/matter.css` and `static/matter.js` resources. Relative links work both directly and under `/matter/`; page and asset responses disable caching.
 

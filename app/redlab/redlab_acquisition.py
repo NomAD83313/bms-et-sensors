@@ -19,6 +19,7 @@ ACTIVE_CHANNELS_PATH = Path("/runtime/redlab_channels.json")
 _CHANNEL_NAME_CACHE: dict[str, str] = {}
 _CHANNEL_NAME_CACHE_MTIME_NS: int | None = None
 _CHANNEL_NAME_CACHE_DEVICE_ID: str | None = None
+_CHANNEL_NAME_CACHE_PATH: Path | None = None
 TC_TYPE_LIMITS_C: dict[str, tuple[float, float]] = {
     "B": (0.0, 1820.0),
     "E": (-270.0, 1000.0),
@@ -35,31 +36,35 @@ def new_filter_state() -> dict:
     return {"last_valid_by_channel": {}}
 
 
-def _channel_names_for_device(device_id: str) -> dict[str, str]:
-    global _CHANNEL_NAME_CACHE, _CHANNEL_NAME_CACHE_MTIME_NS, _CHANNEL_NAME_CACHE_DEVICE_ID
+def _channel_names_for_device(device_id: str, state_path: Path | None = None) -> dict[str, str]:
+    global _CHANNEL_NAME_CACHE, _CHANNEL_NAME_CACHE_MTIME_NS, _CHANNEL_NAME_CACHE_DEVICE_ID, _CHANNEL_NAME_CACHE_PATH
+    path = state_path if state_path is not None else ACTIVE_CHANNELS_PATH
     try:
-        stat = ACTIVE_CHANNELS_PATH.stat()
+        stat = path.stat()
         mtime_ns = int(stat.st_mtime_ns)
     except Exception:
         _CHANNEL_NAME_CACHE = {}
         _CHANNEL_NAME_CACHE_MTIME_NS = None
+        _CHANNEL_NAME_CACHE_PATH = None
         return {}
 
-    if _CHANNEL_NAME_CACHE_MTIME_NS == mtime_ns and _CHANNEL_NAME_CACHE_DEVICE_ID == device_id:
+    if _CHANNEL_NAME_CACHE_MTIME_NS == mtime_ns and _CHANNEL_NAME_CACHE_DEVICE_ID == device_id and _CHANNEL_NAME_CACHE_PATH == path:
         return dict(_CHANNEL_NAME_CACHE)
 
     try:
-        raw = json.loads(ACTIVE_CHANNELS_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         _CHANNEL_NAME_CACHE = {}
         _CHANNEL_NAME_CACHE_MTIME_NS = mtime_ns
         _CHANNEL_NAME_CACHE_DEVICE_ID = device_id
+        _CHANNEL_NAME_CACHE_PATH = path
         return {}
 
     if not isinstance(raw, dict):
         _CHANNEL_NAME_CACHE = {}
         _CHANNEL_NAME_CACHE_MTIME_NS = mtime_ns
         _CHANNEL_NAME_CACHE_DEVICE_ID = device_id
+        _CHANNEL_NAME_CACHE_PATH = path
         return {}
 
     names: dict[str, str] = {}
@@ -76,14 +81,15 @@ def _channel_names_for_device(device_id: str) -> dict[str, str]:
     _CHANNEL_NAME_CACHE = dict(names)
     _CHANNEL_NAME_CACHE_MTIME_NS = mtime_ns
     _CHANNEL_NAME_CACHE_DEVICE_ID = device_id
+    _CHANNEL_NAME_CACHE_PATH = path
     return names
 
 
-def build_points(batch: dict, device_id: str) -> tuple[list[Point], list[str]]:
+def build_points(batch: dict, device_id: str, state_path: Path | None = None) -> tuple[list[Point], list[str]]:
     points = []
     log_data = []
     point_device_id = device_id or "redlab_unknown"
-    channel_names = _channel_names_for_device(point_device_id)
+    channel_names = _channel_names_for_device(point_device_id, state_path=state_path)
 
     for ch, temp in sorted(batch["values"].items()):
         ch_key = f"ch{ch}"
@@ -209,9 +215,10 @@ def channel_log_data(values: dict[int, float]) -> list[str]:
     return [f"CH{ch}:{temp:.1f}" for ch, temp in sorted(values.items())]
 
 
-def load_active_channels() -> set[int]:
+def load_active_channels(state_path: Path | None = None) -> set[int]:
+    path = state_path if state_path is not None else ACTIVE_CHANNELS_PATH
     try:
-        raw = json.loads(ACTIVE_CHANNELS_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             return set(range(CHANNEL_COUNT))
         active = set()
