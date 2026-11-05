@@ -320,7 +320,7 @@
       <h2>Service Control</h2>
       <p class="controls-sub">Use manual actions sparingly. This area is for focused recovery, not for routine operation when guard logic is already healthy.</p>
       <div id="controlRows"></div>
-      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage.</div>
+      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage. Cameras controls the whole camera application; use its page to pause detection and recording.</div>
     </div>
 
     <p class="footer-note"><a href="/">Back to Dashboard</a> · <button type="button" class="refresh-btn" id="refreshNow">Refresh now</button></p>
@@ -339,8 +339,9 @@
       { id: 'almemo', name: 'ALMEMO 2490', url: '/probe/almemo', type: 'json', pass: (d) => d && d.status === 'ok', group: 'device' },
       { id: 'pyrometer', name: 'Pyrometers', url: '/probe/pyrometer', type: 'json', pass: (d) => d && (d.status === 'ok' || d.status === 'degraded') && Array.isArray(d.connected_devices) && d.connected_devices.length > 0, group: 'device' },
       { id: 'messkluppe', name: 'Messkluppe', url: '/probe/messkluppe', type: 'json', pass: (d) => d && d.ok === true, group: 'device' },
+      { id: 'cameras', name: 'Cameras', url: '/probe/cameras', target: 'cameras', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
     ];
-    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana'];
+    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana', 'cameras'];
     const targetDisplayNames = {
       redlab: 'RedLab',
       almemo: 'ALMEMO',
@@ -348,6 +349,7 @@
       pyrometer: 'Pyrometers',
       messkluppe: 'Messkluppe',
       grafana: 'Grafana',
+      cameras: 'Cameras',
     };
     const statusLinks = {
       influx: `${window.location.protocol}//${window.location.hostname}:8086`,
@@ -359,6 +361,7 @@
       almemo: '/almemo/',
       pyrometer: '/pyrometer/',
       messkluppe: '/messkluppe/',
+      cameras: '/cameras/',
     };
 
     const platformGrid = document.getElementById('platformGrid');
@@ -547,6 +550,13 @@
       if (id === 'messkluppe') {
         return `Mode: ${data.fake_mode ? 'fake' : 'real'} | Running: ${yn(!!data.collector_running)} | Influx: ${yn(!!data.influx_configured)} | Packets: ${data.packets_received ?? 0} | Writes: ${data.records_written ?? 0} | Errors: ${data.last_error || 'none'}`;
       }
+      if (id === 'cameras') {
+        const score = Number.isFinite(data.analysis_score) && Number.isFinite(data.analysis_threshold)
+          ? ` | Score: ${data.analysis_score.toFixed(2)} / ${data.analysis_threshold.toFixed(2)}` : '';
+        const quality = data.preview_quality;
+        const stream = quality ? `\nStream: ${quality.state} | Decoder errors: ${quality.decoder_errors} | Excluded frames: ${quality.discarded_frames}` : '';
+        return `Recorder: ${data.service ?? '-'} | Detection: ${data.analysis_state ?? 'offline'} | Mode: ${data.recording_mode ?? '-'}\nBaseline: ${data.baseline_ready ? 'ready' : 'not learned'} | Saved clips: ${Array.isArray(data.clips) ? data.clips.length : 0}\nEvent window: ${data.pre_seconds ?? '-'}s before / ${data.post_seconds ?? '-'}s after${score}${stream}`;
+      }
       return JSON.stringify(data);
     }
 
@@ -598,6 +608,16 @@
           const data = JSON.parse(res.text || '{}');
           const ok = s.pass(data);
           const details = summarizeJson(s.id, data);
+          if (s.id === 'cameras' && ok && data.recording_mode === 'anomaly') {
+            if (data.analysis_state === 'anomaly') {
+              setState(s.id, 'warn', 'anomaly', details);
+              return;
+            }
+            if (data.service === 'paused' && ['paused', 'learning', 'training'].includes(data.analysis_state)) {
+              setState(s.id, 'warn', data.analysis_state, details);
+              return;
+            }
+          }
           setState(s.id, ok ? 'ok' : 'warn', ok ? 'up' : 'degraded', details);
         } else {
           const text = res.text;

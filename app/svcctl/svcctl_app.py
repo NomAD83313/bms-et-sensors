@@ -53,6 +53,8 @@ TARGET_MAP: Dict[str, List[str]] = {
     "messkluppe": ["messkluppe-collector"],
     # Keep Grafana control isolated: InfluxDB is shared by other stacks.
     "grafana": ["grafana"],
+    # Start dependencies first; stop them in reverse order.
+    "cameras": ["camera-recorder", "camera-dashboard", "camera-anomaly"],
 }
 
 _CPU_PREV_TOTAL: int | None = None

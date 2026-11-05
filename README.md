@@ -440,7 +440,7 @@ ping rpi5.internal
 - Primary config file: `dashboard/simple-dash/config.json`
 - Port mapping: `${DASHBOARD_PORT:-80}:80`
 - `{{host}}` placeholder is supported in links and resolves to `window.location.hostname`
-- Health page can control service groups (`redlab`, `mscl`, `almemo`, `pyrometer`, `messkluppe`, `grafana`) through `/api/control/*`
+- Health page can control service groups (`redlab`, `mscl`, `almemo`, `pyrometer`, `messkluppe`, `grafana`, `cameras`) through `/api/control/*`
 - Control does not require a token; access is currently gated only by network reachability to the dashboard
 
 `simple-dash` upstream:
@@ -555,3 +555,118 @@ Additional idle/read/health checks:
 Notes:
 - Results above are node/firmware-specific and should be treated as a validated snapshot.
 - If firmware exposes additional LPF values later, repeat the same validation procedure before using new combinations in production.
+
+## Cameras (optional Docker profile)
+
+The camera application from `bms-cameras` is included in `app/cameras`.
+`camera-recorder` records RTSP video with FFmpeg stream copy and no audio;
+`camera-dashboard` provides live preview, clip playback and downloads.
+Both services use the optional `cameras` profile and have no InfluxDB dependency.
+They use Linux host networking for direct access to cameras on the Pi AP;
+`CAMERA_DASHBOARD_PORT` controls the dashboard listening port.
+The image supports Raspberry Pi ARM64 and x86-64 through the Python/Debian base.
+
+Set `CAMERA_URL` in the private `.env` to your camera's RTSP URL, then run:
+
+```sh
+./scripts/restart-cameras.sh
+./scripts/logs.sh camera-recorder
+```
+
+Open `http://<host>/cameras/` or select Cameras under Services on the main dashboard.
+The main nginx proxies camera requests to the backend on port 8082.
+If changing `CAMERA_DASHBOARD_PORT`, also update both camera upstreams in
+`dashboard/nginx/default.conf` and reload nginx.
+The dashboard is available to reachable LAN clients without authentication.
+Credentials are never sent to the browser or application logs; local Docker
+administrators can inspect container environment and FFmpeg process arguments.
+
+Recordings default to `runtime/cameras/recordings` (ignored by Git).
+Set `CAMERA_RECORDING_DIR` to a dedicated SSD directory if available.
+The recorder writes video; the dashboard also has write access to delete
+completed recordings through its history controls. The analysis worker does not
+mount the recording directory.
+Defaults are 60-second clips, 24-hour retention and 10240 MiB of completed clips.
+Configure these with `CAMERA_CLIP_SECONDS`, `CAMERA_MAX_AGE_HOURS`, and
+`CAMERA_MAX_STORAGE_MB`. The current clip is additional to that budget.
+Limits are checked between clips. Connections restart between clips, so gaps
+are possible. Interrupted partial clips are discarded on recorder startup.
+
+Dashboard recording health combines the recorder heartbeat and newest completed
+clip (duration plus 60 seconds); a new session may initially wait for a clip. Container health checks verify
+HTTP availability separately from recording health.
+The main dashboard's Cameras link follows HTTP availability and remains active
+when recording or detection is paused; recorder health is shown inside Cameras.
+System Health also shows recording/detection state, baseline readiness, saved
+clip count and event windows. Its Cameras Start/Stop/Restart controls manage
+`camera-recorder`, `camera-dashboard` and `camera-anomaly` together, scoped to
+the controller's Compose project. They preserve the saved detection selection;
+routine detection/recording pause is managed on `/cameras/`. If the optional
+containers have not been created, run `./scripts/restart-cameras.sh` first.
+
+When migrating from the standalone systemd installation, build the image first
+with `docker compose --profile cameras build camera-recorder camera-dashboard`.
+Then stop `bms-cameras` and `bms-camera-dashboard` before starting Docker on the
+same port or recording directory. Copy the RTSP URL privately into `.env`;
+existing clips can be retained by pointing `CAMERA_RECORDING_DIR` at their
+existing directory. Never run two recorders against the same directory.
+To stop the Docker camera services:
+
+```sh
+docker compose --profile cameras stop camera-anomaly camera-recorder camera-dashboard
+```
+
+Local migration (2026-11-05): the Docker camera services use port 8082 and
+store recordings in `runtime/cameras/recordings` through the private `.env`.
+Existing clips were migrated from the standalone project, which has been removed.
+The former `bms-cameras` and `bms-camera-dashboard` systemd services are stopped
+and disabled; Docker `unless-stopped` now handles restart after host reboot.
+
+In continuous mode, Recording setup provides Start recording and Stop recording
+buttons. Stopping discards the unfinished continuous clip. In anomaly mode,
+**Start detection & recording** and **Pause detection & recording** control both
+analysis and the recording buffer; separate recording buttons are hidden.
+Learning stops the event buffer and restarts it with detection after success.
+Pausing finalizes any available event video without waiting for the remaining
+post-window. Saved clips and live preview remain available. Session settings
+survive restarts under `runtime/cameras/` (local runtime state). Recorder state uses a heartbeat;
+a missing heartbeat is shown as offline after 15 seconds.
+
+The recorder's text status refreshes every three seconds. After six seconds
+without video progress it reports Connecting. Pausing detection in anomaly mode
+shows the recorder as stopped. Live-preview connectivity is shown separately
+on the preview.
+
+Live preview generates 10 FPS JPEG at 960 px width. The browser requests frames
+at up to 10 FPS, one request at a time, and pauses requests in hidden tabs.
+Recording retains the original camera stream independently of preview FPS.
+Preview decoding rejects recognised corrupt packets/frames and suppresses
+analysis during decoder recovery. Cameras and System Health show decoder-error
+and excluded-preview-frame counters. This adds about one preview frame of
+admission delay; correctly encoded camera-side visual artifacts can still trigger
+the detector. See the anomaly guide for diagnostics and filtering limits.
+
+The `cameras` profile also includes a local **Unusual view detection** experiment
+using a lightweight PatchCore-style model. Learn a normal view, inspect anomaly
+scores and event snapshots. In anomaly mode, analysis and event recording share
+one start/pause control.
+See [camera anomaly setup and limitations](docs/camera-anomaly.md).
+
+Event-only video is available with `CAMERA_RECORDING_MODE=anomaly` (enabled on
+this host). Normal video stays in a short buffer and is discarded; confirmed
+anomalies retain `CAMERA_EVENT_PRE_SEC=7` seconds before and
+`CAMERA_EVENT_POST_SEC=10` seconds after, rounded to camera keyframes. Repeated
+anomalies extend the event. Only confirmed anomaly windows are saved; other
+buffered video expires even if analysis is paused, learning or unavailable.
+Completed videos retain the existing video age/size limits.
+The library defaults to Events only; historical continuous footage is still
+accessible by clearing that filter. See the anomaly guide for operational details.
+
+Camera history controls provide Delete on video rows, Delete snapshot on event
+cards, and **Delete saved…** for all snapshots, all recordings, or both. Deletion
+requires confirmation and preserves the learned model, settings and active
+buffer. New events and pending video can appear after clearing saved history.
+
+Visual analysis targets 5 FPS and confirms after two consecutive suspicious
+frames; the analysis badge refreshes every 0.25 seconds. Normal-view learning
+continues to collect 60 frames over approximately two minutes.

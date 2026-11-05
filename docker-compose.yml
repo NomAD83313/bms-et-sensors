@@ -1,5 +1,87 @@
 services:
 
+  camera-recorder:
+    build:
+      context: .
+      dockerfile: Dockerfile.cameras
+    image: bms-cameras:local
+    profiles: [cameras]
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    environment: &camera-environment
+      TZ: UTC
+      CAMERA_URL: ${CAMERA_URL:-}
+      RECORDING_DIR: /recordings
+      CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
+      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
+      CAMERA_EVENT_PRE_SEC: ${CAMERA_EVENT_PRE_SEC:-7}
+      CAMERA_EVENT_POST_SEC: ${CAMERA_EVENT_POST_SEC:-10}
+      MAX_STORAGE_MB: ${CAMERA_MAX_STORAGE_MB:-10240}
+      MAX_AGE_HOURS: ${CAMERA_MAX_AGE_HOURS:-24}
+    volumes:
+      - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/recordings
+      - ./runtime/cameras/control:/control
+      - ./runtime/cameras/anomaly:/anomaly:ro
+
+  camera-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.cameras
+    image: bms-cameras:local
+    profiles: [cameras]
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    command: [python, dashboard.py]
+    environment:
+      <<: *camera-environment
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: ${CAMERA_DASHBOARD_PORT:-8082}
+    volumes:
+      - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/recordings
+      - ./runtime/cameras/control:/control
+      - ./runtime/cameras/anomaly:/anomaly
+    depends_on:
+      camera-recorder:
+        condition: service_started
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/status', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  camera-anomaly:
+    build:
+      context: .
+      dockerfile: Dockerfile.camera-anomaly
+    image: bms-camera-anomaly:local
+    profiles: [cameras]
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 768m
+    environment:
+      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
+      CAMERA_ANOMALY_PREVIEW_URL: http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/live.jpg
+      CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
+      CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
+      CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
+    volumes:
+      - ./runtime/cameras/anomaly:/anomaly
+      - ./runtime/cameras/control:/control
+    depends_on:
+      camera-dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import json,time; from pathlib import Path; assert time.time()-json.loads(Path('/anomaly/status.json').read_text())['updated'] < 30"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
   redlab-collector:
     image: nomad375/bms-redlab-collector:latest
     container_name: redlab-collector

@@ -61,6 +61,12 @@
           "icon": "fas fa-database",
           "link": "http://{{host}}:8086",
           "probe": "/probe/influx"
+        },
+        {
+          "alt": "Cameras",
+          "icon": "fas fa-video",
+          "link": "/cameras/",
+          "probe": "/probe/cameras"
         }
       ]
     },

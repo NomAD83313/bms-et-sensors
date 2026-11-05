@@ -30,6 +30,8 @@
 			function itemIsAvailable(item, statusCode, bodyText) {
 				if (!item.probe) return true;
 				var p = item.probe;
+				// The camera dashboard remains usable when recording is paused or offline.
+				if (p === '/probe/cameras') return statusCode >= 200 && statusCode < 300;
 				if (p === '/probe/mscl') return /"status"\s*:\s*"(ok|degraded)"/i.test(bodyText);
 				if (p === '/probe/influx') return bodyText.indexOf('"status":"pass"') !== -1;
 				if (p === '/probe/grafana') {

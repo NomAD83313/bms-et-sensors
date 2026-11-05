@@ -3,9 +3,12 @@ from datetime import datetime
 import docker
 
 
+COMPOSE_SERVICES = {"camera-recorder", "camera-dashboard", "camera-anomaly"}
+
+
 def container_status(client: docker.DockerClient, name: str) -> str:
     try:
-        container = client.containers.get(name)
+        container = get_container(client, name)
         container.reload()
         return container.status
     except docker.errors.NotFound:
@@ -15,6 +18,22 @@ def container_status(client: docker.DockerClient, name: str) -> str:
 
 
 def get_container(client: docker.DockerClient, name: str):
+    if name in COMPOSE_SERVICES:
+        # Camera services retain Compose-generated names; scope lookup to this stack.
+        controller = client.containers.get("service-controller")
+        project = controller.labels.get("com.docker.compose.project")
+        if not project:
+            raise RuntimeError("Service controller Compose project is unavailable")
+        matches = client.containers.list(all=True, filters={"label": [
+            f"com.docker.compose.project={project}",
+            f"com.docker.compose.service={name}",
+            "com.docker.compose.oneoff=False",
+        ]})
+        if not matches:
+            raise docker.errors.NotFound(f"Compose service {name} has not been created")
+        if len(matches) != 1:
+            raise RuntimeError(f"Compose service {name} has multiple containers")
+        return matches[0]
     return client.containers.get(name)
 
 
