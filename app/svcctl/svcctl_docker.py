@@ -3,7 +3,10 @@ from datetime import datetime
 import docker
 
 
-COMPOSE_SERVICES = {"camera-recorder", "camera-dashboard", "camera-anomaly"}
+COMPOSE_SERVICES = {
+    "camera-recorder", "camera-dashboard", "camera-anomaly",
+    "pi-camera-recorder", "pi-camera-dashboard", "pi-camera-anomaly",
+}
 
 
 def container_status(client: docker.DockerClient, name: str) -> str:

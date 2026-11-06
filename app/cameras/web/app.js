@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+let cameraName = 'Camera 01';
 let clips = [], visible = 12, paused = false, timer, liveFailures = 0, recordingModeLoaded = false;
 const size = bytes => bytes >= 1073741824 ? (bytes / 1073741824).toFixed(2) + ' GiB' : (bytes / 1048576).toFixed(1) + ' MiB';
 const datetime = value => new Date(value * 1000).toLocaleString([], {month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -11,7 +12,7 @@ function render() {
     const td = document.createElement('td');
     const title = document.createElement('div'); title.className = 'record-name';
     const icon = document.createElement('span'); icon.className = 'clip-icon'; icon.textContent = '▷';
-    const label = document.createElement('div'); label.textContent = c.kind === 'event' ? 'Anomaly event' : c.kind === 'unclassified' ? 'Unchecked · analysis unavailable' : c.name === 'connection-check.mkv' ? 'Connection check' : 'Camera 01 · Main stream';
+    const label = document.createElement('div'); label.textContent = c.kind === 'event' ? 'Anomaly event' : c.kind === 'unclassified' ? 'Unchecked · analysis unavailable' : c.name === 'connection-check.mkv' ? 'Connection check' : cameraName + ' · Main stream';
     const filename = document.createElement('small'); filename.textContent = c.name; label.append(filename); title.append(icon,label); td.append(title); tr.append(td);
     for (const text of [datetime(c.timestamp), size(c.bytes)]) { const cell = document.createElement('td'); cell.textContent = text; tr.append(cell); }
     const saved = document.createElement('td'); saved.className = 'saved'; saved.textContent = c.kind === 'unclassified' ? '● Unchecked' : '● Saved'; tr.append(saved);
@@ -30,6 +31,11 @@ async function refresh() {
   try {
     const response = await fetch('api/status'); if (!response.ok) throw Error();
     const data = await response.json(); clips = data.clips;
+    cameraName = data.camera_name || 'Camera 01';
+    $('camera-name').textContent = cameraName;
+    $('camera-description').textContent = data.camera_description || 'Network camera';
+    $('camera-resolution').textContent = data.camera_resolution || 'Main stream';
+    $('live').alt = 'Live preview from ' + cameraName;
     $('recorder').textContent = !data.recording_enabled ? (data.service === 'paused' ? 'Stopped' : 'Stopping…') : data.service === 'recording' ? 'Recording' : data.service === 'connecting' ? 'Connecting…' : 'Offline';
     $('recorder').style.color = data.healthy ? '#557b35' : '#a37236';
     $('health').textContent = data.healthy ? 'Latest clip saved successfully' : 'No recent clip · check camera connection';
@@ -54,6 +60,10 @@ async function refresh() {
     $('start-recording').disabled = data.recording_enabled;
     $('stop-recording').disabled = !data.recording_enabled;
     $('health').textContent = !data.recording_enabled ? 'Recording stopped · live preview available' : $('health').textContent;
+    if (data.snapshot_export_failed) {
+      $('recorder').textContent = 'Export failed';
+      $('health').textContent = 'Snapshot video could not be saved. Raw event frames are retained; check storage and restart the recorder.';
+    }
     $('clip-count').textContent = clips.length; $('library-count').textContent = clips.length;
     $('storage').textContent = size(data.total_bytes); $('budget').textContent = `of ${size(data.max_storage_bytes)} budget · ${size(data.free_bytes)} free`;
     $('retention').textContent = `${data.max_age_hours} hours`; $('duration').textContent = data.recording_mode === 'anomaly' ? `${data.pre_seconds}s before · ${data.post_seconds}s after` : `${data.clip_seconds}-second recording clips`;
@@ -96,7 +106,9 @@ async function recordingControl(action) {
 $('start-recording').onclick = () => recordingControl('start');
 $('stop-recording').onclick = () => recordingControl('stop');
 
-let anomalyRequest = false, anomalyEventsKey = '';
+let anomalyRequest = false, anomalyEventsKey = '', latestAnomalyState = null;
+let appliedConfirmation = null, pendingConfirmation = null, confirmationFailure = '';
+let inputSizeDirty = false, appliedInputSize = null, pendingInputSize = null, inputSizeFailure = '';
 let thresholdDirty = false, appliedMultiplier = null, pendingMultiplier = null, thresholdFailure = '', thresholdGeneration = 0;
 function parseMultiplier(value) {
   const number = Number(value.trim().replace(',', '.'));
@@ -113,7 +125,7 @@ function syncThreshold(data, unavailable) {
     }
     if (!thresholdDirty && document.activeElement !== input) input.value = String(appliedMultiplier);
   }
-  $('anomaly-apply').disabled = unavailable || pendingMultiplier !== null || !thresholdDirty;
+  $('anomaly-apply').disabled = unavailable || pendingInputSize !== null || pendingMultiplier !== null || !thresholdDirty;
   $('threshold-status').textContent = thresholdFailure || (pendingMultiplier !== null ? 'Applying threshold…' : thresholdDirty ? `Applied multiplier: ${appliedMultiplier ?? '—'}. Edited value is not applied yet.` : `Applied multiplier: ${appliedMultiplier ?? '—'}.`);
 }
 function syncDetectionControls(data, unavailable) {
@@ -122,9 +134,9 @@ function syncDetectionControls(data, unavailable) {
   const monitoring = data.monitoring_enabled ?? ['normal', 'suspect', 'anomaly'].includes(data.state);
   $('anomaly-monitor').textContent = coupled ? 'Start detection & recording' : 'Start detection';
   $('anomaly-pause').textContent = coupled ? 'Pause detection & recording' : 'Pause detection';
-  $('anomaly-learn').disabled = unavailable || learning;
-  $('anomaly-monitor').disabled = unavailable || !data.baseline_ready || learning || monitoring;
-  $('anomaly-pause').disabled = (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
+  $('anomaly-learn').disabled = capturePending || unavailable || learning || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty;
+  $('anomaly-monitor').disabled = capturePending || unavailable || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || !data.baseline_ready || learning || monitoring;
+  $('anomaly-pause').disabled = pendingConfirmation !== null || (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
 }
 async function refreshAnomaly() {
   if (document.hidden || anomalyRequest) return;
@@ -133,6 +145,7 @@ async function refreshAnomaly() {
     const response = await fetch('api/anomaly');
     if (!response.ok) throw Error();
     const data = await response.json();
+    latestAnomalyState = data.state;
     const badge = $('anomaly-state');
     badge.textContent = data.state.toUpperCase(); badge.dataset.state = data.state;
     $('anomaly-message').textContent = data.message;
@@ -145,6 +158,8 @@ async function refreshAnomaly() {
     $('anomaly-score').textContent = data.score != null ? `Score ${data.score.toFixed(2)} / threshold ${data.threshold.toFixed(2)} (learned ${(data.threshold / data.multiplier).toFixed(3)} × ${data.multiplier}) · ${data.ratio.toFixed(2)}×` : 'Score: —';
     $('anomaly-speed').textContent = data.inference_ms != null ? `Analysis ${(1 / (data.analysis_interval_sec || 2)).toFixed(1)} FPS · confirm ${data.confirmation_frames || 3} frames · cycle ${data.inference_ms} ms` : 'Analysis: —';
     const unavailable = ['offline', 'loading'].includes(data.state);
+    syncConfirmation(data, unavailable);
+    syncInputSize(data, unavailable);
     syncThreshold(data, unavailable);
     syncDetectionControls(data, unavailable);
     const key = (data.events || []).map(event => event.id + ':' + (event.videos || []).join(',')).join(',') + ':' + data.video_pending;
@@ -176,11 +191,14 @@ async function refreshAnomaly() {
   } catch {
     $('anomaly-state').textContent = 'UNAVAILABLE'; $('anomaly-state').dataset.state = 'offline';
     $('anomaly-message').textContent = 'Cannot reach visual analysis. Check the analysis service.';
+    syncConfirmation({}, true);
+    syncInputSize({}, true);
     syncDetectionControls({}, true);
     syncThreshold({}, true);
   } finally { anomalyRequest = false; }
 }
 async function anomalyControl(action) {
+  if (pendingInputSize !== null || pendingConfirmation !== null) return;
   const configuring = action === 'configure';
   let generation = thresholdGeneration;
   const multiplier = configuring ? parseMultiplier($('anomaly-multiplier').value) : (appliedMultiplier ?? 1.25);
@@ -212,6 +230,105 @@ async function anomalyControl(action) {
     refreshAnomaly();
   }
 }
+function syncConfirmation(data, unavailable) {
+  const select = $('anomaly-confirmation');
+  if (data.confirmation_frames != null) {
+    appliedConfirmation = data.confirmation_frames;
+    if (pendingConfirmation && pendingConfirmation.id === data.last_request && pendingConfirmation.value === appliedConfirmation) {
+      pendingConfirmation = null; confirmationFailure = '';
+    }
+    if (pendingConfirmation === null) select.value = String(appliedConfirmation);
+  }
+  select.disabled = unavailable || ['learning', 'training'].includes(data.state)
+    || pendingConfirmation !== null || pendingInputSize !== null || pendingMultiplier !== null;
+  $('confirmation-status').textContent = confirmationFailure || (pendingConfirmation !== null
+    ? 'Applying confirmation setting…'
+    : appliedConfirmation !== null ? `Applied: ${appliedConfirmation} consecutive analyzed frame${appliedConfirmation === 1 ? '' : 's'}. No new learning required.` : 'Checking confirmation setting…');
+}
+async function applyConfirmation() {
+  if (pendingConfirmation !== null || pendingInputSize !== null || pendingMultiplier !== null) return;
+  const value = Number($('anomaly-confirmation').value);
+  if (value === appliedConfirmation) return;
+  pendingConfirmation = {value, id: null}; confirmationFailure = '';
+  syncConfirmation({}, false); syncInputSize({}, false); syncThreshold({}, false); syncDetectionControls({}, false);
+  try {
+    const response = await fetch('api/anomaly/confirmation', {method: 'POST',
+      headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'},
+      body: JSON.stringify({confirmation_frames: value})});
+    if (!response.ok) throw Error();
+    const command = await response.json();
+    pendingConfirmation.id = command.id;
+    setTimeout(refreshAnomaly, 500);
+    setTimeout(() => {
+      if (pendingConfirmation && pendingConfirmation.id === command.id) {
+        pendingConfirmation = null;
+        confirmationFailure = 'Change is not confirmed. Check the applied count and retry.';
+        syncConfirmation({}, false);
+      }
+    }, 15000);
+  } catch {
+    pendingConfirmation = null;
+    confirmationFailure = 'Could not change confirmation. Please retry.';
+    if (appliedConfirmation !== null) $('anomaly-confirmation').value = String(appliedConfirmation);
+    syncConfirmation({}, false);
+  }
+}
+$('anomaly-confirmation').addEventListener('change', applyConfirmation);
+function modelDimensions(value) {
+  const [width, height = width] = String(value).split('x').map(Number);
+  return {width, height, label: `${width} × ${height}`};
+}
+function syncInputSize(data, unavailable) {
+  const select = $('anomaly-input-size');
+  if (data.input_size != null) {
+    appliedInputSize = data.input_size;
+    if (pendingInputSize && pendingInputSize.id === data.last_request && pendingInputSize.value === appliedInputSize) {
+      pendingInputSize = null; inputSizeDirty = false; inputSizeFailure = '';
+    }
+    if (!inputSizeDirty && pendingInputSize === null) select.value = String(appliedInputSize);
+  }
+  const learning = ['learning', 'training'].includes(data.state);
+  const dimensions = modelDimensions(appliedInputSize);
+  select.disabled = unavailable || learning || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
+  $('anomaly-size-apply').disabled = unavailable || learning || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty;
+  $('input-size-status').textContent = inputSizeFailure || (pendingInputSize !== null
+    ? 'Applying input size. Detection will pause; new learning is required…'
+    : inputSizeDirty ? 'Not applied yet. Apply size, then learn the normal view again.'
+    : learning ? `Learning baseline for ${dimensions.label}. Wait until learning completes.`
+    : data.retraining_required ? `Input ${dimensions.label} applied. New learning required: click Learn normal view.`
+    : appliedInputSize !== null ? `Model input: ${dimensions.label} · heatmap grid: ${dimensions.width / 8} × ${dimensions.height / 8}.` : 'Checking model input size…');
+}
+async function applyInputSize() {
+  if (pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty) return;
+  const value = $('anomaly-input-size').value;
+  pendingInputSize = {value, id: null}; inputSizeFailure = '';
+  syncInputSize({}, false); syncDetectionControls({}, false);
+  try {
+    const response = await fetch('api/anomaly/resize', {method: 'POST',
+      headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'},
+      body: JSON.stringify({input_size: value})});
+    if (!response.ok) throw Error();
+    const command = await response.json();
+    pendingInputSize.id = command.id;
+    setTimeout(refreshAnomaly, 500);
+    setTimeout(() => {
+      if (pendingInputSize && pendingInputSize.id === command.id) {
+        pendingInputSize = null;
+        inputSizeFailure = 'Input size change is not confirmed. Check the applied size and retry.';
+        syncInputSize({}, false);
+      }
+    }, 15000);
+  } catch {
+    pendingInputSize = null;
+    inputSizeFailure = 'Could not apply input size. Please retry.';
+    syncInputSize({}, false);
+  }
+}
+$('anomaly-input-size').addEventListener('change', () => {
+  inputSizeDirty = $('anomaly-input-size').value !== appliedInputSize;
+  inputSizeFailure = ''; syncInputSize({}, false); syncDetectionControls({}, false);
+});
+$('anomaly-size-apply').onclick = applyInputSize;
 $('anomaly-multiplier').addEventListener('input', () => {
   thresholdDirty = parseMultiplier($('anomaly-multiplier').value) !== appliedMultiplier;
   thresholdFailure = ''; syncThreshold({}, false);
@@ -253,3 +370,82 @@ async function deleteHistory(action, name) {
 $('delete-all-events').onclick = () => deleteHistory('all-events');
 $('delete-all-recordings').onclick = () => deleteHistory('all-recordings');
 $('delete-history').onclick = () => deleteHistory('history');
+
+
+let captureApplied = null, captureDirty = false, capturePending = false, capturePolling = false;
+function captureDraft() {
+  const snapshots = $('capture-mode').value === 'snapshots';
+  const draft = {capture_mode: $('capture-mode').value,
+    snapshot_interval_ms: Number($('capture-interval').value),
+    shutter_us: snapshots ? Number($('capture-exposure').value) : 0};
+  [draft.width, draft.height] = $('capture-resolution').value.split('x').map(Number);
+  if (!snapshots) draft.fps = Number($('capture-fps').value);
+  return draft;
+}
+function syncCaptureOptions() {
+  const snapshots = $('capture-mode').value === 'snapshots';
+  $('capture-interval-label').hidden = !snapshots;
+  $('capture-exposure-label').hidden = !snapshots;
+  $('capture-resolution-label').hidden = false;
+  $('capture-fps-label').hidden = snapshots;
+  const resolution = [...$('capture-resolution').options].find(option => option.value === $('capture-resolution').value);
+  const maximumFps = Number(resolution?.dataset.maxFps || 30);
+  for (const option of $('capture-fps').options) option.disabled = Number(option.value) > maximumFps;
+  if (!snapshots && Number($('capture-fps').value) > maximumFps) $('capture-fps').value = String(maximumFps);
+  const maximum = Number($('capture-interval').value)*1000;
+  for (const option of $('capture-exposure').options) option.disabled = Number(option.value) > maximum;
+  if (Number($('capture-exposure').value) > maximum) {
+    $('capture-exposure').value = '0';
+    $('capture-status').textContent = 'Previous exposure does not fit this interval. Auto exposure selected; apply to save.';
+  }
+  for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).disabled = capturePending;
+  $('capture-apply').disabled = capturePending || !captureDirty || ['learning', 'training'].includes(latestAnomalyState) || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
+}
+async function refreshCapture() {
+  if (capturePolling || document.hidden) return;
+  capturePolling = true;
+  try {
+    const response = await fetch('api/capture');
+    if (!response.ok) throw Error();
+    const data = await response.json();
+    $('capture-panel').hidden = !data.available;
+    if (!data.available) return;
+    captureApplied = data.settings;
+    $('preview-rate').textContent = captureApplied.capture_mode === 'snapshots'
+      ? `SNAPSHOTS · ${1000/captureApplied.snapshot_interval_ms} FPS` : 'LIVE PREVIEW · 10 FPS';
+    if (!captureDirty && !capturePending) {
+      $('capture-mode').value = captureApplied.capture_mode;
+      $('capture-interval').value = String(captureApplied.snapshot_interval_ms);
+      $('capture-resolution').value = `${captureApplied.width}x${captureApplied.height}`;
+      $('capture-fps').value = String(captureApplied.fps);
+      $('capture-exposure').value = String(captureApplied.shutter_us);
+      const exposure = captureApplied.shutter_us ? `${captureApplied.shutter_us/1000} ms requested exposure` : 'Auto exposure';
+      $('capture-status').textContent = captureApplied.capture_mode === 'snapshots'
+        ? `Snapshots: ${1000/captureApplied.snapshot_interval_ms} FPS · ${captureApplied.width} × ${captureApplied.height} · ${exposure}`
+        : `Video: ${captureApplied.width} × ${captureApplied.height} · ${captureApplied.fps} FPS · ${exposure}`;
+    }
+    syncCaptureOptions();
+  } catch {
+    if (captureApplied) $('capture-status').textContent = 'Capture controls unavailable. Please retry.';
+  } finally { capturePolling = false; }
+}
+for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).addEventListener('change', () => {
+  captureDirty = true; syncCaptureOptions();
+  $('capture-status').textContent = 'Not applied. Applying pauses detection; check the new image and learn the normal view again.';
+});
+$('capture-apply').onclick = async () => {
+  if (capturePending || !captureDirty || ['learning', 'training'].includes(latestAnomalyState)) return;
+  capturePending = true; syncCaptureOptions();
+  $('capture-status').textContent = 'Applying capture settings; the live image will reconnect…';
+  try {
+    const response = await fetch('api/capture', {method: 'POST', headers: {
+      'X-Camera-Control': '1', 'Content-Type': 'application/json'}, body: JSON.stringify(captureDraft())});
+    if (!response.ok) throw Error();
+    const data = await response.json();
+    captureApplied = data.settings; captureDirty = false;
+    $('capture-status').textContent = 'Capture settings applied. Detection is paused. Check the image and learn the normal view again.';
+    setTimeout(refreshAnomaly, 1000);
+  } catch { $('capture-status').textContent = 'Could not apply settings. Check resolution, FPS and snapshot exposure, then retry.'; }
+  finally { capturePending = false; syncCaptureOptions(); }
+};
+refreshCapture(); setInterval(refreshCapture, 5000);

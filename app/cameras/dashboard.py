@@ -11,12 +11,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
 
 try:
-    from . import control, anomaly_control, history
+    from .source import input_args
+except ImportError:
+    from source import input_args
+
+
+try:
+    from . import control, anomaly_control, history, source
     from .preview_quality import DecodeGuard, decoder_error_kind
 except ImportError:
     import control
     import anomaly_control
     import history
+    import source
     from preview_quality import DecodeGuard, decoder_error_kind
 
 ROOT = Path(__file__).resolve().parent
@@ -55,7 +62,15 @@ def status():
     healthy = control.enabled() and state == 'recording' and time.time() - newest < int(os.environ.get('CLIP_SECONDS', '60')) + 60
     if mode == 'anomaly':
         healthy = control.enabled() and state in ('buffering', 'saving_event')
-    return dict(service=state, healthy=healthy, recording_enabled=control.enabled(), recording_mode=mode,
+    resolution = os.environ.get('CAMERA_RESOLUTION', 'Main stream')
+    if source.capture_url():
+        capture = source.capture_settings()
+        resolution = f"{capture['width']} × {capture['height']}"
+    return dict(camera_name=os.environ.get('CAMERA_NAME', 'Camera 01'),
+                camera_description=os.environ.get('CAMERA_DESCRIPTION', 'Network camera'),
+                camera_resolution=resolution, service=state, healthy=healthy, recording_enabled=control.enabled(), recording_mode=mode,
+                snapshot_export_failed=details.get('export_failed', False),
+                capture_mode=details.get('capture_mode', 'video'),
                 event_active=details.get('event_active', False), event_until=details.get('event_until'),
                 analysis_available=details.get('analysis_available', False),
                 analysis_state=analysis_state, monitoring_enabled=analysis.get('monitoring_enabled', False),
@@ -137,13 +152,32 @@ class LivePreview:
             if kind:
                 self.decoder_error(kind)
 
+    def run_snapshots(self):
+        signature = source.capture_signature()
+        last_token = None
+        while time.monotonic()-self.last_request < 30 and source.capture_signature() == signature:
+            try:
+                jpeg, captured_at, token = source.snapshot(last_token)
+                if token != last_token:
+                    with self.condition:
+                        if not self.guard.recovering(time.monotonic()):
+                            self.frame, self.updated, self.frame_token = jpeg, time.monotonic(), self.guard.token
+                            self.condition.notify_all()
+                    last_token = token
+            except (OSError, ValueError):
+                self.decoder_error('stream_error')
+            time.sleep(.05)
+
     def run(self):
+        if source.capture_settings()['capture_mode'] == 'snapshots':
+            return self.run_snapshots()
+        signature = source.capture_signature()
         url = os.environ.get('CAMERA_URL')
         if not url:
             return
         args = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'warning',
                 '-fflags', '+discardcorrupt', '-err_detect', 'explode',
-                '-rtsp_transport', 'tcp', '-timeout', '15000000', '-i', url,
+                *input_args(url),
                 '-an', '-vf', 'fps=10,scale=960:-2', '-c:v', 'mjpeg', '-q:v', '5', '-threads', '1', '-f', 'image2pipe', 'pipe:1']
         try:
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -151,7 +185,7 @@ class LivePreview:
             errors.start()
             try:
                 buffer = b''
-                while time.monotonic()-self.last_request < 30:
+                while time.monotonic()-self.last_request < 30 and source.capture_signature() == signature:
                     chunk = process.stdout.read1(65536)
                     if not chunk:
                         self.decoder_error('stream_error')
@@ -205,12 +239,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path not in ('/api/recording/start', '/api/recording/stop', '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause', '/api/anomaly/configure', '/api/delete/event', '/api/delete/recording', '/api/delete/all-events', '/api/delete/all-recordings', '/api/delete/history'):
+        if path not in ('/api/recording/start', '/api/recording/stop', '/api/capture', '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause', '/api/anomaly/configure', '/api/anomaly/resize', '/api/anomaly/confirmation', '/api/delete/event', '/api/delete/recording', '/api/delete/all-events', '/api/delete/all-recordings', '/api/delete/history'):
             return self.send(b'Not found', 'text/plain', 404)
         # Require a custom header to prevent cross-origin form submissions.
         if self.headers.get('X-Camera-Control') != '1':
             return self.send(b'Forbidden', 'text/plain', 403)
         try:
+            if path == '/api/capture':
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 2048:
+                    raise ValueError('Invalid capture request')
+                body = json.loads(self.rfile.read(length))
+                try:
+                    from .capture_settings import validate_update
+                except ImportError:
+                    from capture_settings import validate_update
+                validate_update(source.capture_settings(), body)
+                settings = source.configure_capture(body)
+                session = anomaly_control.read_json(anomaly_control.DATA / 'session.json', {})
+                anomaly_control.request('pause', session.get('multiplier', 1.25))
+                if os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly':
+                    control.set_enabled(False)
+                return self.send(json.dumps(dict(settings=settings, detection_paused=True)).encode(), 'application/json')
             if path.startswith('/api/delete/'):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 <= length <= 1024:
@@ -225,8 +275,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('Invalid request size')
                 body = json.loads(self.rfile.read(length) or b'{}')
                 action = path.rsplit('/', 1)[-1]
-                command = anomaly_control.request(action, body.get('multiplier', 1.25))
-                if os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly' and action in ('pause', 'learn'):
+                command = anomaly_control.request(action, body.get('multiplier', 1.25),
+                                                  input_size=body.get('input_size'),
+                                                  confirmation_frames=body.get('confirmation_frames'))
+                if os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly' and action in ('pause', 'learn', 'resize'):
                     # Stopping the buffer must also work while the worker is offline.
                     control.set_enabled(False)
                 return self.send(json.dumps(command).encode(), 'application/json', 202)
@@ -257,6 +309,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def route(self):
         path = unquote(urlsplit(self.path).path)
+        if path == '/api/capture':
+            return self.send(json.dumps(dict(available=bool(source.capture_url()), settings=source.capture_settings())).encode(), 'application/json')
         if path == '/api/anomaly':
             result = anomaly_control.status()
             videos = []
@@ -294,13 +348,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(frame or b'Live preview unavailable', 'image/jpeg' if frame else 'text/plain', 200 if frame else 503, headers)
         if path.startswith('/api/download/'):
             clip = clip_path(path.removeprefix('/api/download/'))
-            with clip.open('rb') as source:
+            with clip.open('rb') as clip_file:
                 self.send_response(200)
                 self.send_header('Content-Type', 'video/x-matroska')
                 self.send_header('Content-Disposition', 'attachment; filename="'+clip.name+'"')
                 self.send_header('Content-Length', str(clip.stat().st_size))
                 self.end_headers()
-                shutil.copyfileobj(source, self.wfile)
+                shutil.copyfileobj(clip_file, self.wfile)
             return
         if path.startswith('/api/play/'):
             clip = clip_path(path.removeprefix('/api/play/'))

@@ -9,10 +9,18 @@ import threading
 import time
 
 try:
-    from . import control, event_recording
+    from .source import input_args
+except ImportError:
+    from source import input_args
+
+
+try:
+    from . import control, event_recording, snapshot_recording, source
 except ImportError:
     import control
     import event_recording
+    import snapshot_recording
+    import source
 
 LOG = logging.getLogger("bms-cameras")
 
@@ -26,15 +34,14 @@ def prune(directory, max_bytes, max_age, now=None):
         stat = path.stat()
         if now - stat.st_mtime > max_age or total > max_bytes:
             path.unlink()
-            if path.name.startswith(('event-', 'unclassified-')):
-                path.with_suffix('.json').unlink(missing_ok=True)
+            path.with_suffix('.json').unlink(missing_ok=True)
             total -= stat.st_size
             LOG.info("Removed expired clip %s", path.name)
 
 
 def command(url, target, seconds):
     return ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "quiet",
-            "-rtsp_transport", "tcp", "-timeout", "15000000", "-i", url,
+            *input_args(url),
             "-map", "0:v:0", "-an", "-c:v", "copy", "-t", str(seconds),
             "-progress", "pipe:1", "-stats_period", "1",
             "-f", "matroska", "-n", str(target)]
@@ -67,8 +74,10 @@ class StreamProgress:
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     url = os.environ.get("CAMERA_URL", "")
-    if not url.startswith("rtsp://"):
-        raise SystemExit("Set CAMERA_URL to an RTSP stream URL")
+    try:
+        input_args(url)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if not shutil.which("ffmpeg"):
         raise SystemExit("FFmpeg is required")
     directory = Path(os.environ.get("RECORDING_DIR", "runtime/recordings"))
@@ -89,10 +98,20 @@ def main():
         raise SystemExit('CAMERA_RECORDING_MODE must be continuous or anomaly')
     if mode == 'anomaly':
         LOG.info('Event-only recording armed; normal segments remain in a short buffer')
-        return event_recording.run(url, directory, stop, max_bytes, max_age, StreamProgress,
-                                   prune, control, Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')))
+        while not stop.is_set():
+            if source.capture_settings()['capture_mode'] == 'snapshots':
+                snapshot_recording.run(directory, stop, max_bytes, max_age, prune, control,
+                    Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')), mode, seconds)
+            else:
+                event_recording.run(url, directory, stop, max_bytes, max_age, StreamProgress,
+                    prune, control, Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')))
+        return
     LOG.info("Recorder started; clip duration=%ss", seconds)
     while not stop.is_set():
+        if source.capture_settings()['capture_mode'] == 'snapshots':
+            snapshot_recording.run(directory, stop, max_bytes, max_age, prune, control,
+                Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')), mode, seconds)
+            continue
         if not control.enabled():
             control.heartbeat('paused')
             stop.wait(1)
@@ -110,7 +129,7 @@ def main():
             except BlockingIOError:
                 pass
             control.heartbeat(progress.state(time.monotonic()))
-            if stop.wait(1) or not control.enabled() or time.monotonic() - started > seconds + 45:
+            if stop.wait(1) or not control.enabled() or source.capture_settings()['capture_mode'] == 'snapshots' or time.monotonic() - started > seconds + 45:
                 process.terminate()
                 try:
                     process.wait(timeout=10)

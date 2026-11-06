@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from PIL import Image
 import control
-from anomaly_control import DATA, Confirmation, read_json, write_json, validate_multiplier, command_mode
+from anomaly_control import DATA, Confirmation, read_json, write_json, validate_multiplier, validate_input_size, validate_confirmation_frames, command_mode, input_dimensions, DEFAULT_INPUT_SIZE
 from patchcore_lite import PatchCoreLite, overlay
 
 LOG = logging.getLogger('camera-anomaly')
@@ -27,12 +27,27 @@ def main():
     sample_count = max(20, min(120, int(os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60'))))
     state = dict(state='loading', message='Loading visual model', updated=time.time())
     write_json(DATA / 'status.json', state)
-    model = PatchCoreLite()
-    model_path = DATA / 'baseline.pt'
-    if model_path.exists():
-        model.load(model_path)
     previous = read_json(DATA / 'session.json', {})
+    confirmation_frames = validate_confirmation_frames(previous.get('confirmation_frames', confirmation_frames))
+    model = PatchCoreLite()
+    baseline_invalidated = previous.get('baseline_invalidated', False)
+    migrated = False
+    try:
+        model.input_size = validate_input_size(previous.get('input_size', DEFAULT_INPUT_SIZE))
+    except ValueError:
+        model.input_size = DEFAULT_INPUT_SIZE
+        baseline_invalidated = migrated = True
+    model_path = DATA / 'baseline.pt'
+    if model_path.exists() and not baseline_invalidated:
+        try:
+            model.load(model_path)
+        except ValueError:
+            baseline_invalidated = migrated = True
+            LOG.warning('Baseline is incompatible; new learning required')
     last_request = previous.get('last_request')
+    if migrated:
+        # Do not replay a command submitted for the retired model.
+        last_request = read_json(DATA / 'command.json', {}).get('id', last_request)
     monitoring = previous.get('monitoring', False) and model.memory is not None
     multiplier = previous.get('multiplier', 1.25)
     learning = False
@@ -40,38 +55,71 @@ def main():
     confirmation = Confirmation(required=confirmation_frames)
     candidate_since, video_id = None, None
     event_count = len(list((DATA / 'events').glob('*.json')))
+    def save_session():
+        write_json(DATA / 'session.json', dict(last_request=last_request, monitoring=monitoring,
+                   multiplier=multiplier, input_size=model.input_size,
+                   baseline_invalidated=baseline_invalidated, confirmation_frames=confirmation_frames))
+
+    if migrated:
+        write_json(DATA / 'video-trigger.json', {})
+        save_session()
+
     while True:
         started = time.monotonic()
         try:
             command = read_json(DATA / 'command.json', {})
             if command.get('id') and command['id'] != last_request:
                 action = command.get('action')
-                learning, monitoring = command_mode(action, model.memory is not None, learning, monitoring)
-                multiplier = validate_multiplier(command.get('multiplier', 1.25))
+                resized = action == 'resize' and validate_input_size(command.get('input_size')) != model.input_size
+                if action != 'resize' or resized:
+                    learning, monitoring = command_mode(action, model.memory is not None, learning, monitoring)
+                if action == 'confirmation':
+                    confirmation_frames = validate_confirmation_frames(command.get('confirmation_frames'))
+                elif action == 'resize':
+                    if resized:
+                        model.set_input_size(command['input_size'])
+                        baseline_invalidated = True
+                else:
+                    multiplier = validate_multiplier(command.get('multiplier', 1.25))
                 last_request = command['id']
                 confirmation = Confirmation(required=confirmation_frames)
                 candidate_since, video_id = None, None
-                if action != 'configure':
+                if action not in ('configure', 'resize', 'confirmation') or resized:
                     samples = []
                     # A restarted session must not reuse an earlier event marker.
                     write_json(DATA / 'video-trigger.json', {})
-                write_json(DATA / 'session.json', dict(last_request=last_request, monitoring=monitoring, multiplier=multiplier))
+                save_session()
             control.follow_detection(monitoring, recording_mode)
-            state = dict(updated=time.time(), model='PatchCore-style / ResNet-18',
+            width, height = input_dimensions(model.input_size)
+            state = dict(updated=time.time(), model='PatchCore-style / ResNet-18 layer2',
                          baseline_ready=model.memory is not None, baseline_frames=model.baseline_frames,
-                         monitoring_enabled=monitoring,
+                         monitoring_enabled=monitoring, input_size=model.input_size,
+                         inference_threads=getattr(model, 'inference_threads', 1),
+                         feature_engine=getattr(model, 'feature_engine', 'torch'),
+                         distance_engine=getattr(model, 'distance_engine', 'torch'),
+                         onnx_provider=getattr(model, 'onnx_provider', None),
+                         input_width=width, input_height=height,
+                         heatmap_width=width // 8, heatmap_height=height // 8,
+                         retraining_required=baseline_invalidated,
+                         last_request=last_request,
                          collected=len(samples), target=sample_count, multiplier=multiplier,
                          analysis_interval_sec=max(2, interval) if learning else interval, confirmation_frames=confirmation_frames,
                          event_count=event_count, state='paused' if model.memory is not None else 'untrained',
                          message='Analysis paused' if model.memory is not None else 'Learn a normal view to begin')
+            if baseline_invalidated:
+                state['message'] = 'Model settings changed. Learn normal view again before detection.'
             if learning or monitoring:
                 # Reuse the dashboard decoder and never consume a stale cached JPEG.
                 with urllib.request.urlopen(preview + '?fresh=1', timeout=5) as response:
                     jpeg = response.read(4 * 1024 * 1024)
                     token = response.headers.get('X-Camera-Frame-Token')
+                feature_started = time.monotonic()
                 features = model.features(jpeg)
+                state['feature_ms'] = round((time.monotonic() - feature_started) * 1000)
                 if not learning:
+                    distance_started = time.monotonic()
                     score, distances = model.score(features)
+                    state['distance_ms'] = round((time.monotonic() - distance_started) * 1000)
                 if token:
                     # Errors arriving while inference ran invalidate the earlier JPEG too.
                     with urllib.request.urlopen(preview + '?check=' + quote(token, safe=''), timeout=2) as response:
@@ -87,9 +135,10 @@ def main():
                         model.save(model_path)
                         learning, monitoring, samples = False, True, []
                         confirmation = Confirmation(required=confirmation_frames)
-                        write_json(DATA / 'session.json', dict(last_request=last_request, monitoring=True, multiplier=multiplier))
+                        baseline_invalidated = False
+                        save_session()
                         control.follow_detection(True, recording_mode)
-                        state.update(state='normal', baseline_ready=True, baseline_frames=model.baseline_frames, monitoring_enabled=True,
+                        state.update(state='normal', baseline_ready=True, baseline_frames=model.baseline_frames, monitoring_enabled=True, retraining_required=False,
                                      message='Normal view learned; monitoring started')
                         LOG.info('Baseline ready; frames=%s', model.baseline_frames)
                 else:

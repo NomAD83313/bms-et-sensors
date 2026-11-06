@@ -11,6 +11,14 @@ import subprocess
 import time
 
 try:
+    from .source import input_args
+except ImportError:
+    import source
+    from source import input_args
+
+
+try:
+    from . import source
     from .anomaly_control import read_json, write_json
 except ImportError:
     from anomaly_control import read_json, write_json
@@ -55,6 +63,14 @@ def concatenate(paths, target):
         partial.unlink(missing_ok=True)
 
 
+def has_video(path):
+    """Interrupted muxers can leave indexed files with no container header."""
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except FileNotFoundError:
+        return False
+
+
 class EventBuffer:
     def __init__(self, root, pre=7, post=10, join=concatenate):
         self.root = Path(root)
@@ -65,7 +81,7 @@ class EventBuffer:
         self.join = join
         saved = read_json(self.buffer / 'catalog.json', {})
         self.segments = {s['name']: s for s in saved.get('segments', [])
-                         if (self.buffer / s['name']).is_file()}
+                         if has_video(self.buffer / s['name'])}
         self.active = saved.get('active')
         self.closed_until = saved.get('closed_until', 0)
         self._saved = None
@@ -79,6 +95,8 @@ class EventBuffer:
             self._saved = encoded
 
     def add_segment(self, path, start, end):
+        if not has_video(path):
+            return
         if path.name not in self.segments:
             self.segments[path.name] = dict(name=path.name, start=start, end=end)
 
@@ -147,6 +165,12 @@ class EventBuffer:
         if not self.active:
             return
         end = min(self.active['end'], self.active['start'] + 300)
+        directory = self.buffer / self.active['name']
+        valid = [segment for segment in self.active['segments']
+                 if has_video(directory / segment['name'])]
+        if len(valid) != len(self.active['segments']):
+            LOG.warning('Ignoring missing or empty segments in pending anomaly event')
+            self.active['segments'] = valid
         if not self.active['segments']:
             if now > end + 30:
                 LOG.warning('Event window had no video; releasing it to allow later events')
@@ -201,7 +225,7 @@ class EventBuffer:
 
 def segment_command(url, directory):
     return ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'quiet',
-            '-rtsp_transport', 'tcp', '-timeout', '15000000', '-i', url,
+            *input_args(url),
             '-map', '0:v:0', '-an', '-c:v', 'copy', '-progress', 'pipe:1', '-stats_period', '1',
             '-f', 'segment', '-segment_format', 'matroska', '-segment_time', str(SEGMENT_SECONDS),
             '-reset_timestamps', '1', '-strftime', '1', '-segment_list', str(directory / 'index.csv'),
@@ -216,6 +240,9 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
         raise ValueError('Event windows must be non-negative with positive post time')
     manager.recover()
     while not stop.is_set():
+        if source.capture_settings()['capture_mode'] == 'snapshots':
+            manager.finish_on_stop(time.time())
+            return
         if not control.enabled():
             control.heartbeat('paused', **manager.details(time.time(), read_json(anomaly / 'status.json', {})))
             stop.wait(1)
@@ -240,7 +267,7 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
                 control.heartbeat(state, **manager.details(now, status))
                 prune(directory, max_bytes, max_age)
                 last_progress = progress.updated if progress.updated is not None else started
-                if stop.wait(1) or not control.enabled() or time.monotonic() - last_progress > 30:
+                if stop.wait(1) or not control.enabled() or source.capture_settings()['capture_mode'] == 'snapshots' or time.monotonic() - last_progress > 30:
                     break
         finally:
             if process.poll() is None:

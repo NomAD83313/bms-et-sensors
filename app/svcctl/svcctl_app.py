@@ -55,6 +55,7 @@ TARGET_MAP: Dict[str, List[str]] = {
     "grafana": ["grafana"],
     # Start dependencies first; stop them in reverse order.
     "cameras": ["camera-recorder", "camera-dashboard", "camera-anomaly"],
+    "pi-camera": ["pi-camera-recorder", "pi-camera-dashboard", "pi-camera-anomaly"],
 }
 
 _CPU_PREV_TOTAL: int | None = None

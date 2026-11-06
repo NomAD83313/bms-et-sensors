@@ -18,6 +18,10 @@ async function runCameraHealthTests(html) {
   assert(camera && camera.target === 'cameras' && camera.group === 'device', 'Camera probe must be a device application');
   assert(api.controllableTargets.includes('cameras'), 'Cameras needs service controls');
   assert(api.statusLinks.cameras === '/cameras/', 'Camera status should open its application');
+  const piCamera = api.services.find(service => service.id === 'pi-camera');
+  assert(piCamera && piCamera.target === 'pi-camera' && piCamera.url === '/probe/pi-camera', 'Pi camera must have an independent probe and target');
+  assert(api.controllableTargets.includes('pi-camera'), 'Pi camera needs separate service controls');
+  assert(api.statusLinks['pi-camera'] === '/cameras/pi/', 'Pi camera status must open its own application');
   const base = {recording_mode: 'anomaly', baseline_ready: true, pre_seconds: 7, post_seconds: 10, clips: []};
   for (const [recorder, detector, badge, level] of [
     ['buffering', 'normal', 'up', 'ok'],
@@ -39,6 +43,8 @@ async function runCameraHealthTests(html) {
   assert(element('st-cameras').textContent === 'paused', 'Manual service stop should not be shown as a probe failure');
   await api.probe(camera, new Map([[camera.url, Promise.resolve({ok: false, status: 502, text: ''})]]));
   assert(element('st-cameras').textContent === 'down', 'HTTP failure must remain visible');
+  await api.probe(piCamera, new Map([[piCamera.url, Promise.resolve({ok: true, status: 200, text: JSON.stringify({...base, service: 'paused', analysis_state: 'paused'})})]]));
+  assert(element('st-pi-camera').textContent === 'paused', 'Pi camera must reuse the camera state display');
   const damaged = {...base, service: 'buffering', analysis_state: 'normal', preview_quality: {state: 'recovering', decoder_errors: 3, discarded_frames: 12}};
   await api.probe(camera, new Map([[camera.url, Promise.resolve({ok: true, status: 200, text: JSON.stringify(damaged)})]]));
   assert(element('st-cameras').textContent === 'degraded', 'Decoder recovery must not be shown as healthy');

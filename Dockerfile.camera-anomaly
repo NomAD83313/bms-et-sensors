@@ -1,9 +1,20 @@
+ARG ONNX_RUNTIME_IMAGE=onnx-cpu
+FROM python:3.12-slim-bookworm AS onnx-cpu
+RUN pip download --no-deps --dest /wheels onnxruntime==1.31.1
+FROM ${ONNX_RUNTIME_IMAGE} AS onnx-package
+
 FROM python:3.12-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cpu
+COPY --from=onnx-package /wheels /tmp/onnx-wheels
+RUN pip install --no-cache-dir onnx==1.23.0 faiss-cpu==1.15.1 /tmp/onnx-wheels/*.whl \
+    && rm -rf /tmp/onnx-wheels
 ENV PYTHONUNBUFFERED=1 TORCH_HOME=/opt/torch OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+ENV CAMERA_ANOMALY_FEATURE_ENGINE=onnx CAMERA_ANOMALY_DISTANCE_ENGINE=faiss
+ENV CAMERA_ANOMALY_MODEL_DIR=/opt/bms-camera/encoders
 RUN python -c "from torchvision.models import resnet18, ResNet18_Weights; resnet18(weights=ResNet18_Weights.DEFAULT)"
 WORKDIR /app
 COPY app/cameras/ ./
+RUN python export_feature_encoder.py /opt/bms-camera/encoders
 CMD ["python", "anomaly_worker.py"]

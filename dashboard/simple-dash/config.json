@@ -67,6 +67,12 @@
           "icon": "fas fa-video",
           "link": "/cameras/",
           "probe": "/probe/cameras"
+        },
+        {
+          "alt": "Raspberry Pi Camera",
+          "icon": "fas fa-camera",
+          "link": "/cameras/pi/",
+          "probe": "/probe/pi-camera"
         }
       ]
     },

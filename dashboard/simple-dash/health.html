@@ -320,7 +320,7 @@
       <h2>Service Control</h2>
       <p class="controls-sub">Use manual actions sparingly. This area is for focused recovery, not for routine operation when guard logic is already healthy.</p>
       <div id="controlRows"></div>
-      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage. Cameras controls the whole camera application; use its page to pause detection and recording.</div>
+      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage. Each camera row controls its own application. Pi Camera also releases capture and encoding when its consumers stop; use the camera pages to pause detection and recording.</div>
     </div>
 
     <p class="footer-note"><a href="/">Back to Dashboard</a> · <button type="button" class="refresh-btn" id="refreshNow">Refresh now</button></p>
@@ -339,9 +339,10 @@
       { id: 'almemo', name: 'ALMEMO 2490', url: '/probe/almemo', type: 'json', pass: (d) => d && d.status === 'ok', group: 'device' },
       { id: 'pyrometer', name: 'Pyrometers', url: '/probe/pyrometer', type: 'json', pass: (d) => d && (d.status === 'ok' || d.status === 'degraded') && Array.isArray(d.connected_devices) && d.connected_devices.length > 0, group: 'device' },
       { id: 'messkluppe', name: 'Messkluppe', url: '/probe/messkluppe', type: 'json', pass: (d) => d && d.ok === true, group: 'device' },
-      { id: 'cameras', name: 'Cameras', url: '/probe/cameras', target: 'cameras', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
+      { id: 'cameras', name: 'Camera WiFI', url: '/probe/cameras', target: 'cameras', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
+      { id: 'pi-camera', name: 'Pi Camera', url: '/probe/pi-camera', target: 'pi-camera', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
     ];
-    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana', 'cameras'];
+    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana', 'cameras', 'pi-camera'];
     const targetDisplayNames = {
       redlab: 'RedLab',
       almemo: 'ALMEMO',
@@ -349,7 +350,8 @@
       pyrometer: 'Pyrometers',
       messkluppe: 'Messkluppe',
       grafana: 'Grafana',
-      cameras: 'Cameras',
+      cameras: 'Camera WiFI',
+      'pi-camera': 'Pi Camera',
     };
     const statusLinks = {
       influx: `${window.location.protocol}//${window.location.hostname}:8086`,
@@ -362,6 +364,7 @@
       pyrometer: '/pyrometer/',
       messkluppe: '/messkluppe/',
       cameras: '/cameras/',
+      'pi-camera': '/cameras/pi/',
     };
 
     const platformGrid = document.getElementById('platformGrid');
@@ -550,7 +553,7 @@
       if (id === 'messkluppe') {
         return `Mode: ${data.fake_mode ? 'fake' : 'real'} | Running: ${yn(!!data.collector_running)} | Influx: ${yn(!!data.influx_configured)} | Packets: ${data.packets_received ?? 0} | Writes: ${data.records_written ?? 0} | Errors: ${data.last_error || 'none'}`;
       }
-      if (id === 'cameras') {
+      if (id === 'cameras' || id === 'pi-camera') {
         const score = Number.isFinite(data.analysis_score) && Number.isFinite(data.analysis_threshold)
           ? ` | Score: ${data.analysis_score.toFixed(2)} / ${data.analysis_threshold.toFixed(2)}` : '';
         const quality = data.preview_quality;
@@ -608,7 +611,7 @@
           const data = JSON.parse(res.text || '{}');
           const ok = s.pass(data);
           const details = summarizeJson(s.id, data);
-          if (s.id === 'cameras' && ok && data.recording_mode === 'anomaly') {
+          if (['cameras', 'pi-camera'].includes(s.id) && ok && data.recording_mode === 'anomaly') {
             if (data.analysis_state === 'anomaly') {
               setState(s.id, 'warn', 'anomaly', details);
               return;

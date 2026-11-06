@@ -53,6 +53,88 @@ class StatusTests(unittest.TestCase):
 
 
 class RecordingControlTests(unittest.TestCase):
+    def test_capture_get_and_post_pause_detection(self):
+        from app.cameras.capture_settings import validate
+        settings=validate(dict(capture_mode='snapshots',shutter_us=10000))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with patch.object(dashboard.source,'capture_url',return_value='http://127.0.0.1:8084'), patch.object(dashboard.source,'capture_settings',return_value=validate({})), patch.object(dashboard.source,'configure_capture',return_value=settings), patch.object(dashboard.control,'CONTROL',root/'control'), patch.object(dashboard.anomaly_control,'DATA',root/'anomaly'), patch.dict(os.environ,{'CAMERA_RECORDING_MODE':'anomaly'}):
+                dashboard.control.set_enabled(True)
+                server=ThreadingHTTPServer(('127.0.0.1',0),dashboard.Handler)
+                worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+                try:
+                    url=f'http://127.0.0.1:{server.server_port}/api/capture'
+                    with urllib.request.urlopen(url,timeout=3) as response:
+                        self.assertTrue(json.load(response)['available'])
+                    request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=b'{"capture_mode":"snapshots","snapshot_interval_ms":200,"shutter_us":10000}')
+                    with urllib.request.urlopen(request,timeout=3) as response:
+                        self.assertEqual(json.load(response)['settings'],settings)
+                    self.assertFalse(dashboard.control.enabled())
+                    self.assertEqual(dashboard.anomaly_control.read_json(root/'anomaly/command.json')['action'],'pause')
+                    video = dict(capture_mode='video', width=1920, height=1080, fps=30, shutter_us=0)
+                    request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(video).encode())
+                    with urllib.request.urlopen(request,timeout=3) as response:
+                        self.assertEqual(response.status,200)
+                    dashboard.source.configure_capture.assert_called_with(video)
+                    invalid = dict(video, width=3280, height=2464)
+                    request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(invalid).encode())
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request,timeout=3)
+                    self.assertEqual(error.exception.code,400)
+
+                finally:
+                    server.shutdown();server.server_close();worker.join(timeout=3)
+
+    def test_confirmation_change_does_not_pause_recording(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.dict(os.environ, {'CAMERA_RECORDING_MODE': 'anomaly'}), patch.object(dashboard.control, 'CONTROL', root / 'control'), patch.object(dashboard.anomaly_control, 'DATA', root / 'anomaly'):
+                dashboard.control.set_enabled(True)
+                server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.Handler)
+                worker = threading.Thread(target=server.serve_forever, daemon=True)
+                worker.start()
+                try:
+                    url = f'http://127.0.0.1:{server.server_port}/api/anomaly/confirmation'
+                    request = urllib.request.Request(url, method='POST', headers={'X-Camera-Control': '1'}, data=b'{"confirmation_frames":1}')
+                    with urllib.request.urlopen(request, timeout=3) as response:
+                        self.assertEqual(response.status, 202)
+                        self.assertEqual(json.load(response)['confirmation_frames'], 1)
+                    self.assertTrue(dashboard.control.enabled())
+                    request = urllib.request.Request(url, method='POST', headers={'X-Camera-Control': '1'}, data=b'{"confirmation_frames":0}')
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request, timeout=3)
+                    self.assertEqual(error.exception.code, 400)
+                    self.assertTrue(dashboard.control.enabled())
+                finally:
+                    server.shutdown(); server.server_close(); worker.join(timeout=3)
+
+    def test_input_resize_is_validated_and_pauses_event_recording(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.dict(os.environ, {'CAMERA_RECORDING_MODE': 'anomaly'}), patch.object(dashboard.control, 'CONTROL', root / 'control'), patch.object(dashboard.anomaly_control, 'DATA', root / 'anomaly'):
+                dashboard.control.set_enabled(True)
+                server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.Handler)
+                worker = threading.Thread(target=server.serve_forever, daemon=True)
+                worker.start()
+                try:
+                    url = f'http://127.0.0.1:{server.server_port}/api/anomaly/resize'
+                    for size in ('768x432', '1024x576', '1280x720', '1536x864', '1920x1080'):
+                        request = urllib.request.Request(url, method='POST', headers={'X-Camera-Control': '1'}, data=json.dumps({'input_size':size}).encode())
+                        with urllib.request.urlopen(request, timeout=3) as response:
+                            self.assertEqual(response.status, 202)
+                            command = json.load(response)
+                        self.assertEqual(command['input_size'], size)
+                    self.assertFalse(dashboard.control.enabled())
+                    request = urllib.request.Request(url, method='POST', headers={'X-Camera-Control': '1'}, data=b'{"input_size":999}')
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request, timeout=3)
+                    self.assertEqual(error.exception.code, 400)
+                    self.assertEqual(dashboard.anomaly_control.read_json(root / 'anomaly/command.json'), command)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    worker.join(timeout=3)
+
     def test_detection_owns_recording_only_in_anomaly_mode(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(dashboard.control, 'CONTROL', Path(directory)):
             dashboard.control.follow_detection(False, 'anomaly')

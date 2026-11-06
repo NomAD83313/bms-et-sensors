@@ -590,7 +590,9 @@ Defaults are 60-second clips, 24-hour retention and 10240 MiB of completed clips
 Configure these with `CAMERA_CLIP_SECONDS`, `CAMERA_MAX_AGE_HOURS`, and
 `CAMERA_MAX_STORAGE_MB`. The current clip is additional to that budget.
 Limits are checked between clips. Connections restart between clips, so gaps
-are possible. Interrupted partial clips are discarded on recorder startup.
+are possible. Interrupted partial clips are discarded on recorder startup. Missing or empty
+segments in a recovered event are skipped; an expired event with no video is
+released so it cannot trap the recorder in a restart loop.
 
 Dashboard recording health combines the recorder heartbeat and newest completed
 clip (duration plus 60 seconds); a new session may initially wait for a clip. Container health checks verify
@@ -670,3 +672,50 @@ buffer. New events and pending video can appear after clearing saved history.
 Visual analysis targets 5 FPS and confirms after two consecutive suspicious
 frames; the analysis badge refreshes every 0.25 seconds. Normal-view learning
 continues to collect 60 frames over approximately two minutes.
+
+### Raspberry Pi CSI camera (second camera)
+
+A CSI camera can run alongside the existing RTSP camera, with its own preview,
+recordings, analysis baseline, controls and retention directory. On Raspberry Pi OS
+with systemd, install `rpicam-apps-core` and `rpicam-apps-encoder`, then run:
+
+```sh
+sudo apt-get install --no-install-recommends rpicam-apps-core rpicam-apps-encoder
+./scripts/restart-pi-camera.sh
+```
+
+Open `/cameras/` for the original camera and `/cameras/pi/` for the Pi camera;
+both pages have camera navigation links. The main dashboard also has a separate
+Raspberry Pi Camera tile with an HTTP availability indicator. The optional `pi-camera` Compose profile
+starts `pi-camera-recorder`, `pi-camera-dashboard` and `pi-camera-anomaly`.
+The existing camera services and `CAMERA_URL` are independent of this profile.
+
+The host service `bms-pi-camera` opens the CSI camera once and shares a loopback-only
+MPEG-TS stream at `http://127.0.0.1:8084/stream.ts`. Native host libcamera/rpicam
+libraries avoid container/kernel mismatches. Pi 5 uses libx264 software encoding;
+the default is 1280×720, 15 fps, 2 Mbit/s, with one-second keyframe intervals.
+See the [Raspberry Pi camera software documentation](https://www.raspberrypi.com/documentation/accessories/camera-software.html).
+The recorder copies H.264 without encoding it again. Slow consumers disconnect
+and reconnect without holding up the camera or other consumers.
+
+Runtime data is isolated under `runtime/pi-camera/` (ignored by Git).
+`PI_CAMERA_RECORDING_DIR`, `PI_CAMERA_DASHBOARD_PORT` (8083) and
+`PI_CAMERA_RECORDING_MODE` (`continuous` or `anomaly`) configure the second camera.
+When unset or empty, the Pi camera follows `CAMERA_RECORDING_MODE`, so both
+cameras use the same recording controls in the shared frontend.
+Other recording and analysis limits use the existing `CAMERA_*` settings.
+If changing the dashboard port, update the `/cameras/pi/` nginx upstream too.
+System Health has independent Camera WiFI and Pi Camera Start/Stop/Restart
+controls. Each group controls only its own three containers. The Pi host source
+starts capture on demand and releases the camera and encoder after the last
+consumer disconnects; its lightweight systemd HTTP service remains available.
+Use the camera pages for recording/detection controls. Host source logs:
+`journalctl -u bms-pi-camera`. To stop the second camera completely:
+
+```sh
+docker compose --profile pi-camera stop pi-camera-recorder pi-camera-dashboard pi-camera-anomaly
+sudo systemctl disable --now bms-pi-camera
+```
+
+Camera CPU/RAM comparison: see [the resource test procedure](docs/camera-resource-test.md)
+and `./scripts/benchmark-cameras.py --help`.

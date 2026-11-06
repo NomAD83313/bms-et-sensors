@@ -49,6 +49,30 @@ class AnomalyControlTests(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     anomaly_control.validate_multiplier(value)
 
+    def test_input_size_command_validates_without_overwriting_on_invalid_request(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for size in anomaly_control.INPUT_SIZES:
+                result = anomaly_control.request('resize', input_size=size)
+                self.assertEqual(result['input_size'], size)
+            self.assertEqual(anomaly_control.command_mode('resize', True, True, True), (False, False))
+            for value in (None, 0, 224, 320, 448, 512, 640, '640x640', '768x576', '320', True, float('nan'), [], {}):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('resize', input_size=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), result)
+
+    def test_confirmation_setting_validates_and_preserves_session_mode(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            command = anomaly_control.request('confirmation', confirmation_frames=1)
+            self.assertEqual(command['confirmation_frames'], 1)
+            for learning, monitoring in ((False, True), (True, False), (False, False)):
+                self.assertEqual(anomaly_control.command_mode('confirmation', True, learning, monitoring), (learning, monitoring))
+            for value in (None, 0, 6, 1.5, True, '1'):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('confirmation', confirmation_frames=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), command)
+            confirmation = anomaly_control.Confirmation(required=1)
+            self.assertEqual(confirmation.update(2, 1, 0), (True, True))
+
     def test_stale_status_and_safe_snapshot_access(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
             root = Path(directory)

@@ -141,6 +141,35 @@ class EventVideoTests(unittest.TestCase):
             self.assertIsNotNone(manager.active)
             self.assertEqual(manager.active['triggers'], ['recovered'])
 
+    def test_empty_segment_is_not_admitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = EventBuffer(directory, join=join)
+            path = manager.buffer / 'empty.mkv'
+            path.touch()
+            manager.add_segment(path, 100, 105)
+            self.assertEqual(manager.segments, {})
+
+    def test_recovered_event_with_empty_video_does_not_crash_or_block_next_event(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            manager = EventBuffer(directory, pre=0, post=5, join=join)
+            path = segment(manager, 100, 105)
+            manager.update(101, normal(101), dict(id='broken', start=100, last=100))
+            # An interrupted recording left an indexed, protected zero-byte file.
+            path.write_bytes(b'')
+            manager.persist()
+            concatenate = Mock(side_effect=RuntimeError('Empty video reached the muxer'))
+            manager = EventBuffer(directory, pre=0, post=5, join=concatenate)
+            with self.assertLogs('camera-events', level='WARNING'):
+                manager.update(140, normal(140), {})
+            self.assertIsNone(manager.active)
+            concatenate.assert_not_called()
+            manager = EventBuffer(directory, pre=0, post=5, join=join)
+            segment(manager, 150, 160)
+            manager.update(151, normal(151), dict(id='good', start=150, last=150))
+            manager.update(160, normal(160), {})
+            self.assertEqual(len(list(Path(directory).glob('event-*.mkv'))), 1)
+
     def test_readiness_and_command(self):
         self.assertTrue(analysis_available(normal(100), 101))
         self.assertFalse(analysis_available(normal(100), 121))

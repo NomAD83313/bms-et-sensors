@@ -118,13 +118,14 @@ class CorruptedStreamTests(unittest.TestCase):
                 for option in ['-rtsp_transport', '-timeout']:
                     index = args.index(option)
                     del args[index:index + 2]
+                args[args.index('-i') + 1] = str(damaged)
                 args.insert(args.index('-i'), '-re')
                 return original_spawn(args, **kwargs)
 
             preview.last_request = time.monotonic()
             preview.worker = threading.Thread(target=preview.run, daemon=True)
             saw_clean = saw_error = recovered = False
-            with patch.dict(os.environ, {'CAMERA_URL': str(damaged)}), patch.object(dashboard.subprocess, 'Popen', side_effect=spawn), self.assertLogs('camera-preview', level='WARNING'):
+            with patch.dict(os.environ, {'CAMERA_URL': 'rtsp://camera/fixture'}), patch.object(dashboard.subprocess, 'Popen', side_effect=spawn), self.assertLogs('camera-preview', level='WARNING'):
                 preview.worker.start()
                 deadline = time.monotonic() + 10
                 while preview.worker.is_alive() and time.monotonic() < deadline:
