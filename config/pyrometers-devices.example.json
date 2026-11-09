@@ -1,0 +1,28 @@
+[
+  {
+    "serial": "CT-00004944",
+    "type": "microeps",
+    "id": "microeps1",
+    "symlink": "ttyMICROEPS1",
+    "display_name": "Micro-Epsilon thermoMETER CT 6060099",
+    "sensor_serial": "6060099",
+    "mode": "burst",
+    "stream_frame_format": "marked_aaaa",
+    "burst_command_set": "classic_ct",
+    "checksum_enabled": true,
+    "burst_channels": ["target", "head", "box", "target"]
+  },
+  {
+    "serial": "CT-00004971",
+    "type": "optris",
+    "id": "optris1",
+    "symlink": "ttyOPTRIS1",
+    "display_name": "Optris CT 6070401",
+    "sensor_serial": "6070401",
+    "mode": "burst",
+    "stream_frame_format": "marked_aaaa",
+    "burst_command_set": "classic_ct",
+    "checksum_enabled": true,
+    "burst_channels": ["target", "head", "box", "target"]
+  }
+]

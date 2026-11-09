@@ -1,0 +1,4 @@
+flask==3.0.3
+pyserial==3.5
+influxdb-client==1.50.0
+

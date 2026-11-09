@@ -1,0 +1,13 @@
+# ESP-IDF local artifacts
+build/
+build-*/
+managed_components/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+.idf/
+
+# Local Python/tool state
+.venv/
+__pycache__/
+*.py[cod]

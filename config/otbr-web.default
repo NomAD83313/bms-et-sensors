@@ -1,0 +1,2 @@
+# Keep OTBR Web UI away from the host dashboard on port 80.
+OTBR_WEB_OPTS="-I wpan0 -d5 -p 8080 -a 0.0.0.0"

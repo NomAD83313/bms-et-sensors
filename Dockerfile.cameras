@@ -1,0 +1,10 @@
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir Pillow==13.0.0
+
+WORKDIR /app
+COPY app/cameras/ ./
+ENV PYTHONUNBUFFERED=1 RECORDING_DIR=/recordings
+CMD ["python", "recorder.py"]

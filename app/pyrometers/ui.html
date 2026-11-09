@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pyrometers</title>
+  <link rel="stylesheet" href="device-common.css">
+  <style>
+    body { padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .page { max-width: 1080px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 1.9rem; }
+    .eyebrow { margin-bottom: 14px; }
+    .sub { margin: 0 0 12px; color: var(--muted); }
+    .hero-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0 0 20px;
+    }
+    .summary-stat {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .summary-stat-label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .summary-stat-value {
+      color: var(--ink);
+      font-size: 1rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .page-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0 0 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .card.span-2 {
+      grid-column: span 2;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      backdrop-filter: blur(10px);
+    }
+    .card h2 { margin: 0 0 14px; font-size: 1.05rem; }
+    .overview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .overview-head h2 {
+      margin: 0;
+    }
+    .overview-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex: 0 0 auto;
+      margin-top: 0;
+      white-space: nowrap;
+    }
+    .overview-actions .graf-link-button,
+    .overview-actions button {
+      width: auto;
+      min-width: 0;
+      flex: 0 0 auto;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 12px 16px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    .toolbar-block {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .toolbar-label {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .toolbar-control-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .toolbar-control-row.ir-factor-row {
+      grid-template-columns: minmax(86px, 0.9fr) minmax(86px, 0.9fr) minmax(120px, 1fr) minmax(90px, 0.8fr) auto auto;
+      align-items: end;
+    }
+    .ir-factor-input {
+      display: grid;
+      gap: 4px;
+    }
+    .ir-factor-input span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .ir-factor-row button {
+      height: 46px;
+      min-height: 46px;
+      align-self: end;
+      padding: 0 14px;
+    }
+    .row select, .row button, .row .graf-link-button, .toolbar-control-row select, .toolbar-control-row input, .toolbar-control-row button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      min-height: 44px;
+    }
+    .row .graf-link-button {
+      text-decoration: none !important;
+    }
+    select.control-select, input.control-input {
+      display: block;
+      width: 100%;
+      height: 46px;
+      min-height: 46px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      padding: 0 44px 0 16px;
+      background-color: #fff;
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      background-size: 12px 8px, 100% 100%;
+      color: var(--ink);
+      font-size: 1rem;
+      font-weight: 500;
+      line-height: 1.2;
+      cursor: pointer;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.75),
+        0 1px 2px rgba(31, 95, 154, 0.05);
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2317324a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),
+        linear-gradient(180deg, #ffffff 0%, #f4f8fb 100%);
+    }
+    input.control-input {
+      appearance: textfield;
+      padding: 0 12px;
+      background-image: linear-gradient(180deg, #ffffff 0%, #f4f8fb 100%);
+      cursor: text;
+    }
+    select.control-select::-ms-expand {
+      display: none;
+    }
+    select.control-select:focus {
+      outline: none;
+      border-color: var(--line-strong);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.75),
+        0 0 0 3px rgba(31, 95, 154, 0.1);
+    }
+    .toolbar select {
+      width: 100%;
+    }
+    .toolbar button {
+      border-color: var(--line-strong);
+      background: linear-gradient(180deg, #ffffff 0%, #f4f8fb 100%);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .meta { color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .pill.ok { background: var(--ok-bg); color: var(--ok); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .reading {
+      font-size: clamp(3rem, 6vw, 4.4rem);
+      font-weight: 800;
+      line-height: 1;
+      margin: 0;
+      letter-spacing: -0.04em;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.9fr) minmax(280px, 1.1fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    .signal-band {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .signal-card {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+      border: 1px solid var(--line);
+    }
+    .signal-label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .signal-value {
+      color: var(--ink);
+      font-size: 0.98rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .hero-reading {
+      display: grid;
+      gap: 14px;
+    }
+    .hero-details {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .summary-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .summary-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 0.92rem;
+      line-height: 1;
+    }
+    .summary-pill strong {
+      font-weight: 700;
+    }
+    .summary-pill-state {
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+      border: 1px solid var(--line);
+    }
+    .meta-item {
+      display: grid;
+      gap: 4px;
+    }
+    .meta-key {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .meta-value {
+      color: var(--ink);
+      font-size: 0.98rem;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .frame-summary {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%);
+      border: 1px solid var(--line);
+    }
+    .frame-state {
+      margin-bottom: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fffaf1 0%, #fff4dd 100%);
+      border: 1px solid #f0d7a6;
+      color: #7c5200;
+      font-size: 0.94rem;
+      line-height: 1.5;
+    }
+    .frame-state strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .channel-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .channel {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-height: 170px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(247,250,252,0.95) 100%),
+        var(--panel-soft);
+    }
+    .channel-code {
+      display: inline-flex;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+    .channel-name {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.4;
+      max-width: 14ch;
+    }
+    .channel-value {
+      margin-top: auto;
+      font-size: 2rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    pre {
+      margin: 0;
+      padding: 14px;
+      background: #0d1722;
+      color: #d5e9ff;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 100px;
+    }
+    .note {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f8fbfd 0%, #f2f7fb 100%);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .channel-notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    @media (max-width: 720px) {
+      body { padding: 16px; }
+      .reading { font-size: 2.4rem; }
+      .channel-value { font-size: 1.35rem; }
+      .card.span-2 { grid-column: span 1; }
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+      .toolbar-control-row {
+        grid-template-columns: 1fr;
+      }
+      .overview-head {
+        align-items: flex-start;
+      }
+      .overview-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .hero {
+        grid-template-columns: 1fr;
+      }
+      .signal-band {
+        grid-template-columns: 1fr;
+      }
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+      .channel-list {
+        grid-template-columns: 1fr;
+      }
+      .channel-notes {
+        grid-template-columns: 1fr;
+      }
+      .hero-summary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="eyebrow">Infrared Temperature</div>
+    <h1 id="pageTitle">Pyrometers</h1>
+    <p class="sub" id="pageSubtitle">Unified monitor for compatible thermoMETER CT and Optris CT devices.</p>
+    <div class="page-status summary-pills" id="deviceSummary">Detecting connected devices…</div>
+    <div class="hero-summary">
+      <div class="summary-stat">
+        <div class="summary-stat-label">Selected Device</div>
+        <div class="summary-stat-value" id="summarySelectedDevice">-</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Logging Target</div>
+        <div class="summary-stat-value" id="summaryLoggingTarget">-</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Input Rate</div>
+        <div class="summary-stat-value" id="summaryInputRate">-</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Connection State</div>
+        <div class="summary-stat-value" id="summaryConnectionState">-</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="card span-2">
+        <div class="overview-head">
+          <h2>Live Overview</h2>
+          <div class="row overview-actions">
+            <span id="statusPill" class="pill warn">checking</span>
+            <a class="graf-link-button" href="/graf/pyrometers?range=5m" target="_blank" rel="noopener">Graf App Lite</a>
+            <button type="button" onclick="refreshAll()">Refresh</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-block">
+            <label class="toolbar-label" for="deviceSelect">Device</label>
+            <select id="deviceSelect" class="control-select"></select>
+          </div>
+          <div class="toolbar-block">
+            <label class="toolbar-label" for="loggingHzSelect">Influx logging</label>
+            <div class="toolbar-control-row ir-factor-row">
+              <select id="loggingHzSelect" class="control-select">
+                <option value="1">1 Hz</option>
+                <option value="2">2 Hz</option>
+                <option value="5">5 Hz</option>
+                <option value="10">10 Hz</option>
+                <option value="20">20 Hz</option>
+                <option value="50">50 Hz</option>
+                <option value="100">100 Hz</option>
+                <option value="200">200 Hz</option>
+                <option value="0">Full stream</option>
+              </select>
+              <button type="button" id="applyLoggingBtn">Apply</button>
+            </div>
+          </div>
+          <div class="toolbar-block">
+            <label class="toolbar-label" for="emissivityInput">IR factors</label>
+            <div class="toolbar-control-row ir-factor-row">
+              <label class="ir-factor-input" for="emissivityInput">
+                <span>Emissivity</span>
+                <input id="emissivityInput" class="control-input" type="number" min="0.05" max="1.1" step="0.001" placeholder="0.970">
+              </label>
+              <label class="ir-factor-input" for="transmissivityInput">
+                <span>Transmissivity</span>
+                <input id="transmissivityInput" class="control-input" type="number" min="0.05" max="1.1" step="0.001" placeholder="1.000">
+              </label>
+              <label class="ir-factor-input" for="ambientSourceSelect">
+                <span>Ambient</span>
+                <select id="ambientSourceSelect" class="control-select">
+                  <option value="internal">THead</option>
+                  <option value="fixed">TFixed</option>
+                </select>
+              </label>
+              <label class="ir-factor-input" for="ambientFixedInput">
+                <span>TFixed °C</span>
+                <input id="ambientFixedInput" class="control-input" type="number" min="-100" max="900" step="0.1" placeholder="65.0">
+              </label>
+              <button type="button" id="readIrSettingsBtn">Read</button>
+              <button type="button" id="applyIrSettingsBtn">Apply</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero">
+          <div class="hero-reading">
+            <div class="reading" id="readingValue">--.- °C</div>
+          </div>
+        </div>
+
+        <div class="signal-band">
+          <div class="signal-card">
+            <div class="signal-label">Protocol Path</div>
+            <div class="signal-value" id="signalProtocol">-</div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-label">Frame State</div>
+            <div class="signal-value" id="signalFrameState">-</div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-label">Last Sample</div>
+            <div class="signal-value" id="signalLastSample">-</div>
+          </div>
+        </div>
+
+        <div class="meta-grid" id="deviceMetaGrid">
+          <div class="meta-item">
+            <div class="meta-key">Port</div>
+            <div class="meta-value" id="metaPort">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Connection</div>
+            <div class="meta-value" id="metaConnection">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Input Stream</div>
+            <div class="meta-value" id="metaInput">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Influx Logging</div>
+            <div class="meta-value" id="metaLogging">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Last Read</div>
+            <div class="meta-value" id="metaLastRead">-</div>
+          </div>
+        </div>
+
+        <div class="channel-list">
+          <div class="channel">
+            <div class="channel-code">THead</div>
+            <div class="channel-name">Sensor head temperature</div>
+            <div class="channel-value" id="headValue">--.- °C</div>
+          </div>
+          <div class="channel">
+            <div class="channel-code">TBox</div>
+            <div class="channel-name">Controller box temperature</div>
+            <div class="channel-value" id="boxValue">--.- °C</div>
+          </div>
+          <div class="channel">
+            <div class="channel-code">TObj</div>
+            <div class="channel-name">Object temperature</div>
+            <div class="channel-value" id="objectValue">--.- °C</div>
+          </div>
+        </div>
+
+      </section>
+
+      <section class="card">
+        <div class="frame-state">
+          <strong>Frame Monitor</strong>
+          <div id="frameStateText">Waiting for device health snapshot.</div>
+        </div>
+        <div class="frame-summary">
+          <div class="meta-key">Frame / Error</div>
+          <div class="meta-value" id="metaFrame">-</div>
+        </div>
+        <h2>Frame Details</h2>
+        <pre id="frameOut">(waiting)</pre>
+      </section>
+    </div>
+  </div>
+  <script src="ui.js"></script>
+</body>
+</html>

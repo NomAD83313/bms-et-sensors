@@ -1,0 +1,668 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TC-Link-200 Configurator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="device-common.css">
+    <style>
+        .container { max-width: 1160px !important; }
+        .page-head { margin-bottom: 22px; }
+        .page-title {
+            margin: 14px 0 8px;
+            font-size: clamp(2.2rem, 5vw, 3.2rem);
+            line-height: 0.98;
+            letter-spacing: -0.04em;
+        }
+        .card {
+            margin-bottom: 20px;
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
+            border-radius: 24px;
+            background: var(--panel);
+            backdrop-filter: blur(12px);
+        }
+        .hero-card {
+            background: linear-gradient(135deg, #1f5f9a 0%, #2f80da 100%);
+            color: #fff;
+            border: none;
+        }
+        .hero-card .text-muted,
+        .hero-card .small {
+            color: rgba(255, 255, 255, 0.84) !important;
+        }
+        .hero-card .btn-outline-secondary,
+        .hero-card .btn-outline-info {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.35);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .status-ok { color: #2ecc71; font-weight: bold; }
+        .status-err { color: #e74c3c; font-weight: bold; }
+        .status-warn { color: #d39e00; font-weight: bold; }
+        .diag-text { font-size: 0.82rem; color: var(--muted); line-height: 1.45; }
+        .log-box {
+            font-family: monospace;
+            font-size: 0.76rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #0d1722;
+            color: #d5e9ff;
+            padding: 16px;
+            border-radius: 18px;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+        .status-pill { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 0.84rem; font-weight: 700; }
+        .status-ok-pill { background: #dff6e8; color: #1f7a3f; }
+        .status-warn-pill { background: #fff4d6; color: #8a5a00; }
+        .status-err-pill { background: #fde2e1; color: #b3261e; }
+        .base-status-text { white-space: pre-line; font-size: 0.84rem; line-height: 1.45; }
+        .channel-picker { position: relative; max-width: 280px; }
+        .channel-summary-btn { width: 100%; text-align: left; }
+        .channel-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10; background: #fff; border: 1px solid #ced4da; border-radius: 6px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); display: none; }
+        .channel-menu.open { display: block; }
+        .channel-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
+        .node-actions { gap: 0.35rem !important; flex-wrap: wrap; }
+        .node-actions .btn {
+            padding: 0.12rem 0.35rem;
+            font-size: 0.58rem;
+            min-height: 24px;
+            line-height: 1;
+            white-space: nowrap;
+            width: auto !important;
+            flex: 0 0 auto;
+        }
+        /* Sampling panel: compact but readable controls */
+        #samplingPanel .form-label { font-size: 0.82rem; margin-bottom: 0.2rem; }
+        #samplingPanel .form-select,
+        #samplingPanel .form-control { font-size: 0.82rem; padding-top: 0.24rem; padding-bottom: 0.24rem; }
+        #samplingPanel .btn { font-size: 0.82rem; padding-top: 0.24rem; padding-bottom: 0.24rem; }
+        #samplingRunStatus { font-size: 0.78rem !important; }
+        #samplingPanel .sampling-run-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.5rem;
+            align-items: end;
+        }
+        #samplingPanel .sample-top {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+        #samplingPanel .sample-rate-field {
+            width: min(320px, 100%);
+            min-width: 240px;
+        }
+        #samplingPanel .sample-rate-hint-inline {
+            margin: 0;
+            font-size: 0.82rem;
+            line-height: 1.2;
+            white-space: nowrap;
+            flex: 1 1 220px;
+        }
+        #samplingPanel .sampling-run-row > [class*="col-"] {
+            width: auto;
+            max-width: none;
+            padding-left: 0;
+            padding-right: 0;
+        }
+        @media (max-width: 991.98px) {
+            #samplingPanel .sample-top {
+                align-items: flex-start;
+                gap: 0.45rem;
+            }
+            #samplingPanel .sample-rate-field {
+                width: 100%;
+                min-width: 0;
+            }
+            #samplingPanel .sampling-run-row {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 575.98px) {
+            #samplingPanel .sampling-run-row {
+                grid-template-columns: 1fr;
+            }
+        }
+        .sampling-duration-group .form-control { min-width: 0; }
+        .section-card {
+            border-left: 4px solid #d0d7de;
+            border-radius: 20px !important;
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f8fb 100%) !important;
+            border-color: var(--line) !important;
+        }
+        .section-card[data-accent="hardware"] { border-left-color: #2b5cab; }
+        .section-card[data-accent="calibration"] { border-left-color: #2f855a; }
+        .section-card[data-accent="sampling"] { border-left-color: #805ad5; }
+        .section-card[data-accent="power"] { border-left-color: #b7791f; }
+        body.sampling-active #configCard {
+            opacity: 0.55;
+            pointer-events: none;
+        }
+        body.sampling-active #samplingPanel {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .memo-popover {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 0.75rem;
+        }
+        .memo-popover-inline {
+            margin-bottom: 0;
+            align-self: end;
+        }
+        .memo-popover > summary {
+            list-style: none;
+            cursor: pointer;
+            user-select: none;
+            display: inline-block;
+            border: 1px solid #c7d3e4;
+            border-radius: 6px;
+            padding: 0.25rem 0.55rem;
+            background: #f2f7ff;
+            color: #2b5cab;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .memo-popover > summary::-webkit-details-marker { display: none; }
+        .memo-popover-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 30;
+            width: min(720px, 92vw);
+            border: 1px solid #dfe5ec;
+            border-radius: 8px;
+            background: #f7fafc;
+            padding: 0.75rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+        }
+        .memo-popover[open] .memo-popover-panel { display: block; }
+        .memo-popover .memo-title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #2b5cab;
+            margin-bottom: 0.35rem;
+        }
+        .memo-popover table {
+            width: 100%;
+            font-size: 0.75rem;
+            margin-bottom: 0.4rem;
+        }
+        .memo-popover th,
+        .memo-popover td {
+            border: 1px solid #dfe5ec;
+            padding: 0.2rem 0.35rem;
+            vertical-align: top;
+        }
+        .memo-popover th {
+            background: #eef3f9;
+            font-weight: 700;
+        }
+        .memo-popover ul {
+            margin: 0;
+            padding-left: 1rem;
+            font-size: 0.74rem;
+        }
+        @media (max-width: 575.98px) {
+            .memo-popover { display: block; }
+            .memo-popover > summary { width: 100%; text-align: center; }
+            .memo-popover-panel { left: 0; right: 0; width: auto; }
+        }
+        .btn { border-radius: 14px; }
+        .btn-primary {
+            background: linear-gradient(180deg, #2f80da 0%, #1f5f9a 100%);
+            border-color: #1f5f9a;
+        }
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .hero-stat {
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .hero-stat-label {
+            margin-bottom: 6px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.78);
+        }
+        .hero-stat-value {
+            font-size: 1rem;
+            line-height: 1.35;
+            color: #fff;
+            word-break: break-word;
+        }
+        .overview-band {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .overview-item {
+            padding: 14px 16px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, #ffffff 0%, #f4f8fc 100%);
+        }
+        .overview-label {
+            margin-bottom: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .overview-value {
+            font-size: 0.96rem;
+            line-height: 1.4;
+            color: var(--ink);
+            word-break: break-word;
+        }
+        .info-surface {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: linear-gradient(180deg, #fbfdff 0%, #f3f8fc 100%);
+            padding: 14px 16px;
+        }
+        .info-surface-title {
+            margin-bottom: 6px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .info-surface-value {
+            min-height: 1.4em;
+        }
+        @media (max-width: 991.98px) {
+            .hero-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .overview-band {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 575.98px) {
+            .hero-stats {
+                grid-template-columns: 1fr;
+            }
+            .overview-band {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header class="page-head">
+        <div class="eyebrow">Wireless Sensor Network</div>
+        <h1 class="page-title">TC-Link-200 Configurator</h1>
+        <p class="page-subtitle">Manage radio link state, node setup, sampling runs, and export workflows from one surface that feels like the rest of the sensor stack.</p>
+    </header>
+
+    <div class="card p-4 shadow-sm hero-card">
+        <div class="d-flex flex-row justify-content-between align-items-center">
+            <h4 class="m-0"><i class="bi bi-broadcast"></i> BaseStation Control</h4>
+        </div>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <div class="hero-stat-label">Base Model</div>
+                <div class="hero-stat-value" id="heroBaseModel">-</div>
+            </div>
+            <div class="hero-stat">
+                <div class="hero-stat-label">Base Serial</div>
+                <div class="hero-stat-value" id="heroBaseSerial">-</div>
+            </div>
+            <div class="hero-stat">
+                <div class="hero-stat-label">Link Health</div>
+                <div class="hero-stat-value" id="heroLinkHealth">-</div>
+            </div>
+            <div class="hero-stat">
+                <div class="hero-stat-label">Port</div>
+                <div class="hero-stat-value" id="heroPort">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <div class="fw-bold">BaseStation</div>
+                <div id="baseStatusText" class="small text-muted base-status-text">Status: Unknown</div>
+            </div>
+            <div class="d-flex gap-2">
+                <a class="graf-link-button" href="/graf/mscl?range=5m" target="_blank" rel="noopener">Graf App Lite</a>
+                <button id="btnConnect" onclick="connectBase()" class="btn btn-outline-secondary btn-sm fw-bold"><i class="bi bi-plug"></i> Connect</button>
+                <button id="btnDisconnect" onclick="disconnectBase()" class="btn btn-outline-secondary btn-sm fw-bold"><i class="bi bi-power"></i> Disconnect</button>
+                <button id="btnBeacon" onclick="toggleBeacon()" class="btn btn-outline-info btn-sm fw-bold"><i class="bi bi-broadcast-pin"></i> Beacon: ?</button>
+                <span class="text-muted align-self-center" title="Beacon ON keeps node sync/communication active. Beacon OFF is only for diagnostics/isolation and may make nodes unreachable.">ⓘ</span>
+            </div>
+        </div>
+        <div id="baseStatusPill" class="status-pill status-err-pill mb-3">Disconnected</div>
+        <div id="baseActionStatus" class="small fw-bold mb-2"></div>
+
+        <div class="row g-3 align-items-center" id="baseActionRow">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text">Node ID</span>
+                    <select id="nodeId" class="form-select">
+                        {% for node_id in mscl_node_ids %}
+                        <option value="{{ node_id }}">{{ node_id }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="small text-muted mt-1">Selected node affects control actions only.</div>
+            </div>
+            <div class="col-md-8">
+                <div class="d-flex gap-2 node-actions node-actions-primary">
+                    <button id="btnRead" onclick="readConfig()" class="btn btn-success fw-bold" disabled>Read</button>
+                    <button id="btnSampling" onclick="toggleSamplingPanel()" class="btn btn-outline-success fw-bold">Sampling Run</button>
+                    <button id="btnSetIdle" onclick="setNodeIdle()" class="btn btn-outline-primary fw-bold">Set to Idle</button>
+                </div>
+                <div class="d-flex gap-2 node-actions node-actions-secondary mt-2">
+                    <button id="btnSleep" onclick="setNodeSleep()" class="btn btn-outline-dark fw-bold">Sleep</button>
+                    <button id="btnCyclePower" onclick="cycleNodePower()" class="btn btn-outline-primary fw-bold">Power Cycle</button>
+                    <button id="btnClearStorage" onclick="clearStorage()" class="btn btn-outline-danger fw-bold" disabled>Clear Storage</button>
+                    <button id="btnExportStorage" onclick="exportStorageCsv()" class="btn btn-outline-secondary fw-bold" disabled>Export CSV</button>
+                    <button id="btnExportInflux" onclick="exportStorageToInflux()" class="btn btn-outline-secondary fw-bold" disabled>Export to Influx</button>
+                    <button id="btnProbe" onclick="probeNode()" class="btn btn-outline-secondary fw-bold"><i class="bi bi-satellite"></i> Probe</button>
+                </div>
+            </div>
+        </div>
+        <div class="overview-band">
+            <div class="overview-item">
+                <div class="overview-label">Selected Node</div>
+                <div class="overview-value" id="overviewNodeId">Node {{ mscl_node_ids[0] if mscl_node_ids else "-" }}</div>
+            </div>
+            <div class="overview-item">
+                <div class="overview-label">Write Readiness</div>
+                <div class="overview-value" id="overviewReadiness">Awaiting node read</div>
+            </div>
+            <div class="overview-item">
+                <div class="overview-label">Last Read</div>
+                <div class="overview-value" id="overviewLastRead">Not loaded yet</div>
+            </div>
+            <div class="overview-item">
+                <div class="overview-label">Node State</div>
+                <div class="overview-value" id="overviewNodeState">Unknown</div>
+            </div>
+            <div class="overview-item">
+                <div class="overview-label">Last Comm</div>
+                <div class="overview-value" id="overviewLastComm">Unavailable</div>
+            </div>
+        </div>
+        <div id="samplingPanel" class="border rounded p-3 mt-3 bg-light" style="display:none;">
+            <div class="fw-bold text-primary mb-2">Sampling Network (All Configured Nodes)</div>
+            <div class="small text-muted mb-2">Sampling start/stop applies to all node IDs from <code>MSCL_NODE_IDS</code> in <code>.env</code>.</div>
+            <div class="sample-top">
+                <div class="sample-rate-field">
+                    <label class="form-label fw-bold">Sample Rate</label>
+                    <select id="sampleRate" class="form-select"></select>
+                </div>
+                <div id="sampleRateHint" class="small text-muted sample-rate-hint-inline">Read node to populate constraints.</div>
+                <details class="memo-popover memo-popover-inline">
+                    <summary>Memo: LPF × Sample Rate</summary>
+                    <div class="memo-popover-panel">
+                        <div class="memo-title">Validated Compatibility Matrix (Current Node Snapshot)</div>
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Low Pass Filter</th>
+                                <th>Allowed Sample Rates</th>
+                                <th>Validation Status</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr>
+                                <td>294 Hz</td>
+                                <td>1 Hz, 2 Hz, 4 Hz, 8 Hz, 16 Hz</td>
+                                <td>Validated by 90s start/stop runs: PASS (5/5)</td>
+                            </tr>
+                            <tr>
+                                <td>294 Hz</td>
+                                <td>64 Hz</td>
+                                <td>Validated by 300s stability run: PASS</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                        <ul>
+                            <li>Test run ID: <code>tests/runs/20260213-193644</code>.</li>
+                            <li>On this node readout, LPF options exposed only <code>294 Hz</code>.</li>
+                            <li>Idle/read health check (150s): PASS, no API failures.</li>
+                            <li>If node firmware exposes additional LPF values, validate those combinations on-device before production use.</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+            <div class="row g-2 align-items-end sampling-run-row">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Log/Transmit</label>
+                    <select id="samplingRunMode" class="form-select">
+                        <option value="log">Log</option>
+                        <option value="transmit" selected>Transmit</option>
+                        <option value="log_and_transmit">Log and Transmit</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Data Type</label>
+                    <select id="samplingRunDataType" class="form-select">
+                        <option value="float" selected>float (raw data)</option>
+                        <option value="calibrated">Calibrated</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Mode</label>
+                    <select id="samplingRunWhen" class="form-select" onchange="samplingModeChanged()">
+                        <option value="continuous" selected>continuously</option>
+                        <option value="for">for</option>
+                    </select>
+                </div>
+                <div class="col-md-3 sampling-duration-group">
+                    <label class="form-label fw-bold">Duration</label>
+                    <div class="input-group">
+                        <input id="samplingRunDurationValue" type="number" min="1" value="60" class="form-control">
+                        <select id="samplingRunDurationUnits" class="form-select">
+                            <option value="seconds" selected>Seconds</option>
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <button id="btnSamplingStart" onclick="startSamplingRun()" class="btn btn-success btn-sm fw-bold">Apply & Start</button>
+                <button id="btnSamplingStop" onclick="stopSamplingRun()" class="btn btn-outline-warning btn-sm fw-bold">Stop Sampling</button>
+                <button id="btnSamplingStatus" onclick="refreshSamplingRunStatus()" class="btn btn-outline-secondary btn-sm fw-bold">Status</button>
+            </div>
+            <div id="samplingRunStatus" class="small text-muted mt-2"></div>
+        </div>
+        <div class="info-surface mt-3">
+            <div class="info-surface-title">Read Activity</div>
+            <div id="readStatus" class="info-surface-value fw-bold small"></div>
+            <div id="readMeta" class="small text-muted mt-1"></div>
+        </div>
+    </div>
+
+    <div id="configCard" style="display:none;">
+        <div class="card p-4 shadow-sm">
+            <div class="fw-bold text-primary mb-3">
+                Node Settings
+                <span class="ms-2 text-muted" title="LED quick guide: Green pulse = Idle. Single green blink every ~2s = Sampling. Blue during sampling = resynchronizing. Red = self-test error. Off = powered down.">ⓘ</span>
+            </div>
+            <div class="border rounded p-3 mb-3 bg-light section-card" data-accent="hardware">
+                <div class="fw-bold text-primary mb-3">Hardware</div>
+                <div class="small text-muted mb-2">Read node to populate hardware options and valid ranges.</div>
+                <div class="row mb-3">
+                    <div class="col-md-4" id="transducerTypeWrap">
+                        <label class="form-label fw-bold">Transducer Type</label>
+                        <select id="transducerType" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4" id="sensorTypeWrap">
+                        <label class="form-label fw-bold">Sensor Type</label>
+                        <select id="sensorType" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4" id="wireTypeWrap">
+                        <label class="form-label fw-bold">Wire Type</label>
+                        <select id="wireType" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6" id="inputRangeWrap">
+                        <label class="form-label fw-bold">Input Range</label>
+                        <select id="inputRange" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="lowPassFilterWrap">
+                        <label class="form-label fw-bold">Low Pass Filter</label>
+                        <select id="lowPassFilter" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                </div>
+                <label class="form-label fw-bold">Active Channels (Raw Mode)</label>
+                <div id="channelsArea"></div>
+            </div>
+
+            <div class="border rounded p-3 mb-3 bg-light section-card" data-accent="calibration">
+                <div class="fw-bold text-primary mb-2">Calibration</div>
+                <div class="row">
+                    <div class="col-md-6" id="calibrationUnitWrap">
+                        <label class="form-label fw-bold">Unit (Raw Data ch1)</label>
+                        <select id="calibrationUnit" class="form-select" disabled>
+                            <option value="">N/A</option>
+                        </select>
+                        <div class="small text-muted mt-1">Editable when options are available</div>
+                    </div>
+                    <div class="col-md-6" id="cjcCalibrationUnitWrap">
+                        <label class="form-label fw-bold">CJC Temperature Unit (ch2)</label>
+                        <select id="cjcCalibrationUnit" class="form-select" disabled>
+                            <option value="">N/A</option>
+                        </select>
+                        <div class="small text-muted mt-1">Celsius / Fahrenheit / Kelvin</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded p-3 mb-3 bg-light section-card" data-accent="sampling">
+                <div class="fw-bold text-primary mb-3">Sampling</div>
+                <div class="row mb-3">
+                    <div class="col-md-6" id="dataModeWrap">
+                        <label class="form-label fw-bold">Data Mode</label>
+                        <select id="dataMode" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6" id="storageLimitModeWrap">
+                        <label class="form-label fw-bold">Storage Limit Mode</label>
+                        <select id="storageLimitMode" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Lost Beacon Timeout (min)</label>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="lostBeaconEnabled">
+                            <label class="form-check-label" for="lostBeaconEnabled">On</label>
+                        </div>
+                        <input id="lostBeaconTimeout" type="number" min="2" max="600" class="form-control" value="2">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Diagnostic Info Interval (s)</label>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="diagnosticEnabled">
+                            <label class="form-check-label" for="diagnosticEnabled">On</label>
+                        </div>
+                        <input id="diagnosticInterval" type="number" min="30" max="65535" class="form-control" value="60">
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded p-3 mb-4 bg-light section-card" data-accent="power">
+                <div class="fw-bold text-primary mb-3">Power</div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Transmit Power</label>
+                        <select id="txPower" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="defaultModeWrap">
+                        <label class="form-label fw-bold">Default Operation Mode</label>
+                        <select id="defaultMode" class="form-select">
+                            <option value="">N/A</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="inactivityTimeoutWrap">
+                        <label class="form-label fw-bold">User Inactivity Timeout (s)</label>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="inactivityEnabled">
+                            <label class="form-check-label" for="inactivityEnabled">On</label>
+                        </div>
+                        <input id="inactivityTimeout" type="number" min="1" max="65535" class="form-control" value="30">
+                    </div>
+                    <div class="col-md-6" id="checkRadioIntervalWrap">
+                        <label class="form-label fw-bold">Check Radio Interval (s)</label>
+                        <input id="checkRadioInterval" type="number" min="1" max="65535" class="form-control" value="5">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="fw-bold text-primary mb-1">Node Status</div>
+                <div class="info-surface">
+                    <div id="diagArea" class="diag-text info-surface-value"></div>
+                </div>
+            </div>
+            <div class="mb-4">
+                <div class="fw-bold text-primary mb-1">Node Diagnostics</div>
+                <div class="info-surface">
+                    <div id="diagFlags" class="small text-muted info-surface-value"></div>
+                </div>
+            </div>
+
+            <button id="btnWrite" onclick="applyConfig()" class="btn btn-primary w-100 fw-bold py-2" disabled><i class="bi bi-shield-lock"></i> Write Config</button>
+            <div id="writeStatus" class="mt-3 text-center fw-bold"></div>
+        </div>
+    </div>
+
+    <div class="card p-4 shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold">MSCL Logs</div>
+            <div class="d-flex gap-2">
+                <button onclick="copyLogs()" class="btn btn-outline-secondary btn-sm fw-bold" title="Copy logs to clipboard"><i class="bi bi-clipboard"></i> Copy</button>
+                <button onclick="refreshLogs()" class="btn btn-outline-secondary btn-sm fw-bold"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            </div>
+        </div>
+        <div id="logBox" class="log-box">Logs will appear here…</div>
+    </div>
+</div>
+
+<script src="static/mscl_web_config.js"></script>
+</body>
+</html>

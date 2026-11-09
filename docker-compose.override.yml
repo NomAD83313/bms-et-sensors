@@ -1,0 +1,43 @@
+services:
+  redlab-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.redlab # Enables local building for the collector service
+
+  mscl-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.mscl # Enables local building for the MSCL collector service
+    volumes:
+      - ./app/mscl:/app
+      - ./app/shared/device-common.css:/shared/device-common.css:ro
+
+  graf-lite:
+    build:
+      context: .
+      dockerfile: Dockerfile.graf-app
+
+  pyrometer-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.pyrometers
+
+  almemo-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.almemo
+
+  service-controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.svcctl
+
+  matter-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.matter-app
+
+  messkluppe-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.messkluppe
