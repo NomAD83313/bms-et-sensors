@@ -1,0 +1,373 @@
+{% extends "index.html" %}
+{% block page_title %}Live Data{% endblock %}
+{% block content %}
+
+	<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.22.2/moment.js"></script> -->
+	<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.2/Chart.min.js"></script> -->
+    <script src="{{ url_for('serveStaticResource', resource='js/moment.js')}}"></script>
+    <script src="{{ url_for('serveStaticResource', resource='js/Chart.min.js')}}"></script>
+	<script src="{{ url_for('serveStaticResource', resource='js/chartjs-plugin-streaming.min.js')}}"></script>
+	
+   
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="ct-chart ct-perfect-fourth"></div>
+                </div>
+                <div class="chart-container" style="min-height: 600px;">
+                    <canvas id="myChart" ></canvas>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-lg-2 col-md-4 col-xs-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(80, 81, 79);"><strong>Display Values</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <select onchange="change_display(this);">
+                                <option value="linearForce">Linear Force</option>
+                                <option value="compensatedForce">Compensated Force</option>
+                                <option value="raw">raw Bits</option>
+                                
+                            </select>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(80, 81, 79);"><strong>F_RH_Front_Top (N)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_fx">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading" >
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(242, 95, 92);"><strong>F(y)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_fy">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(36, 123, 160);"><strong>F(z)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_fz">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                             <p style="color:rgb(255, 216, 0);"><strong>Yaw Angle</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_ya">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(0, 178, 59);"><strong>T(intern)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_ti">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                            <p style="color:rgb(198, 100, 93);"><strong>T(extern)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_te">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(0, 246, 255);"><strong>V(bat)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_vb">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+                <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(200, 200, 255);"><strong>A(x)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_ax">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-1 col-md-2 col-xs-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="row">
+                        <div class="col-xs-12">
+                           <p style="color:rgb(145, 145, 180);"><strong>A(y)</strong></p>
+                        </div>
+                        <div class="col-xs-12 text-right">
+                            <span id="l_ay">0</span>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+       
+    <div class ="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <div class="ct-chart ct-perfect-fourth"></div>
+                </div>
+                <div id ="debugging">
+                    
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+	
+
+<script>
+    var isIE = navigator.userAgent.indexOf('MSIE') !== -1 || navigator.userAgent.indexOf('Trident') !== -1;
+    var timestamps = []; // timestamp array
+    var data = []; // two dimensional array (data[row][column])
+    var cursor = 0; // next refreshing row
+
+    // receive data from a client
+    function inputMessage(unix_timestamp, values) {
+      timestamps.push(unix_timestamp);
+      data.push(values);
+    }
+
+    // refresh function to be set to options.plugins.streaming.onRefresh option 
+    function refresh(chart) {
+      length = data.length;
+      Array.prototype.push.apply(
+        chart.data.labels, timestamps.slice(cursor, length)
+      );
+      for (var i = cursor; i < length; i++) {
+        for (var j = 0; j < data[i].length; j++) {
+          chart.data.datasets[j].data.push(data[i][j]);
+        }
+      }
+      cursor = length;
+    }
+
+    // create a chart
+    var ctx = document.getElementById('myChart').getContext('2d');
+    var chart = new Chart(ctx, {
+      type: 'line',
+      labels: [],
+      data: { datasets: [
+        {
+            label: 'Fx',
+            fill: false,
+            borderColor: 'rgb(80, 81, 79)',
+            borderWidth	: 2,
+            yAxisID: 'A',
+            data: []
+        },{ 
+            label: 'Fy',
+            fill: false,
+            borderColor: 'rgb(242, 95, 92)',  
+            borderWidth	: 2, 
+            yAxisID: 'A',
+            data: []
+        },{
+            label: 'Fz',
+            fill: false,
+            borderColor: 'rgb(36, 123, 160)', 
+            borderWidth	: 2,
+            yAxisID: 'A',
+            data: []
+        },{
+            label: 'Yaw',
+            fill: false,
+            borderColor: 'rgb(255, 216, 0)',
+            borderWidth	: 2,
+            yAxisID: 'B',
+            data: []
+        },{
+            label: 'T(intern)',
+            fill: false,
+            borderColor: 'rgb(0, 178, 59)',   
+            borderWidth	: 2,
+            yAxisID: 'D',
+            data: []
+        },{
+            label: 'T(Extern)',
+            fill: false,
+            borderColor: 'rgb(198, 100, 93)',
+            borderWidth	: 2,
+            yAxisID: 'D',
+            data: []
+        },{
+            label: 'V(bat)',
+            fill: false,
+            borderColor: 'rgb(0, 246, 255)',
+            borderWidth	: 2,
+            yAxisID: 'B',
+            data: []
+        },{
+            label: 'A(x)',
+            fill: false,
+            borderColor: 'rgb(200, 200, 255)',
+            borderWidth	: 2,
+            yAxisID: 'C',
+            hidden: true,
+            data: []
+        },{
+            label: 'A(y)',
+            fill: false,
+            borderColor: 'rgb(145, 145, 180)',
+            borderWidth	: 2,
+            yAxisID: 'C',
+            hidden: true,
+            data: []
+        }
+        ]},
+      options: {
+        maintainAspectRatio: false,
+        scales: { 
+            xAxes: [{ type: 'realtime' }],
+            yAxes: [{
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Force [F(x), F(y), F(z)]'
+                },
+                id: 'A',
+                type: 'linear',
+                position: 'left',
+                }, {
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Yaw Angle, Temperature'
+                },
+                id: 'B',
+                type: 'linear',
+                position: 'left',
+            },
+            {
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Acceleration [A(x), A(y)]'
+                },
+                id: 'C',
+                type: 'linear',
+                position: 'left',
+            },
+             {
+                scaleLabel: {
+                    display: true,
+                    labelString: 'Temperature'
+                },
+                id: 'D',
+                type: 'linear',
+                position: 'left',
+            }]},
+        elements: { point: { radius: 0 } },
+        tooltips: {enabled: false},
+        plugins: { 
+            streaming: { 
+                onRefresh: refresh,
+                duration: 120000,
+                frameRate: 50,
+                delay: 500 } }
+      }
+    });
+
+    // Call inputMessage() every 100ms
+    setInterval(function() {
+        $.getJSON("/get_globals", function(result){
+            inputMessage(Date.now(), [result.live_Fx, result.live_Fy, result.live_Fz, result.live_YawAngle, result.live_Ti, result.live_Te, result.live_Vbat, result.live_Ax, result.live_Ay]);
+            //write the live data
+            $('#l_fx').text(result.live_Fx);
+            $('#l_fy').text(result.live_Fy);
+            $('#l_fz').text(result.live_Fz);
+            $('#l_ya').text(result.live_YawAngle);
+            $('#l_ti').text(result.live_Ti);
+            $('#l_te').text(result.live_Te);
+            $('#l_vb').text(result.live_Vbat);
+            $('#l_ax').text(result.live_Ax);
+            $('#l_ay').text(result.live_Ay);
+            $("#time_server").text(result.raspi_time);
+            $("#time_local").text(new Date().toISOString());
+
+        })
+    }, 100);
+    
+    function change_display(sel){
+        $.getJSON('/change_live_display/'+sel.value);
+    }   
+
+</script>
+{% endblock %}

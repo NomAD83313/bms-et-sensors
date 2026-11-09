@@ -1,0 +1,20 @@
+# ESP-IDF local artifacts
+build/
+build-*/
+build-doa/
+managed_components/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+.idf/
+
+# Local Python/tool state
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated onboarding/media artifacts
+multinode-card.png
+
+# Local Thread network credentials
+main/thread_dataset.h

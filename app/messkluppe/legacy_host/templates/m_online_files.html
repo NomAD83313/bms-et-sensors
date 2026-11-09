@@ -1,0 +1,212 @@
+{% extends "index.html" %}
+{% block page_title %}Messkluppe - Online Files{% endblock %}
+
+{% block extra %}
+<!--
+Weitere Scrips:
+    Tabelle sortieren:
+    http://github.hubspot.com/sortable/
+-->
+ 
+<link rel="stylesheet" href="{{ url_for('serveStaticResource', resource='css/sortable-theme-bootstrap.css') }}">
+<script src="{{ url_for('serveStaticResource', resource='js/sortable.min.js')}}"></script>
+
+<div class="row">
+    <div class="col-lg-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                File List
+            </div>
+            <!-- /.panel-heading -->
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered table-hover sortable-theme-bootstrap" data-sortable id="online_files">
+                        <thead>
+                            <tr>
+                                <th><p class="fa fa-unsorted"></p> ID</th>
+                                <th><p class="fa fa-unsorted"></p> Name</th>
+                                <th><p class="fa fa-unsorted"></p> Size(byte)</th>
+                                <th><p class="fa fa-unsorted"></p> Number of Lines</th>
+                                <th><p class="fa fa-unsorted"></p> Record</th>
+                                <th data-sortable="false">DEL</th>
+                                <th data-sortable="false">Download</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+
+  
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-danger btn-lg" data-toggle="modal" data-target="#delete_all">Delete all online Files</button>
+                </div>
+                <!-- /.table-responsive -->
+            </div>
+            <!-- /.panel-body -->
+        </div>
+        <!-- /.panel -->
+    </div>
+    <!-- /.col-lg-6 -->
+</div>
+
+
+<!-- Modal -->
+<div class="modal fade" id="progress" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="static">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title" id="myModalLabel">Download</h4>
+      </div>
+      <div class="modal-body">
+       
+            <div class="progress">
+                <div id="dl_progress" class="progress-bar progress-bar-striped active" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%">0</div> 
+            </div>
+       <span id="dl_act" class="font-weight-normal"></span>
+                <span class="font-weight-normal">/</span>
+                <span id="dl_until"class="font-weight-normal">Normal weight text.</span>
+       
+      </div>
+      <div class="modal-footer">
+        <button id="dl_close" type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!--
+<script src="{{ url_for('serveStaticResource', resource='js/jquery.dataTables.min.js')}}"></script>
+<script src="{{ url_for('serveStaticResource', resource='js/dataTables.bootstrap.min.js')}}"></script>
+-->
+<script src="/js/jquery.dataTables.min.js"></script>
+<script src="/js/dataTables.bootstrap.min.js"></script>
+<!-- Modal -->
+<div class="modal fade" id="delete" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="static">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title" id="myModalLabel">Delete Online File</h4>
+      </div>
+      <div class="modal-body">
+       
+        <span class="font-weight-normal">Are you sure you want to permanently delete the file</span>
+        <span id="del_name" class="font-weight-normal"></span>
+       <span class="font-weight-normal">?</span>
+       
+      </div>
+      <div class="modal-footer">
+        <button id="del_confirm" type="button" class="btn btn-default" data-dismiss="modal" >Delete File</button>
+        <button id="del_close" type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="delete_all" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="static">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title" id="myModalLabel">Delete ALL Online Files</h4>
+      </div>
+      <div class="modal-body">
+       
+        <span class="font-weight-normal">Are you sure you want to permanently delete all the files </span>
+        <span id="del_name" class="font-weight-normal"></span>
+       <span class="font-weight-normal">?</span>
+       
+      </div>
+      <div class="modal-footer">
+        <button id="del_confirm_all" type="button" class="btn btn-default" data-dismiss="modal" >Delete ALL Files</button>
+        <button id="del_close" type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$('#delete').on('show.bs.modal', function (event) {
+    var button = $(event.relatedTarget) // Button that triggered the modal
+    var recipient = button.data('filename') // Extract info from data-* attributes
+    // If necessary, you could initiate an AJAX request here (and then do the updating in a callback).
+    // Update the modal's content. We'll use jQuery here, but you could use a data binding library or other methods instead.
+    var modal = $(this)
+    modal.find('#del_name').text(recipient);
+    
+    $('#del_confirm').click(function() {
+    $.getJSON("/file_delete/"+recipient, function(result){
+            if (result.result == true){
+                 button.closest('tr').remove(); 
+            }else{
+
+            }
+        });
+    });
+});
+$('#delete_all').on('show.bs.modal', function (event) {
+ 
+    $('#del_confirm_all').click(function() {
+    $.getJSON("/file_delete_all", function(result){
+            if (result.result == true){
+                 alert("refresh page"); 
+            }else{
+
+            }
+        });
+    });
+});
+</script>
+
+
+
+<script>
+$(window).ready(function(){
+    intervalId = setInterval(function(){
+        $.getJSON("/get_globals", function(result){
+            if (result.dl_finished == true){
+                result.online_files.forEach(function(e) {
+                    if (e[8]== 1){var ending = ".bin";}else{var endling=".csv";}
+                    var recorded = new Date (((e[2]<<16)+e[1])*1000);
+                    $('#online_files').append(
+                    '<tr><td>'+
+                        e[3]+
+                    '</td><td>'+
+                        ((e[2]<<16)+e[1])+ending+
+                    '</td><td>'+
+                        (e[4]*1000+e[5])+
+                    '</td><td>'+
+                      ((e[7]<<16)+e[6])+
+                    '</td><td>'+
+                        recorded.toLocaleString()+
+                    '</td><td>'+
+                        '<button data-toggle="modal" data-target="#delete" data-filename = "'+((e[2]<<16)+e[1])+'" type="button" class="btn btn-danger btn-circle"><i class="fa fa-times"></i></button>'+
+                    '</td><td>'+  
+
+                        '<button data-toggle="modal" data-target="#progress" type="button" class="btn btn-info btn-circle" onclick='+
+                            "$.get('"+
+                            '/file_download/'+
+                            ((e[2]<<16)+e[1])+
+                            '/'+
+                            ((e[7]<<16)+e[6])+
+                            "');"+
+                            '><i class="fa fa-download"></i></button></td></tr>');
+                    
+                    //console.log(e)
+                    //console.log(e);
+                    
+                });
+                //console.log("download finished");
+                clearInterval(intervalId);
+                //console.log(result);
+                //$('#c').DataTable();
+            }
+        
+        })
+    }, 1000);
+});
+</script>
+
+
+
+{% endblock %}

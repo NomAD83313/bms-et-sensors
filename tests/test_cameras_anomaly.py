@@ -1,0 +1,92 @@
+import json
+from pathlib import Path
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+
+from app.cameras import anomaly_control
+
+
+class AnomalyControlTests(unittest.TestCase):
+    def test_confirmation_requires_consecutive_scores_and_cooldown(self):
+        confirmation = anomaly_control.Confirmation(required=3, cooldown=30)
+        self.assertEqual(confirmation.update(2, 1, 0), (False, False))
+        self.assertEqual(confirmation.update(0, 1, 2), (False, False))
+        self.assertEqual(confirmation.update(2, 1, 4), (False, False))
+        self.assertEqual(confirmation.update(2, 1, 6), (False, False))
+        self.assertEqual(confirmation.update(2, 1, 8), (True, True))
+        self.assertEqual(confirmation.update(2, 1, 10), (True, False))
+        self.assertEqual(confirmation.update(2, 1, 38), (True, True))
+
+    def test_fast_confirmation_and_new_episode_do_not_wait_for_snapshot_cooldown(self):
+        confirmation = anomaly_control.Confirmation(required=2, cooldown=30)
+        self.assertEqual(confirmation.update(2, 1, 0), (False, False))
+        self.assertEqual(confirmation.update(2, 1, .5), (True, True))
+        self.assertEqual(confirmation.update(2, 1, 1), (True, False))
+        self.assertEqual(confirmation.update(0, 1, 1.5), (False, False))
+        self.assertEqual(confirmation.update(2, 1, 2), (False, False))
+        self.assertEqual(confirmation.update(2, 1, 2.5), (True, True))
+
+    def test_commands_validate_threshold_and_action(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            request = anomaly_control.request('learn', 1.25)
+            self.assertEqual(json.loads((Path(directory) / 'command.json').read_text()), request)
+            for action, threshold in [('delete', 1), ('learn', 0), ('learn', float('nan')), ('learn', 21)]:
+                with self.subTest(action=action, threshold=threshold), self.assertRaises(ValueError):
+                    anomaly_control.request(action, threshold)
+
+    def test_configure_accepts_values_above_old_limit_without_starting_detection(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            result = anomaly_control.request('configure', 8.5)
+            self.assertEqual(result['multiplier'], 8.5)
+            self.assertEqual(anomaly_control.command_mode('configure', True, False, False), (False, False))
+            self.assertEqual(anomaly_control.command_mode('configure', True, True, False), (True, False))
+            self.assertEqual(anomaly_control.command_mode('configure', True, False, True), (False, True))
+            self.assertEqual(anomaly_control.validate_multiplier(.1), .1)
+            self.assertEqual(anomaly_control.validate_multiplier(20), 20)
+            for value in (.09, 20.1, float('inf'), float('nan')):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.validate_multiplier(value)
+
+    def test_input_size_command_validates_without_overwriting_on_invalid_request(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for size in anomaly_control.INPUT_SIZES:
+                result = anomaly_control.request('resize', input_size=size)
+                self.assertEqual(result['input_size'], size)
+            self.assertEqual(anomaly_control.command_mode('resize', True, True, True), (False, False))
+            for value in (None, 0, 224, 320, 448, 512, 640, '640x640', '768x576', '320', True, float('nan'), [], {}):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('resize', input_size=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), result)
+
+    def test_confirmation_setting_validates_and_preserves_session_mode(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            command = anomaly_control.request('confirmation', confirmation_frames=1)
+            self.assertEqual(command['confirmation_frames'], 1)
+            for learning, monitoring in ((False, True), (True, False), (False, False)):
+                self.assertEqual(anomaly_control.command_mode('confirmation', True, learning, monitoring), (learning, monitoring))
+            for value in (None, 0, 6, 1.5, True, '1'):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('confirmation', confirmation_frames=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), command)
+            confirmation = anomaly_control.Confirmation(required=1)
+            self.assertEqual(confirmation.update(2, 1, 0), (True, True))
+
+    def test_stale_status_and_safe_snapshot_access(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            root = Path(directory)
+            self.assertEqual(anomaly_control.status()['state'], 'offline')
+            anomaly_control.write_json(root / 'status.json', dict(state='normal', updated=time.time()))
+            self.assertEqual(anomaly_control.status()['state'], 'normal')
+            (root / 'events').mkdir()
+            (root / 'events/clip.jpg').write_bytes(b'jpeg')
+            (root / 'events/link.jpg').symlink_to(root / 'status.json')
+            self.assertEqual(anomaly_control.event_path('clip.jpg'), root / 'events/clip.jpg')
+            for name in ['../status.json', '/etc/passwd', 'link.jpg', 'missing.jpg', 'clip.json']:
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    anomaly_control.event_path(name)
+
+
+if __name__ == '__main__':
+    unittest.main()

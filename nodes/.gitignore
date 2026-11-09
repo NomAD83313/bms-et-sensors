@@ -1,0 +1,33 @@
+# ESP-IDF build artifacts
+**/build/
+**/build-*/
+**/managed_components/
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+**/.idf/
+**/matter-node-card.png
+**/compile_commands.json
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+
+# Python
+**/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Tools / IDE
+.codex/
+.claude/
+.vscode/*
+eim_config.toml
+eim.log
+
+# OS
+.DS_Store
+Thumbs.db

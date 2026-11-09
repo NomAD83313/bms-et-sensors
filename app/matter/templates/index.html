@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Matter + Thread Console</title>
+  <link rel="stylesheet" href="./device-common.css" />
+  <link rel="stylesheet" href="./static/matter.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">Thread Operations</div>
+    <h1>Matter + Thread Console</h1>
+    <p class="sub">Unified console for <span class="mono">matter-server -> matter-collector -> InfluxDB</span> and OpenThread diagnostics. Auto refresh: 7 seconds.</p>
+    <div class="nav-links">
+      <a class="nav-btn" href="#" target="_blank" id="matterServerLink">Matter Server</a>
+      <a class="nav-btn" href="/otbr/" target="_blank">OpenThread Border Router</a>
+      <a class="nav-btn" href="./thread-topology" target="_blank">Thread Topology</a>
+      <a class="nav-btn" href="/graf/matter?range=5m" target="_blank">Matter Graf 5m</a>
+      <a class="nav-btn" href="/grafana/" target="_blank">Grafana</a>
+    </div>
+    <div class="card">
+      <div class="raw-head">
+        <div class="raw-left">
+          <div class="k">Matter Stack</div>
+          <a class="raw-link" href="./control/matter-server/health">Matter Server JSON</a>
+          <a class="raw-link" href="./control/openthread/health">OTBR JSON</a>
+        </div>
+      </div>
+      <div class="stack-control-grid">
+        <div class="stat-block service-panel">
+          <div class="service-head">
+            <div>
+              <div class="stat-label">OpenThread Border Router</div>
+              <div id="otbrServiceSummary" class="service-summary">-</div>
+            </div>
+            <div id="otbrServiceStatus" class="status-pill status-warn">checking</div>
+          </div>
+          <div class="service-actions">
+            <button type="button" id="restartOtbr" class="btn">Restart OTBR</button>
+          </div>
+        </div>
+        <div class="stat-block service-panel">
+          <div class="service-head">
+            <div>
+              <div class="stat-label">Matter Server</div>
+              <div id="matterServerSummary" class="service-summary">-</div>
+            </div>
+            <div id="matterServerStatus" class="status-pill status-warn">checking</div>
+          </div>
+          <div class="service-actions">
+            <button type="button" id="restartMatterServer" class="btn">Restart Matter Server</button>
+          </div>
+          <form id="wifiCredentialsForm" class="field-grid" autocomplete="off">
+            <div class="field">
+              <label for="matterWifiSsid">Wi-Fi SSID</label>
+              <input id="matterWifiSsid" class="text-input" name="ssid" autocomplete="off" required>
+            </div>
+            <div class="field">
+              <label for="matterWifiPassword">Password</label>
+              <input id="matterWifiPassword" class="text-input" name="credentials" type="password" autocomplete="new-password" required>
+            </div>
+            <button type="submit" id="setWifiCredentials" class="btn">Set Wi-Fi</button>
+          </form>
+          <div id="wifiCredentialsStatus" class="inline-status"></div>
+        </div>
+        <div class="stat-block service-panel">
+          <div class="service-head">
+            <div>
+              <div class="stat-label">Matter + Thread Console</div>
+              <div id="matterConsoleSummary" class="service-summary">-</div>
+            </div>
+            <div id="matterConsoleStatus" class="status-pill status-warn">checking</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="top-row">
+      <div class="card">
+        <div class="raw-head">
+          <div class="raw-left">
+            <div id="statusBadge" class="status-pill status-warn">checking</div>
+            <div class="k">Matter Collector Health</div>
+            <a class="raw-link" href="./health">Raw health JSON</a>
+          </div>
+          <div class="raw-btns">
+            <button type="button" id="toggleRaw" class="btn">Show JSON</button>
+            <button type="button" id="copyRaw" class="btn">Copy</button>
+          </div>
+        </div>
+        <pre id="rawJson" class="raw hidden">-</pre>
+        <div class="grid stack-gap">
+          <div class="stat-block"><div class="stat-label">Connected</div><div id="connected" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Influx Ready</div><div id="influxReady" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Events Received</div><div id="eventsReceived" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Events Written</div><div id="eventsWritten" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Write Errors</div><div id="writeErrors" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Parse Errors</div><div id="parseErrors" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Reconnects</div><div id="reconnects" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Last Event Type</div><div id="lastEventType" class="stat-value">-</div></div>
+          <div class="stat-block"><div class="stat-label">Last Message Age</div><div id="lastMessageAge" class="stat-value">-</div></div>
+        </div>
+        <div class="k stack-gap">WebSocket URL</div>
+        <div id="wsUrl" class="stat-value mono">-</div>
+        <div class="k stack-gap">Influx</div>
+        <div id="influx" class="stat-value mono">-</div>
+        <div class="k stack-gap">Last Error</div>
+        <div id="lastError" class="stat-value mono">-</div>
+      </div>
+      <div class="card">
+        <div class="raw-head">
+          <div class="k">OpenThread Diagnostics</div>
+        </div>
+        <div>
+          <div id="otStatus" class="status-pill status-warn">checking</div>
+        </div>
+        <div class="split">
+          <div class="grid-ot">
+            <div class="stat-block"><div class="stat-label">Network Name</div><div id="otNetworkName" class="stat-value mono">-</div></div>
+            <div class="stat-block"><div class="stat-label">Role</div><div id="otRole" class="stat-value">-</div></div>
+            <div class="stat-block"><div class="stat-label">Channel</div><div id="otChannel" class="stat-value">-</div></div>
+            <div class="stat-block"><div class="stat-label">PAN ID</div><div id="otPanId" class="stat-value mono">-</div></div>
+            <div class="stat-block"><div class="stat-label">Ext Address</div><div id="otExtAddr" class="stat-value mono">-</div></div>
+            <div class="stat-block"><div class="stat-label">RLOC16</div><div id="otRloc16" class="stat-value mono">-</div></div>
+            <div class="stat-block"><div class="stat-label">Neighbors</div><div id="otNeighbors" class="stat-value">-</div></div>
+            <div class="stat-block"><div class="stat-label">Best RSSI</div><div id="otBest" class="stat-value">-</div></div>
+            <div class="stat-block"><div class="stat-label">Worst RSSI</div><div id="otWorst" class="stat-value">-</div></div>
+            <div class="stat-block"><div id="otDongleLabel" class="stat-label">Dongle</div><div id="otDongleName" class="stat-value">-</div></div>
+            <div class="stat-block"><div id="otUsbLabel" class="stat-label">USB VID:PID</div><div id="otUsbId" class="stat-value mono">-</div></div>
+          </div>
+        </div>
+        <div class="k stack-gap">Thread Credentials</div>
+        <div class="topology-empty">
+          <div class="topology-meta">
+            <span>credentials hidden from UI</span>
+            <span>local host command:</span>
+            <span class="mono">docker exec openthread-border-router ot-ctl dataset active -x</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="raw-head">
+        <div class="raw-left">
+          <div class="k">Matter over Wi-Fi</div>
+          <a class="raw-link" href="/ap/api/status" target="_blank">AP JSON</a>
+        </div>
+      </div>
+      <div id="wifiApMaster" class="topology-list">
+        <div class="topology-empty">Waiting for Wi-Fi access point...</div>
+      </div>
+      <div class="raw-head" style="margin-top:12px;">
+        <div class="raw-left">
+          <div class="k">Wi-Fi Matter Devices</div>
+        </div>
+      </div>
+      <div id="wifiMatterNodes" class="topology-list">
+        <div class="topology-empty">Waiting for Wi-Fi Matter devices...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="raw-head">
+        <div class="raw-left">
+          <div class="k">Matter over Thread</div>
+          <a class="raw-link" href="./thread-topology">Raw topology JSON</a>
+        </div>
+      </div>
+      <div id="topologySummary" class="topology-empty">Waiting for topology summary...</div>
+      <div id="threadOtbrMaster" class="topology-list">
+        <div class="topology-empty">Waiting for OTBR master...</div>
+      </div>
+      <div id="topologyTree" class="topology-list">
+        <div class="topology-empty">Waiting for topology tree...</div>
+      </div>
+      <div class="raw-head" style="margin-top:12px;">
+        <div class="raw-left">
+          <div class="k">Thread Matter Devices</div>
+        </div>
+      </div>
+      <div id="topologyNodes" class="topology-list">
+        <div class="topology-empty">Waiting for Thread Matter devices...</div>
+      </div>
+      <div class="raw-head" style="margin-top:12px;">
+        <div class="raw-left">
+          <div class="k">Topology Warnings</div>
+        </div>
+      </div>
+      <div id="topologyWarnings" class="topology-list">
+        <div class="topology-empty">Waiting for topology warnings...</div>
+      </div>
+    </div>
+  </div>
+  <script src="./static/matter.js"></script>
+</body>
+</html>

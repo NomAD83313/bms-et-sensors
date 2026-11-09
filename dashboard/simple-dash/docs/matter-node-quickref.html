@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BMS Matter Node — Operator Quick Reference (v6.1.5)</title>
+<style>
+  :root {
+    --c-bg: #ffffff;
+    --c-fg: #1d2230;
+    --c-muted: #5d6878;
+    --c-rule: #d6dde6;
+    --c-accent: #2a4cff;
+    --c-warn: #d96b00;
+    --c-mono-bg: #f4f6f9;
+    --c-led-boot: #ffffff;
+    --c-led-commission: #2c7bff;
+    --c-led-thread-detached: #f5b400;
+    --c-led-running: #18a957;
+    --c-led-btn-preview-commission: #2c7bff;
+    --c-led-btn-preview-reset: #d92020;
+    --c-led-factory-reset: #d92020;
+  }
+
+  @page { size: A4; margin: 14mm 12mm 14mm 12mm; }
+
+  * { box-sizing: border-box; }
+  html, body {
+    background: var(--c-bg);
+    color: var(--c-fg);
+    font: 11pt/1.45 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+  }
+  body {
+    max-width: 200mm;
+    margin: 0 auto;
+    padding: 8mm 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  header.cover {
+    border: 1.5pt solid var(--c-fg);
+    border-radius: 4pt;
+    padding: 6mm 7mm;
+    margin-bottom: 6mm;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 6mm;
+  }
+  header.cover h1 {
+    font-size: 18pt;
+    margin: 0 0 2mm 0;
+    line-height: 1.2;
+    color: var(--c-fg);
+  }
+  header.cover .sub {
+    color: var(--c-muted);
+    font-size: 10pt;
+  }
+  header.cover .meta {
+    text-align: right;
+    font-size: 9.5pt;
+    color: var(--c-muted);
+  }
+  header.cover .meta b { color: var(--c-fg); display: block; font-size: 11pt; }
+
+  h2 {
+    font-size: 13.5pt;
+    margin: 7mm 0 2.5mm 0;
+    padding-bottom: 1mm;
+    border-bottom: 0.6pt solid var(--c-rule);
+    color: var(--c-fg);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    margin: 5mm 0 2mm 0;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 2.5mm 0; }
+  ul, ol { margin: 0 0 2.5mm 5mm; padding: 0; }
+  li { margin: 0 0 0.6mm 0; }
+
+  code, kbd {
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 9.6pt;
+    background: var(--c-mono-bg);
+    padding: 0.4mm 1.2mm;
+    border-radius: 2pt;
+  }
+  pre {
+    background: var(--c-mono-bg);
+    border-left: 2pt solid var(--c-accent);
+    padding: 2.5mm 3mm;
+    overflow: hidden;
+    white-space: pre-wrap;
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 9.6pt;
+    line-height: 1.4;
+    margin: 0 0 3mm 0;
+    border-radius: 0 2pt 2pt 0;
+  }
+  pre code { background: none; padding: 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 3mm 0;
+    page-break-inside: avoid;
+  }
+  th, td {
+    text-align: left;
+    padding: 2mm 2.5mm;
+    border-bottom: 0.4pt solid var(--c-rule);
+    vertical-align: top;
+  }
+  thead th {
+    border-bottom: 0.8pt solid var(--c-fg);
+    font-weight: 600;
+    font-size: 10pt;
+    background: #fafbfd;
+  }
+  tbody tr:nth-child(even) td { background: #fbfcfe; }
+
+  .swatch {
+    display: inline-block;
+    width: 7mm; height: 4.5mm;
+    border-radius: 1.2pt;
+    border: 0.4pt solid rgba(0,0,0,0.25);
+    vertical-align: middle;
+    margin-right: 2mm;
+  }
+  .swatch.white     { background: var(--c-led-boot); border-color: #b8c0cc; }
+  .swatch.blue      { background: var(--c-led-commission); }
+  .swatch.yellow    { background: var(--c-led-thread-detached); }
+  .swatch.green     { background: var(--c-led-running); }
+  .swatch.red       { background: var(--c-led-factory-reset); }
+
+  .pill {
+    display: inline-block;
+    font-size: 8.5pt;
+    font-weight: 600;
+    padding: 0.3mm 1.8mm;
+    border-radius: 8pt;
+    color: #ffffff;
+    margin-left: 1mm;
+    vertical-align: middle;
+    letter-spacing: 0.2pt;
+  }
+  .pill.solid { background: #18a957; }
+  .pill.blink { background: #2c7bff; }
+  .pill.pulse { background: #6f42c1; }
+  .pill.fast  { background: #d92020; }
+
+  .callout {
+    border-left: 2.5pt solid var(--c-accent);
+    background: #f5f8ff;
+    padding: 2.5mm 3mm;
+    margin: 0 0 3mm 0;
+    border-radius: 0 2pt 2pt 0;
+  }
+  .callout.warn { border-color: var(--c-warn); background: #fff7ec; }
+  .callout b { color: var(--c-accent); }
+  .callout.warn b { color: var(--c-warn); }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+  }
+
+  .led-card {
+    display: grid;
+    grid-template-columns: 18mm 1fr;
+    gap: 3mm;
+    align-items: center;
+    border: 0.4pt solid var(--c-rule);
+    border-radius: 2pt;
+    padding: 2.5mm 3mm;
+    background: #fbfcfe;
+    page-break-inside: avoid;
+  }
+  .led-card .dot {
+    width: 14mm; height: 14mm;
+    border-radius: 50%;
+    border: 0.4pt solid rgba(0,0,0,0.2);
+    box-shadow: 0 0 4mm rgba(0,0,0,0.05) inset;
+  }
+  .led-card .dot.boot       { background: radial-gradient(circle at 35% 30%, #ffffff 0%, #d6dde6 70%, #b8c0cc 100%); }
+  .led-card .dot.commission { background: radial-gradient(circle at 35% 30%, #6da5ff 0%, var(--c-led-commission) 60%, #1e54c8 100%); }
+  .led-card .dot.detached   { background: radial-gradient(circle at 35% 30%, #ffd566 0%, var(--c-led-thread-detached) 60%, #b88600 100%); }
+  .led-card .dot.running    { background: radial-gradient(circle at 35% 30%, #5fde8d 0%, var(--c-led-running) 60%, #0d6d36 100%); }
+  .led-card .dot.preview-c  { background: radial-gradient(circle at 35% 30%, #7eb3ff 0%, var(--c-led-btn-preview-commission) 60%, #0040b0 100%); }
+  .led-card .dot.preview-r  { background: radial-gradient(circle at 35% 30%, #ff6e6e 0%, var(--c-led-factory-reset) 60%, #8a1010 100%); }
+  .led-card .dot.factory    { background: radial-gradient(circle at 35% 30%, #ff6e6e 0%, var(--c-led-factory-reset) 60%, #8a1010 100%); }
+  .led-card h4 { margin: 0 0 1mm 0; font-size: 10.5pt; }
+  .led-card p  { margin: 0; font-size: 9.5pt; color: var(--c-muted); }
+
+  .button-row {
+    display: grid;
+    grid-template-columns: 32mm 1fr;
+    gap: 3mm;
+    align-items: start;
+    padding: 3mm 0;
+    border-bottom: 0.4pt solid var(--c-rule);
+    page-break-inside: avoid;
+  }
+  .button-row:last-child { border-bottom: none; }
+  .button-row .hold {
+    font-weight: 700;
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 11pt;
+    color: var(--c-fg);
+    background: var(--c-mono-bg);
+    padding: 1.5mm 2mm;
+    border-radius: 2pt;
+    text-align: center;
+  }
+  .button-row .hold.short  { background: #eaf3ff; color: #1148b3; }
+  .button-row .hold.commission { background: #e7f0ff; color: #1148b3; }
+  .button-row .hold.factory { background: #fdecec; color: #a31616; }
+  .button-row h4 { margin: 0 0 1mm 0; font-size: 10.5pt; }
+  .button-row p  { margin: 0; font-size: 9.7pt; }
+
+  .pinout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3mm;
+  }
+  .pinout dt {
+    font-weight: 600;
+    color: var(--c-fg);
+  }
+  .pinout dd {
+    margin: 0 0 1.5mm 0;
+    color: var(--c-muted);
+    font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 9.5pt;
+  }
+
+  .qr-block {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+    border: 0.4pt solid var(--c-rule);
+    border-radius: 2pt;
+    padding: 3mm 4mm;
+    margin: 0 0 3mm 0;
+    background: #fbfcfe;
+  }
+  .qr-block dt { font-weight: 600; color: var(--c-muted); font-size: 9pt; text-transform: uppercase; letter-spacing: 0.3pt; }
+  .qr-block dd { margin: 0 0 2mm 0; font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace; font-size: 11pt; }
+
+  footer {
+    margin-top: 8mm;
+    padding-top: 3mm;
+    border-top: 0.4pt solid var(--c-rule);
+    font-size: 8.5pt;
+    color: var(--c-muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .page-break { page-break-before: always; }
+
+  @media print {
+    body { padding: 0; }
+    header.cover { margin-top: 0; }
+    a { color: var(--c-fg); text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div>
+    <h1>BMS Matter Node — Operator Quick Reference</h1>
+    <div class="sub">ESP32-C6-Zero — Matter over Thread — Lab firmware</div>
+  </div>
+  <div class="meta">
+    <b>Firmware v6.1.6</b>
+    Hardware: Waveshare ESP32-C6-Zero<br>
+    Vendor: BMS DOA &middot; Product: esp32-c6-zero<br>
+    SDK: ESP-IDF v5.4.1 + esp_matter ^1.4.2
+  </div>
+</header>
+
+<h2>1. RGB LED indicator</h2>
+<p>A single onboard WS2812 LED on <code>GPIO&nbsp;8</code> communicates the device state through <b>color</b> (state) and <b>pattern</b> (urgency / activity). The Matter <code>OnOff</code> cluster on Endpoint&nbsp;1 acts as a brightness gate: <code>OnOff = false</code> turns the LED off without changing the underlying state; <code>OnOff = true</code> resumes the indicator.</p>
+
+<div class="grid-2">
+
+  <div class="led-card">
+    <div class="dot boot"></div>
+    <div>
+      <h4>Boot <span class="pill pulse">PULSE</span></h4>
+      <p>White breathing pulse, 1.5 s period. Shown for the first <b>5 s</b> after every reset.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot commission"></div>
+    <div>
+      <h4>Commissioning <span class="pill blink">2 Hz</span></h4>
+      <p>Blue blink, 250 ms on / 250 ms off. Pairing window open or device not yet commissioned.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot detached"></div>
+    <div>
+      <h4>Thread detached <span class="pill blink">0.5 Hz</span></h4>
+      <p>Yellow slow pulse. Commissioned but not currently attached to the Thread mesh.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot running"></div>
+    <div>
+      <h4>Running <span class="pill solid">SOLID</span></h4>
+      <p>Green solid. Commissioned and Thread attached. Normal operation.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot preview-c"></div>
+    <div>
+      <h4>Btn preview — open commissioning <span class="pill blink">4 Hz</span></h4>
+      <p>Blue fast blink while BOOT is held past <b>7 s</b>. Release now to open the commissioning window.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot preview-r"></div>
+    <div>
+      <h4>Btn preview — factory reset <span class="pill fast">~6 Hz</span></h4>
+      <p>Red fast blink while BOOT is held past <b>15 s</b>. Release now to factory-reset the device.</p>
+    </div>
+  </div>
+
+  <div class="led-card">
+    <div class="dot factory"></div>
+    <div>
+      <h4>Factory reset active <span class="pill blink">5 Hz</span></h4>
+      <p>Red blink. The reset has been scheduled and the device will reboot shortly.</p>
+    </div>
+  </div>
+
+</div>
+
+<h2>2. BOOT button (GPIO&nbsp;9)</h2>
+<p>Three actions are distinguished by hold duration. The Matter <b>Contact Sensor</b> on Endpoint&nbsp;3 reports the raw debounced press/release state regardless of duration.</p>
+
+<div class="button-row">
+  <div class="hold short">&lt; 1 s</div>
+  <div>
+    <h4>Short press</h4>
+    <p>Contact Sensor reports <code>pressed</code> → <code>released</code>. No other side effect. Any release before the 7&nbsp;s threshold leaves device state unchanged.</p>
+  </div>
+</div>
+
+<div class="button-row">
+  <div class="hold commission">7&ndash;15 s</div>
+  <div>
+    <h4>Open commissioning window</h4>
+    <p>Calls <code>OpenBasicCommissioningWindow(180&nbsp;s)</code>. The device starts BLE-advertising again so an additional Matter admin can pair. Existing fabric, Thread credentials, and node ID are <b>preserved</b>.</p>
+  </div>
+</div>
+
+<div class="button-row">
+  <div class="hold factory">≥ 15 s</div>
+  <div>
+    <h4>Factory reset</h4>
+    <p>Calls <code>Server::ScheduleFactoryReset()</code>. All Matter fabrics, ACLs, bindings, and Thread credentials are <b>wiped</b>. The device reboots into the un-commissioned state.</p>
+  </div>
+</div>
+
+<div class="callout"><b>Tip.</b> Hold thresholds are visualized live: at 7 s the LED switches to fast blue blink, at 15 s to fast red blink. Release at any moment triggers the action whose threshold was last crossed (or none, for a release before 7 s).</div>
+
+<h2>3. When to use what</h2>
+<ul>
+  <li><b>Lost the device in matter-server, but Thread is healthy</b> — hold BOOT 7–15 s, then re-pair from <code>matter-server</code> via QR. No need to re-flash or reset Thread state.</li>
+  <li><b>Adding the node to a second fabric (multi-admin, e.g. Apple Home + matter-server)</b> — hold BOOT 7–15 s, then commission from the second controller.</li>
+  <li><b>Migrating to a different lab / different Thread network / unrecoverable state</b> — hold BOOT ≥ 15 s for full factory reset.</li>
+  <li><b>Brand-new node, never commissioned</b> — indicator is already blue-blinking out of the box; commission from matter-server using the QR code in the boot log.</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2>4. Pin / endpoint summary</h2>
+<dl class="pinout">
+  <dt>RGB LED</dt><dd>GPIO 8 (WS2812, single pixel)</dd>
+  <dt>BOOT button</dt><dd>GPIO 9 (active low, internal pull-up)</dd>
+  <dt>Internal temperature sensor</dt><dd>on-die, ESP-IDF <code>temperature_sensor</code> peripheral</dd>
+  <dt>Endpoint 1</dt><dd>OnOff Light — LED brightness gate</dd>
+  <dt>Endpoint 2</dt><dd>Temperature Sensor — die temp every 5 s</dd>
+  <dt>Endpoint 3</dt><dd>Contact Sensor — debounced BOOT button</dd>
+</dl>
+
+<h2>5. Lab onboarding (Stage 1)</h2>
+<p>The current ESP-Matter configuration uses the SDK <b>test</b> setup parameters. These are <b>shared by every untouched lab node</b> built from this firmware until per-device factory data is introduced.</p>
+
+<div class="qr-block">
+  <div>
+    <dt>Setup passcode</dt><dd>20202021</dd>
+    <dt>Discriminator</dt><dd>3840 (0xF00)</dd>
+  </div>
+  <div>
+    <dt>Vendor / product</dt><dd>0xFFF1 / 0x8000</dd>
+    <dt>QR payload</dt><dd>MT:Y.K9042C00KA0648G00</dd>
+  </div>
+</div>
+
+<p>The next stage-1 step is a per-device onboarding manifest written into <code>runtime/matter-node-onboarding/&lt;serial&gt;.json</code> during the lab provisioning flow. Real per-device manifests are <b>runtime state</b> and must not be committed to Git.</p>
+
+<p>The production direction is a factory-data provisioning flow: build one firmware image, generate unique per-device Matter credentials, write them to factory data / NVS at provisioning time, store the QR in a registry, and commission by QR.</p>
+
+<h2>6. Boot diagnostics &amp; heartbeat</h2>
+<p>At every reset, before Matter starts, the firmware prints:</p>
+<ul>
+  <li>Firmware version string (<code>v6.1.3</code>).</li>
+  <li><code>esp_reset_reason()</code> decoded — distinguishes power-on from watchdog/panic.</li>
+  <li>OpenThread platform configuration installed.</li>
+  <li>Matter endpoint IDs for light / temperature / contact sensor.</li>
+  <li>BLE QR payload and manual pairing code (test setup).</li>
+</ul>
+<p>After Matter starts, every <b>30 s</b> a heartbeat line is logged:</p>
+<pre>Heartbeat: thread_attached=&lt;0|1&gt; commissioned=&lt;0|1&gt; window_open=&lt;0|1&gt;
+           free_heap=&lt;bytes&gt; uptime_s=&lt;seconds&gt;</pre>
+<p>This is the fastest way to confirm the device is alive without opening <code>ot-ctl</code> on the border router.</p>
+
+<h2>7. Build &amp; flash</h2>
+<p>Source the local ESP-IDF environment first:</p>
+<pre>source /home/ets/.espressif/v5.4.1/esp-idf/export.sh
+cd /home/ets/bms-et-sensors/nodes/esp32c6zero/matter-node</pre>
+
+<p>Standard build / flash:</p>
+<pre>idf.py set-target esp32c6
+idf.py build
+idf.py -p /dev/ttyACM1 flash</pre>
+
+<p>Optional clean rebuild:</p>
+<pre>rm -rf build sdkconfig managed_components dependencies.lock
+idf.py build</pre>
+
+<div class="callout warn"><b>Shared USB hub warning.</b> OTBR should use a stable <code>/dev/serial/by-id/...</code> path for the SONOFF dongle, so simple <code>ttyACM0</code>/<code>ttyACM1</code> renumbering is no longer the main risk. The real failure mode on this host is plugging or resetting an ESP32-C6 on the same upstream USB hub branch: that can briefly re-enumerate USB devices or dip bus power, and OTBR may lose the SONOFF RCP. Prefer separate physical USB ports or a powered hub. If OTBR drops after flashing or reconnecting an ESP32-C6, rerun <code>./scripts/restart-openthread.sh</code>.</div>
+
+<footer>
+  <span>BMS ET Sensors — Lab quick-reference card</span>
+  <span>esp32c6zero/matter-node — generated from README.md + HELP.md</span>
+</footer>
+
+</body>
+</html>

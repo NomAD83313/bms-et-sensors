@@ -1,0 +1,262 @@
+{% extends "index.html" %}
+
+{% block page_title %}Settings{% endblock %}
+{% block extra %}
+<form action="/settings/save" method="post">
+    <div class="row">
+        <div class="col-lg-9">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    Linear Raw Force Calculation (bit -> Newton) F()=a*x+b
+                </div>
+                <!-- /.panel-heading -->
+                <div class="panel-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Direction</th>
+                                    <th>a (slope)</th>
+                                    <th>b (Offset)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>F0 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F0_a" name="F0_a" value="{{c['F0_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F0_b" name="F0_b" value="{{c['F0_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F1 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F1_a" name="F1_a" value="{{c['F1_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F1_b" name="F1_b" value="{{c['F1_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F2 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F2_a" name="F2_a" value="{{c['F2_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F2_b" name="F2_b" value="{{c['F2_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F3 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F3_a" name="F3_a" value="{{c['F3_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F3_b" name="F3_b" value="{{c['F3_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F4 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F4_a" name="F4_a" value="{{c['F4_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F4_b" name="F4_b" value="{{c['F4_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F5 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F5_a" name="F5_a" value="{{c['F5_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F5_b" name="F5_b" value="{{c['F5_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F6 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F6_a" name="F6_a" value="{{c['F6_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F6_b" name="F6_b" value="{{c['F6_b']}}"></td>
+                                </tr>
+                                <tr>
+                                    <td>F7 [N] </td>
+                                    <td><input type="number" step="0.000001" id="F7_a" name="F7_a" value="{{c['F7_a']}}"></td>
+                                    <td><input type="number" step="0.000001" id="F7_b" name="F7_b" value="{{c['F7_b']}}"></td>
+                                </tr>
+
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- /.table-responsive -->
+                    <button type="auto-offset_all_force" class="btn btn-default">Auto-Offset all Force channels</button><!-- /.col-lg-6 -->
+                </div>
+                    
+                    
+                
+                <!-- /.panel-body -->
+            </div>
+            <!-- /.panel -->
+        </div>
+       
+    </div>
+
+
+    <div class="row">
+    <div class="col-lg-9">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                Limit values to exclude wrong transfered data
+            </div>
+            <!-- /.panel-heading -->
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Value</th>
+                                <th>min</th>
+                                <th>max</th>
+                                <th>max deviation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>F0 [N]</td>
+                                <td><input type="number" step="0.1" id="F0_min" name="F0_min" value="{{c['F0_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F0_max" name="F0_max" value="{{c['F0_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F0_dev" name="F0_dev" value="{{c['F0_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F1 [N]</td>
+                                <td><input type="number" step="0.1" id="F1_min" name="F1_min" value="{{c['F1_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F1_max" name="F1_max" value="{{c['F1_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F1_dev" name="F1_dev" value="{{c['F1_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F2 [N]</td>
+                                <td><input type="number" step="0.1" id="F2_min" name="F2_min" value="{{c['F2_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F2_max" name="F2_max" value="{{c['F2_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F2_dev" name="F2_dev" value="{{c['F2_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F3 [N]</td>
+                                <td><input type="number" step="0.1" id="F3_min" name="F3_min" value="{{c['F3_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F3_max" name="F3_max" value="{{c['F3_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F3_dev" name="F3_dev" value="{{c['F3_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F4 [N]</td>
+                                <td><input type="number" step="0.1" id="F4_min" name="F4_min" value="{{c['F4_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F4_max" name="F4_max" value="{{c['F4_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F4_dev" name="F4_dev" value="{{c['F4_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F5 [N]</td>
+                                <td><input type="number" step="0.1" id="F5_min" name="F5_min" value="{{c['F5_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F5_max" name="F5_max" value="{{c['F5_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F5_dev" name="F5_dev" value="{{c['F5_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F6 [N]</td>
+                                <td><input type="number" step="0.1" id="F6_min" name="F6_min" value="{{c['F6_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F6_max" name="F6_max" value="{{c['F6_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F6_dev" name="F6_dev" value="{{c['F6_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>F7 [N]</td>
+                                <td><input type="number" step="0.1" id="F7_min" name="F7_min" value="{{c['F7_min']}}"></td>
+                                <td><input type="number" step="0.1" id="F7_max" name="F7_max" value="{{c['F7_max']}}"></td>
+                                <td><input type="number" step="0.1" id="F7_dev" name="F7_dev" value="{{c['F7_dev']}}"></td>
+                            </tr>
+                            
+                            <tr>
+                                <td>Yaw [°]</td>
+                                <td><input type="number" step="0.1" id="Yaw_min" name="Yaw_min" value="{{c['Yaw_min']}}"></td>
+                                <td><input type="number" step="0.1" id="Yaw_max" name="Yaw_max" value="{{c['Yaw_max']}}"></td>
+                                <td><input type="number" step="0.1" id="Yaw_dev" name="Yaw_dev" value="{{c['Yaw_dev']}}"></td>
+                            </tr>
+                            <tr>
+                                <td>T (internal) [°C]</td>
+                                <td><input type="number" step="0.1" id="Ti_min" name="Ti_min" value="{{c['Ti_min']}}"></td>
+                                <td><input type="number" step="0.1" id="Ti_max" name="Ti_max" value="{{c['Ti_max']}}"></td>
+                                <td><input type="number" step="0.1" id="Ti_dev" name="Ti_dev" value="{{c['Ti_dev']}}"></td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+                <!-- /.table-responsive -->
+            </div>
+                
+                
+            
+            <!-- /.panel-body -->
+        </div>
+        <!-- /.panel -->
+    </div>
+    <!-- /.col-lg-6 -->
+    </div>
+    
+    <div class="row">
+        <div class="col-lg-9">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    External Temperature
+                </div>
+                <!-- /.panel-heading -->
+                <div class="panel-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Base Voltage</td>
+                                    <td><input type="number" step="0.0001" id="TE_V" name="TE_V"  value="{{c['TE_V']}}"> V</td>
+                                </tr>
+                                 <tr>
+                                    <td>V for 0°C</td>
+                                    <td><input type="number" step="0.0001" id="TE_V0" name="TE_V0"  value="{{c['TE_V0']}}"> V</td>
+                                </tr>
+
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- /.table-responsive -->
+                </div>
+                <!-- /.panel-body -->
+            </div>
+            <!-- /.panel -->
+        </div>
+        <!-- /.col-lg-6 -->
+    </div>
+        <div class="row">
+        <div class="col-lg-9">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    Battery Voltage
+                </div>
+                <!-- /.panel-heading -->
+                <div class="panel-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Base Voltage</td>
+                                    <td><input type="number" step="0.0001" id="B_V" name="B_V"  value="{{c['B_V']}}"> V</td>
+                                </tr>
+                                 <tr>
+                                    <td>Offset</td>
+                                    <td><input type="number" step="0.0001" id="B_V0" name="B_V0"  value="{{c['B_V0']}}"> V</td>
+                                </tr>
+
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- /.table-responsive -->
+                </div>
+                <!-- /.panel-body -->
+            </div>
+            <!-- /.panel -->
+        </div>
+        <!-- /.col-lg-6 -->
+    </div>
+
+    <div class="row">
+        <div class="col-lg-9">
+         <button type="submit" class="btn btn-default">Submit</button>
+    
+        </div>
+    </div>
+     
+</form>
+
+{% endblock %}

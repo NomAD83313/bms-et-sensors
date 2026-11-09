@@ -1,0 +1,3029 @@
+____________________________
+
+
+                      Operating instructions
+                                     English
+
+
+
+
+      V7    special measuring instrument
+ ALMEMO® 202-S and ALMEMO® 204
+                        for digital sensors
+                                              V1.0
+                                        11.05.2023
+
+
+
+                               www.ahlborn.com
+1.   OPERATING CONTROLS
+                      (1) Measuring sockets M0, M3
+                          (depending on type)
+                           M0...M3 for digital ALMEMO® sen-
+                           sors DIGI, D6, D7 only
+                           M0.0...M3.9 for up to 40 meas.
+                           chan.
+                      (2) Output socket A1, A2
+                           A1 USB interface (ZA 1919-DKU)
+                               Optic fiber (ZA1909-DKL)
+                               V24 (ZA1909-DK5)
+                               Ethernet (ZA1945-DK)
+                               Trigger input (ZA1006-ET/EK2)
+                               Relay outputs (ZA1006-EGK)
+                               Analog output 1 (ZA160x-RI/RU)
+                           A2 Network cable (ZA1999-NK5/NKL)
+                           Plug-in memory (ZA1904-SD)
+                           Trigger input (ZA1006-ET/EK2)
+                           Relay outputs (ZA1006-EKG)
+                           Relay trigger adapter (ZA1006-RTA)
+                           Analog output 2 (ZA160x-RI/RU)
+                      (3) Connection socket DC 12V
+                          Mains adapter(ZA1312-NAx,12V,min.1A)
+                           Cable, el. isol. (ZA2690-UK, 10-30V)
+                      (4) LCD graphics display
+                          7 rows for functions
+                          1 row for softkeys F1,◄,▲,►, F2
+                          Shown in brackets: <MENU> , <FCT>
+                      (5) Operating keys
+                           ON          To switch device ON
+                          To switch device OFF: press and hold down
+                          F1 , F2 Function keys (Softkeys)
+                          ▲, ▼ ... M: To select a measuring point
+                          ▲, ▼, ► F: To select a menu
+                          PROG , ▼... F: To select a function
+                          ◄ ...        return to menu selection
+                          < M◄◄ > go directly to the meas. menu
+                          < F ►► > go directly to the meas. menu
+                          PROG         To program
+                          ▲, ▼, ►... To enter data
+                          Rear of device:
+                      (6) Battery compartment
+                          3 AA alkaline-manganese batteries
+
+
+
+2
+2.         TABLE OF CONTENTS
+1.     Operating controls ...................................................................................... 2
+2.     Table of Contents ........................................................................................ 3
+3.     General ....................................................................................................... 7
+     3.1       Warranty............................................................................................. 7
+     3.2       Standard delivery ............................................................................... 8
+     3.3       Waste disposal ................................................................................... 8
+4.     Safety instructions ...................................................................................... 9
+     4.1       Special notes on use........................................................................ 10
+     4.2       Handling batteries / rechargeable batteries correctly ...................... 10
+5.     Introduction ............................................................................................... 11
+     5.1       Functions of the ALMEMO® 202-S and ALMEMO® 204 .................. 12
+       5.1.1       Sensor programming ................................................................... 12
+       5.1.2       Measuring operation .................................................................... 13
+       5.1.3       Process control ............................................................................ 14
+6.     Putting into service ................................................................................... 17
+7.     Power supply ............................................................................................ 18
+     7.1       Battery operation and supply voltage monitoring ........................... 18
+     7.2       Mains operation ............................................................................... 18
+     7.3       External DC voltage supply ............................................................. 18
+     7.4       Sensor supply .................................................................................. 19
+     7.5       Switching ON / OFF, reinitialization ................................................. 19
+     7.6       Data buffering .................................................................................. 19
+8.     Connecting sensors / transducers ............................................................ 20
+     8.1       Standard sensor (V5) ....................................................................... 20
+     8.2       D6 sensors ....................................................................................... 20
+     8.3       D7 sensors ....................................................................................... 20
+     8.4       Measuring inputs und additional channels....................................... 21
+     8.5       Potential separation ......................................................................... 21
+9.     Display and keypad .................................................................................. 22
+     9.1       Display and menu selection ............................................................. 22
+     9.2       Measured value display and status symbols ................................... 22
+                                                                                              3
+2. Table of Contents
+
+    9.3       Function keys ................................................................................... 23
+    9.4       Function selection ............................................................................ 24
+    9.5       To enter data .................................................................................... 24
+10.        Menu selection ..................................................................................... 26
+11.        Measuring menus ................................................................................ 27
+    11.1      Sensor display menu ....................................................................... 27
+      11.1.1         Measuring channel selection ................................................... 27
+    11.2      Measured value correction and compensation ................................ 27
+      11.2.1         Setting measured values to zero ............................................. 28
+      11.2.2         Atmospheric pressure compensation ...................................... 28
+    11.3      Measuring points list menu .............................................................. 29
+    11.4      User menu U2 - data logger ............................................................ 29
+12.        Measured data scanning and output ................................................... 30
+13.        Usermenus........................................................................................... 31
+    13.1      Functions ......................................................................................... 31
+    13.2      Configuration of user menus ............................................................ 32
+14.        Functions menus.................................................................................. 34
+    14.1      Maximum, minimum, individual value memory ................................ 34
+    14.2      Averaging ......................................................................................... 35
+      14.2.1         Smoothing meas. values by means of a sliding average ........ 35
+      14.2.2         Averaging over manually selected meas. operations .................. 36
+      14.2.3         Averaging over time ................................................................. 37
+      14.2.4         Averaging over a cycle............................................................. 37
+      14.2.5         Averaging over measuring points ............................................ 38
+      14.2.6         Volume flow measurement ...................................................... 38
+    14.3      Two-point adjustment with Setpoint entry ........................................ 39
+    14.4      Scaling ............................................................................................. 39
+    14.5      Data logger functions ....................................................................... 40
+      14.5.1         Internal data memory ............................................................... 40
+      14.5.2         External plug-in memory incorporating Memory card .............. 40
+      14.5.3         Numbering of measuring operations........................................ 41
+
+4
+                                                                                    2. Table of Contents
+
+      14.5.4       Once-only saving of all measuring points ................................ 41
+      14.5.5       Cyclic saving of all measuring points ....................................... 42
+      14.5.6       Memory capacity, memory output and clearing ....................... 42
+      14.5.7       Scanning configuration ............................................................ 43
+      14.5.8       Scan mode ............................................................................... 43
+      14.5.9       Starting and stopping measuring operations ........................... 45
+15.      Sensor programming ........................................................................... 47
+  15.1      Selecting the input channel .............................................................. 47
+  15.2      Channel designation ........................................................................ 47
+  15.3      Averaging mode ............................................................................... 48
+  15.4      Locking the sensor programming .................................................... 48
+  15.5      Limit values ...................................................................................... 48
+  15.6      Correction values ............................................................................. 49
+  15.7      Scaling, decimal point setting .......................................................... 49
+  15.8      Changing the units ........................................................................... 50
+  15.9      Selecting the measuring range ........................................................ 50
+  15.10         Sensor configuration .................................................................... 52
+  15.11         Multi-point calibration ................................................................... 52
+  15.12         Special functions .......................................................................... 52
+      15.12.1      Cycle factor .............................................................................. 53
+      15.12.2      Actions triggered by limit value infringement ........................... 53
+      15.12.3      Analog output start / end .......................................................... 54
+      15.12.4      Minimum sensor supply voltage .............................................. 54
+      15.12.5      Output function......................................................................... 55
+      15.12.6      Reference channels ................................................................. 55
+      15.12.7      Element flags ........................................................................... 56
+16.      Device configuration ............................................................................ 57
+  16.1      Date and time-of-day ....................................................................... 57
+  16.2      Device designation........................................................................... 57
+  16.3      Language ......................................................................................... 57
+  16.4      Illumination and Contrast ................................................................. 57
+
+                                                                                                                5
+2. Table of Contents
+
+    16.5      Interface, device address and networking ....................................... 58
+    16.6      Baud rate, data format ..................................................................... 58
+    16.7      Process control ................................................................................ 59
+      16.7.1          Sampling rate ........................................................................... 59
+      16.7.2          Scan cycle ................................................................................ 59
+      16.7.3          Output cycle ............................................................................. 60
+    16.8      Hysteresis ........................................................................................ 60
+    16.9      Operating parameters ...................................................................... 60
+17.        Output modules.................................................................................... 61
+    17.1      Data cable ........................................................................................ 61
+    17.2      Relay trigger modules ...................................................................... 61
+    17.3      Analog outputs ................................................................................. 63
+18.        Trouble-shooting .................................................................................. 65
+19.        Declaration of conformity ..................................................................... 67
+20.        Annex ................................................................................................... 69
+    20.1      Technical data .................................................................................. 69
+    20.2      Product overview ............................................................................. 70
+    20.3      Index ................................................................................................ 71
+Your contact ..................................................................................................... 73
+
+
+
+
+6
+3.    GENERAL
+Congratulations on your purchase of this special ALMEMO® measuring instru-
+ment from our latest V7 generation. Please note that this device is designed
+exclusively for use with standard digital sensors (DIGI, Freq, Inp) and the new
+D6 and D7 series. Thanks to the patented ALMEMO® plug the device configures
+itself automatically and thanks to the menus and context-sensitive help windows
+its operation should be fairly straightforward. The device can, however, be used
+with a wide range of sensors and peripherals and offers many different special
+functions. You are advised to take the time to carefully read these operating
+instructions and the relevant sections in the ALMEMO® Manual and to properly
+familiarize yourself with the way the new D7 sensors function and with the ex-
+tended range of features the V7 device can now provide. This is the best way
+to avoid operating and measuring errors and prevent damage to the device. To
+help you find answers to your questions as quickly and easily as possible a
+comprehensive index is provided at the end of these instructions and at the end
+of the Manual.
+
+3.1 Warranty
+Each and every device, before leaving our factory, undergoes numerous quality
+tests. We provide a manufacturer's guarantee, lasting two years from delivery
+date, that your device will function trouble-free. Before returning your device to
+us, please observe the advisory notes in Chapter 18, 'Trouble shooting'. In the
+unlikely event that a device does prove defective and you need to return it,
+please wherever possible use the original packaging materials for dispatch and
+enclose a clear and informative description of the fault and of the conditions in
+which it occurs.
+This manufacturer's guarantee will not apply in the following circumstances:
+ Any form of unauthorized tampering or alteration inside the device
+ Use of the device in environments or conditions for which it is not suited
+ Use of the device with an unsuitable power supply and / or in conjunction
+   with unsuitable peripheral equipment
+ Use of the device for any purpose other than that for which it is intended
+ Damage caused by electrostatic discharge or lightning
+ Failure to properly observe these operating instructions
+The manufacturer reserves the right to change the product's characteristics in
+the light of technical progress or to benefit from the introduction of new compo-
+nents.
+
+
+
+
+                                                                                7
+3. General
+
+3.2 Standard delivery
+When you unpack the device please check carefully for any signs of transport
+damage and ensure that delivery is complete.
+   - Measuring instrument ALMEMO® 202-S or ALMEMO® 204 with three AA
+     alkaline batteries
+   - These operating instructions
+In the event of transport damage please retain the packaging material and in-
+form your supplier immediately.
+
+3.3 Waste disposal
+                     The pictogram showing a waste bin crossed through means
+                     that the product is subject to European Union regulations
+                     covering segregated waste disposal. This applies both to
+                     the product itself and to any accessories marked with the
+                     same symbol. Disposal of any such item as unsorted do-
+                     mestic waste is strictly forbidden.
+
+
+
+    • Please dispose of all packaging materials in accordance with the applicable
+      national waste management regulations.
+    • Please dispose of cardboard boxes, protective plastic packaging materials,
+      and all preservative substances separately and in the proper manner.
+    • The disposal of the device itself (also of device parts, accessories, and con-
+      sumables) is subject to the applicable national and local waste management
+      regulations and to the environmental protection legislation in force in the
+      country of use.
+    • Please dispose of all waste in the proper manner;
+      this applies in particular to all parts and substances that constitute a hazard
+      for the environment. This includes inter alia plastics, batteries, and recharge-
+      able battery packs.
+    • For the dispatch of such goods please wherever possible use the original
+      packaging materials.
+
+
+
+
+8
+4.   SAFETY INSTRUCTIONS
+ DANGER   Danger to life and limb, risk of damage to equipment
+          Before starting to operate the device, please read the in-
+          structions carefully.
+          Please ensure that you comply with all general safety advice
+          and the special safety instructions included in other chap-
+          ters
+          Such risks may occur in the following circumstances:
+          - Failure to heed the operating instructions and all the safety
+            notes these contain
+          - Any form of unauthorized tampering or alteration inside the de-
+            vice
+          - Use of the device in environments or conditions for which it is
+            not suited
+          - Use of the device with an unsuitable power supply and / or in
+            conjunction with unsuitable peripheral equipment
+          - Use of the device for any purpose other than that for which it is
+            intended
+          - Damage caused by electrostatic discharge or lightning.
+
+
+
+ DANGER   Risk of fatal injury through exposure to dangerously high voltage
+          Such risks may occur in the following circumstances:
+          Use of the device with an unsuitable power supply and / or in
+            conjunction with unsuitable peripheral equipment
+          - Damage caused by electrostatic discharge or lightning
+          - Do not run sensor lines in the vicinity of high-voltage power ca-
+            bles.
+          - Before you touch any sensor lines, ensure that all static elec-
+            tricity has been discharged.
+ DANGER   Warning - explosive atmospheres or substances
+          In the vicinity of various fuels or chemicals there is a risk of ex-
+          plosion.
+          Do not use the device in the vicinity of blasting work or filling
+          stations.
+
+
+
+
+                                                                             9
+4. Safety instructions
+
+4.1 Special notes on use
+     •   If the device is brought into the work-room from a cold environment
+         there is a risk that condensation might form on the electronics. In meas-
+         uring operations involving thermocouples pronounced changes in tem-
+         perature may cause substantial measuring errors. You are advised
+         therefore, before starting to use the device, to wait until it has adjusted
+         to the ambient temperature.
+     •   Before using the mains adapter make sure that the mains voltage is
+         suitable.
+     •   Be sure to observe the maximum load capacity of the sensor power
+         supply.
+     •   Sensors with their own integrated power supply are not electrically iso-
+         lated from one another.
+
+4.2 Handling batteries / rechargeable batteries cor-
+rectly
+               When inserting batteries / rechargeable batteries ensure that the
+               polarity is correct.
+               If the device will probably not be needed for a relatively long pe-
+               riod of time or if the batteries are empty, the batteries should be
+               removed; this will prevent battery acid leaking onto the device
+               and damaging it.
+               Rechargeable batteries should be recharged as and when nec-
+               essary.
+               You should never attempt to recharge an ordinary (non-recharge-
+               able) battery; it may explode.
+               Batteries / rechargeable batteries must never be short-circuited
+               or thrown onto the fire.
+               Batteries and rechargeable batteries are special waste and must
+               not be discarded as normal domestic waste.
+
+
+
+
+10
+5.    INTRODUCTION
+The measuring instruments ALMEMO® 202-S and ALMEMO® 204 are new mem-
+bers in our family of unique measuring devices - all equipped with Ahlborn's pa-
+tented ALMEMO® plug system. The intelligent ALMEMO® plug system - success-
+fully tried and tested for over 20 years - offers decisive advantages when connect-
+ing sensors and peripherals; since all parameters are stored in an EEPROM lo-
+cated on the connector itself, there is no need to repeat programming. Any sensor
+or output module can be connected to any ALMEMO® measuring instrument - all
+in the same way.
+Intelligent digital ALMEMO® sensors of the new D7 generation operating in con-
+junction with our V7 measuring instruments overcome any lingering limitations
+that may previously have affected the system - with the one exception that they
+will not function on old V6 devices. These sensors, irrespective of the device's
+quantities and ranges, operate as an autonomous measuring system with up to
+10 channels covering completely new measurable variables, with all relevant con-
+trol functions, calculation functions, or compensation values, and ranges up to 8
+digits in size and at speeds of up to 1000 measuring operations per second
+(mops). What is so special about this new generation is that, thanks to individual
+sampling rates, both quick and slower but high-resolution variables can now very
+easily be measured and recorded together. Individual sensor functions can be
+parametrized via a menu stored in the plug itself. To facilitate identification the
+quantity abbreviations and units have been extended to 6 digits and channel des-
+ignation to 20 characters. This device has been specially conceived and designed
+for digital sensors only. It can only be used therefore with digital standard sensors
+(DIGI, Freq, Inp) and with all new D6 and D7 sensors. What is completely new
+on V7 devices is the channel numbering system. Sensors and sockets are
+counted from 0 to 9; this is followed, after a decimal point, by the channels, like-
+wise counted from 0 to 9; i.e. the first sensor has channels 0.0 to 0.9, the second
+has 1.0 to 1.9, etc.
+Programming and functioning are virtually identical for all units. The following
+points apply to all devices in the ALMEMO® measuring system; these are de-
+scribed in detail in the ALMEMO® Manual which is included in delivery with each
+device:
+- Detailed explanation of the ALMEMO® system (Man., Chapt. 1)
+- Overview of the device functions and measuring ranges (Man., Chapt. 2)
+- Basic principles, operating instructions, and technical data for all sensors
+    (Man., Chapt. 3)
+- Options for connecting your own existing sensors (Man., Chapt. 4)
+- All analog and digital output modules (Man., Section 5.1)
+- Interface modules RS232, USB, Ethernet, optic fiber (Man., Section 5.2)
+- The whole ALMEMO® networking system (Man., Section 5.3)
+- All functions and their operation via the interface (Man., Chapt. 6)
+
+                                                                                  11
+5. Introduction
+
+- Complete list of interface commands with all the printouts (Man., Chapt. 7)
+- The new V7 commands are described in a special V7 Manual supplementh.
+The operating instructions you are now reading cover only those features and
+controls that are specific to this device. Many sections refer to more detailed
+descriptions in the Manual. (Manual. Section x.x.x).
+
+5.1 Functions of the ALMEMO® 202-S and
+    ALMEMO® 204
+ALMEMO® 202-S and ALMEMO® 204 measuring instruments have two or four
+measuring inputs - suitable only - as previously stated - for digital ALMEMO®
+sensors. The measuring possibilities opened up by the new D6 and D7 series
+of digital sensors are virtually endless. The device can be operated via its inte-
+grated softkey keypad with cursor block and its LCD graphics display. The dis-
+play can be adapted via configurable sensor-specific menus to suit all applica-
+tions. With the internal 8 megabyte memory or with connected memory plug (SD
+card) a data logger function is realized. There are two output sockets which can
+be used to connect ALMEMO® output modules, plug-in memory, analog output,
+digital interface, trigger input, or alarm contacts. Multiple devices can be net-
+worked together by simply connecting them via network cablen.
+
+5.1.1 Sensor programming
+The measuring channels are programmed, completely and automatically, via the
+ALMEMO® plugs. However, the user can easily supplement or modify this pro-
+gramming via the keypad or via the interface.
+Measuring ranges
+Although this device is limited to use with purely digital sensors it does provide
+an elegant solution for numerous applications involving more complex sensors.
+Sensors are already available for e.g. temperature (NTC, Pt100), all humidity
+functions (dewpoint, mixture ratio, vapor pressure, enthalpy), atmospheric pres-
+sure, flow (rotating vanes, hot-wire thermoanemometers), pressure and force,
+current and voltage, also infra-red sensors, CO2 and conductivity probes, color
+temperature sensors, GPS receivers, and even a fully functioning weather sta-
+tion. Adding to the number of suitable digital sensors is not a problem because
+it is now no longer necessary (as it was previously) to adapt the measuring in-
+strument accordingly. Each and every sensor is configured via its own internal
+sensor menu.
+Function channels
+Maximum, minimum, and differential values of certain measuring points can be
+programmed as function channels and can be processed like normal measuring
+points.
+Units
+The units display (V5 two characters, D7 up to six characters) can be adapted
+for each measuring channel in such a way that both the display and via interface
+12
+                                                                      5. Introduction
+
+always indicate the correct units, e.g. when a transmitter is connected. Conver-
+sion between °C (Centigrade) and °F (Fahrenheit) is performed automatically.
+Measured value designation
+To help identify sensors an alphanumeric designation is also provided (V5 10
+characters, D7 up to 20 characters). This designation appears in each meas-
+ured value display, via interface and in the software.
+Correction of measured values
+The measured value on each measuring channel can be corrected both in terms
+of zero-point and gain; this means that even sensors usually requiring initial ad-
+justment (e.g. expansion, force, pH) can be interchanged freely. Zero-point cor-
+rection and, partly at least, gain adjustment can be performed at the touch of a
+button. Sensors with multi-point calibration can also be connected.
+(see Manual 6.3.13).
+Scaling
+The corrected measured value on each measuring channel can also be further
+scaled in terms of zero-point and gain based on the base value and factor. The
+decimal point position can be set by means of the 'Exponent' function. Scaling
+values can be calculated automatically by setting to zero and entering the nominal
+setpoint or via the scaling menu.
+Limit values and alarm
+Per measuring channel two limit values can be set (one maximum and one min-
+imum). In case of one of these limit values being infringed the relay output mod-
+ules actuate the associated alarm contacts; these can be allocated individually
+to specific limit values. Hysteresis is set by default to 10 digits; however, this can
+be adjusted to any value between 0 and 99 digits.
+Sensor locking
+All sensor data stored in the EEPROM in the plug can be protected - by means
+of a graduated locking function - against undesired access.
+
+5.1.2 Measuring operation
+For standard sensors up to four measuring channels are available; i.e. it is thus
+also possible to evaluate double sensors, individually scaled sensors, and sen-
+sors with function channels. All activated standard measuring channels are
+scanned continuously at the sampling rate and the data acquired is shown in
+the display. A D7 sensor has up to 10 channels and a sampling rate correspond-
+ing to its own individual measuring speed; this sampling rate can be applied
+individually over the new scan cycle.
+Measured values
+The display can show measured values either (in various menus, some user-
+configurable) in two font sizes - or (in one of the user menus) in the form of a
+bar chart. Measured values are acquired automatically with auto-zero and self-
+calibration; however, they can also be corrected and scaled as and whenever
+required. With most sensors a sensor breakage is detected automatically.
+
+
+                                                                                   13
+5. Introduction
+
+Analog output and scaling
+Each measuring point can be scaled by means of analog start and analog end
+in such a way that the measuring range thus defined covers the full range of the
+bar chart or of an analog output (2 V, 10 V, or 20 mA). At the analog output the
+device can output the measured value from any measuring point or a pro-
+grammed value.
+Measuring functions
+To achieve optimal measured value acquisition some sensors require certain
+special measuring functions. The new intelligent sensors perform atmospheric
+pressure compensation and temperature compensation internally and automat-
+ically. With infra-red sensors the emissivity factor can be configured and set.
+Measured value smoothing
+Measured values of an unstable, fluctuating nature can be smoothed by taking
+a sliding average over a number of values programmable from 2 to 99. The
+averaging period will depend on the sampling rate and the number of active
+channels. However, most D6 and D7 sensors are assigned their own averaging
+period for all primary channels; this can be set via the sensor menu.
+Maximum and minimum values
+For each measuring operation the maximum value and minimum value are ac-
+quired and saved to memory. These values can then be displayed, output, or
+deleted from memory.
+Average value
+Manual averaging is available per channel over a particular period or cycle or
+over a series of individual measuring operations.
+Measured value memory
+Up to 10 measured values can be saved manually. This data can then be shown
+on the display or output via the interface.
+
+5.1.3 Process control
+To record the measured values from the connected sensors in digital form meas-
+uring channel scanning must be performed continuously with measured value
+output according to a time-based process control. A measuring operation can
+be started and stopped by means of the interface, an external trigger signal, the
+real-time clock, or by a specified limit value infringement. The standard cycle,
+settable from 1 second up, ensures an even cyclic output. If a higher speed is
+required, standard sensor values can be scanned and output at the sampling
+rate; however, all sensors can now use the new scan cycle; this, if set to mini-
+mum time, obtains measured values from each channel individually according
+to its own actual measuring duration.
+Date and time-of-day
+Each measuring operation can be accurately logged using the real-time clock in
+terms either of date and time-of-day or purely by actual measuring duration. For
+the purposes of starting / stopping a measuring operation, the start / stop date
+and time-of-day can be programmed via the interface.
+14
+                                                                  5. Introduction
+
+Output cycle
+The output cycle can be programmed to any value from 1 second to 24 hours.
+This function permits cyclic output of measured values to the interface or to the
+memory and provides cyclic calculation of the average value.
+Cycle factor
+The cycle factor can be used to restrict data output from certain channels; this
+may prove necessary in order to reduce excessive data flow especially while
+measured data is being saved.
+Averaging over measuring point scans
+The measured values from measuring point scans can be averaged either over
+the whole fixed measuring period or over the specified cycle. These average
+values can then be output and saved on a cyclic basis to function channels pro-
+vided for this purpose.
+Sampling rate
+All standard digital channels (DIGI and D6) are scanned continuously at the set
+sampling rate of 10 measuring operations per second (mops). This rate can
+also be programmed to 2.5 mops.
+Scan cycle
+With the ALMEMO® 202-S and ALMEMO® 204 there is also the superordinate
+scan cycle, which acquires all standard channels and D7 channels whenever
+one of these delivers a new current measured value. Recording can be accel-
+erated if measured values thus acquired are output via the interface and / or to
+a plug-in memory immediately.
+Measured value memory
+With the ALMEMO® 202-S and ALMEMO® 204 data logger, all measured values
+can be stored manually or automatically in a cycle in an EEPROM. The standard
+storage capacity is 8 Megabyte, sufficient for up to 400,000 measured values.
+The memory organization can be set as linear or ring memory. Output is via the
+interface. A selection by time section or number is possible.
+All devices in the ALMEMO® 204 series can, by fitting an external plug-in
+memory and micro-SD card, be upgraded to a high-capacity data logger. Using
+this external memory (available as an accessory) files can be read out very
+quickly via any standard card reader.
+Control ports
+A relay trigger analog adapter can be used to provide up to ten output relays,
+and, as option, up to four analog outputs and two trigger inputs.
+
+
+
+
+                                                                              15
+5. Introduction
+
+Operation
+All measured values and function values can be displayed in different menus on
+the dot-matrix LCD screen. User menus can be individually configured for your
+specific applications from a range of nearly 50 functions, texts, lines, and empty
+lines. There are six keys (four of them softkeys) for operating the device. These
+can also be used to fully program the device, sensors, and process control.
+Output
+All data logs, menu functions, saved measured values, and stored program pa-
+rameters can be output to any peripheral equipment. Using the appropriate in-
+terface cable any of interfaces RS232, USB, or Ethernet can be used. To ac-
+commodate the variable data quantities the interface protocol has been
+changed so that data is now output in table format only; this can then as required
+be processed directly using any standard spreadsheet program.
+Networking
+All ALMEMO® devices can be individually addressed and can be networked to-
+gether by simply linking them up via network cable. However, old V5 / V6 de-
+vices and the new V7 devices use different protocols and must therefore be
+operated via different COM ports.
+Software
+Each ALMEMO® Manual is accompanied by the ALMEMO® Control software
+package, which can be used to configure the measuring instrument and user
+menus, to program the sensors, and to read out from the measured value
+memory. Using the integrated terminal, measuring operations can also be per-
+formed online. The WINDOWS® software package Win-Control is provided for
+measured value acquisition from networked devices, for graphical presentation,
+and for more complex data processing.
+
+
+
+
+16
+6.        PUTTING INTO SERVICE
+Sensor connection Connect sensors to sockets M0 to M1 (1) s. 8.
+Power supply            via batteries or mains adapter at socket DC (3) s. 7.1, 7.2
+To switch ON            Press ON / PROG (5) once and release s. 7.5
+Automatic display of last measuring menu s. 11.
+For menu selection
+  press key:                           <MENU>
+On / off display illumination:         <ON> / <OFF>
+Select sensor list s. 9.1 menu        <F> : ▲ / ▼ ...
+  Call up a menu:                      ► or. PROG
+
+
+Select a sensor (s. 10)                ▲ / ▼ ...
+
+Display sensor:                        <M◄◄>
+
+Select a measuring channel (s. 11.1.1)
+                                       <M> : ▲ / ▼ ...
+All channels on the connector or those functions needed
+for measured value calculation are displayed.
+
+Data logger functions: (s. 11.4)
+Select Menu U2 data logger :           <MENU> , ▼.., ►
+Select memory cycle                    PROG , ▲ / ▼ ...
+Using the scan cycle:
+For V6 set 'scan time':                <SCANT>
+For D7 set 'minimum time':             <MIN>
+Return to output cycle (00:01:00):     <RESET>
+Enter the cycle (s. 9.5):              PROG , ▲ / ▼ , ►
+..
+Terminate programming mode:            < ESC>
+Start / stop measuring:                <START> - <STOP>
+
+Output via an interface:
+- Connect peripheral equipment via data cable to socket A1 (2) s. Man. 5.2
+     Select free memory :              PROG , ▼ ...
+     Output memory s. 14.5.6           < PMEM> or command ´P04´ from the computer
+     Delete memory content s. 14.5.6   < CMEM > or command ´C04´ from the computer
+
+
+
+
+                                                                                     17
+7.     POWER SUPPLY
+Power can be supplied to the measuring instrument in any of the following ways
+:
+  Three AA alkaline batteries (included in delivery)
+  Mains adapter, 12 V, min. 1 A, with ALMEMO® plug               ZA1312-NAx
+  Power supply cable, electr. isolated 10 to 30 VDC, 0.25 A       ZA2690-UK
+  USB data / power cable 9 V, 0.2 A                            ZA1919-DKU5
+Our product spectrum covers all the appropriate accessories.
+
+7.1 Battery operation and supply voltage monitor-
+ing
+The device is normally powered by three AA alkaline batteries. At a current
+consumption of on average 30 mA, these should last for an operating time of
+approx. 100 hours. However, if the display illumination is left switched on, this
+will be reduced to approx. 50 hours. Since this device operates exclusively with
+active sensors, their current consumption must also be considered. The current
+operating voltage can be checked in the Info menu; this gives you a basis for
+estimating the remaining operating time. (s. 10) As soon as the remaining bat-
+tery capacity drops to approx. 10 %, the battery symbol ´´µµµµµµµµµ¶ will appear in the
+status bar or softkey bar of the display and start to flash. If the batteries dis-
+charge completely, the device will switch off automatically as soon as battery
+capacity drops to approx. 3 V; any parameters set will be saved. (s. 7.6) To
+replace used batteries first switch the device off and then unscrew the cover of
+the battery compartment located on the rear of the device. (6) When inserting
+fresh batteries ensure that their polarity is correct.
+
+7.2 Mains operation
+To power this device from an external source preferably use mains adapter ZA-
+1312-NAx (12 V / min. 1 A); connect this to the DC socket. (3) Please ensure
+that the mains voltage is correct. The sensor voltage rises to approx. 12 V.
+
+7.3 External DC voltage supply
+The DC socket can also be used to connect another DC voltage, 6 to 13 V (min-
+imum 200 mA). (3) It can be connected using ALMEMO® plug ZA-1312-FS8. If,
+however, the power supply has to be electrically isolated from the transducers
+or if a larger input voltage range (10 to 30 V) is required, then electrically isolated
+supply cable ZA-2690-UK must be used. It will then be possible to use the
+measuring instrument in a 12-volt or 24-volt on-board supply system. A practical
+alternative is USB data / power cable ZA-1919-DKU5; this provides simultane-
+ously a data interface to the computer and power supply. (not electrically iso-
+lated)
+
+
+
+
+18
+                                                                   7. Power supply
+
+7.4 Sensor supply
+At the terminals + (plus) and - (minus) in the ALMEMO® plug there is a sensor
+supply voltage of 6 / 9 / 12 V (self-healing fuse, total current 500 mA); this is set
+automatically depending on the minimum sensor supply. With a 12 V supply the
+sensor supply voltage will generally also increase to 12 V.
+
+7.5 Switching ON / OFF, reinitialization
+To switch the device ON press and release ON PROGr located in the middle of
+the cursor block. (5) The measuring menu most recently selected always ap-
+pears in the display first. To switch OFF press and hold down the same key(s)
+ON PROGr . After the device is switched off the real-time clock continues to run
+and all saved values and settings are retained intact. (s. 7.6) If interference (e.g.
+electrostatic, battery failure) causes the device to behave abnormally, it can be
+reinitialized. To activate a reset press and hold down key F1 r when switching
+on. To return all device programming (including device designation, user menus,
+process control, etc.) to the factory default settings press and hold down key F2
+r when switching on. In so doing certain parameters will be lost or returned to
+their defaults : Language: German, Illumination: OFF, Device address: 00, Hys-
+teresis: 10, Sampling rate: 10 mops.
+Sensor programming in the ALMEMO® plugs will remain unaffected.
+
+7.6 Data buffering
+The sensor's programming is stored in the EEPROM on the sensor plug; the
+device's calibration values and programmed parameters are stored in the
+EEPROM on the instrument itself; in the event of failure both will be retained
+intact. Date and time-of-day settings and the individual value memory are re-
+tained intact if the device is just switched off or when the batteries are changed
+- so long as the batteries have a voltage of approx. 2.7 V.
+
+
+
+
+                                                                                  19
+8.    CONNECTING SENSORS / TRANSDUCERS
+Only digital ALMEMO® sensors can be connected at input sockets M0 to M1
+resp. M0 to M3 (1) on measuring instruments ALMEMO® 202-S and ALMEMO®
+204, i.e. only standard sensors with DIGI, Freq, or Inp, and all new D6 and D7
+sensors. All standard sensors with an ALMEMO® plug usually have the meas-
+uring range and units already programmed and can thus be connected to any
+input socket without further adjustment. A mechanical coding system ensures
+that sensors and output modules can only be connected to the correct sockets.
+All ALMEMO® plugs incorporate two snap-lock levers; these snap into position
+as soon as the plug is inserted into the socket, thus preventing unintended dis-
+connection if the cable is pulled accidentally. To withdraw the plug both these
+levers must first be pressed in at the sides.
+
+8.1 Standard sensor (V5)
+ALMEMO® V5 sensors are housed in a light-gray case. The source of their intel-
+ligence is an 2-KB EEPROM integrated in the sensor plug, in which all channel
+settings are stored; the device is thus programmed completely as soon as such a
+sensor is connected. With the newer V6 version incorporating a 4-KB EEPROM
+(E4) multi-point calibration can be performed on the sensor. Digital sensors used
+for the quantities - frequency, pulse, or DIGI - incorporate a microcontroller, which
+transfers digital signals to the device via an I2C bus. Measured values are pro-
+cessed in synchrony with the sampling rate and at a resolution of maximum
+±65000 all in the device.
+
+8.2 D6 sensors
+ALMEMO® D6 sensors are housed in a partly light-gray, partly dark-gray case;
+they are completely autonomous measuring modules not only for digital but also
+for analog sensors; they can, independently of the device, handle new measuring
+ranges with special measured value processing and various forms of compensa-
+tion. As regards measured value processing D6 sensors are fully compatible with
+standard sensors - except for multi-point calibration and smoothing; however, on
+this V7 device, quantity configuration and parametrization can be performed via
+the 'Sensor configuration' menu or using a USB adapter cable directly on the PC
+(s. 15.10).
+
+8.3 D7 sensors
+ALMEMO® D7 sensors are housed in a dark-red case; they too are completely
+autonomous measuring modules for digital and for analog sensors - but offer
+substantially enhanced properties. The sampling rate can be set from 1 milli-
+second up to several minutes with a resolution up to 8 digits. The number of
+channels has, thanks to a new numbering scheme, been extended up to 10 per
+sensor and up to 10000 per device. Channel designations can be up to 20
+characters and units up to six characters in length. With D7 sensors up to four
+primary channels can also be smoothed at the same time internally over the
+
+20
+                                            8. Connecting sensors / transducers
+
+averaging period. For the purpose of setting individual parameters (e.g. quan-
+tities, averaging period) a special menu ´Sensor configuration´ is provided by
+the sensor itself. (s. 15.10) All measured value processing is performed in the
+sensor itself; the resulting data is transferred no longer via an I2C bus but via a
+serial interface to the device. For this reason and because of the expanded data
+format D7 sensors can only be operated in conjunction with a V7 device or di-
+rectly on a PC.
+
+8.4 Measuring inputs und additional channels
+Measuring instrument ALMEMO® 202-S and ALMEMO® 204 incorporates two
+or four input sockets M0 to M1 resp. M0 to M3; to these, under the new channel
+numbering scheme, measuring channels M0.0 to M3.0 are initially assigned. (1)
+Whereas standard sensors can if necessary provide up to four channels (M0.0
+to M0.3, M1.0 to M1.3, etc.), D7 sensors can provide up to 10 (M0.0 to M0.9,
+M1.0 to M1.9, etc.). The additional channels can be used in particular for hu-
+midity sensors with all the humidity variables (temperature / humidity / dewpoint
+/ mixture ratio) or for function channels. Each sensor can if necessary be pro-
+grammed with several quantities or scaling settings; and two or three sensors,
+if pin assignment so permits, can be combined in a single plug. This device does
+not incorporate any internal channels. On the measuring instrument this gives
+the following channel assignment:
+
+
+
+
+8.5 Potential separation
+Since the digital sensors are all operated via the common sensor power supply,
+they are all electrically interconnected. So long as the sensors are themselves
+isolated or are operated in isolation, this is not a problem. However, if two elec-
+trical signals (current, voltage) are used, adapter cable ZA-D700-GT can be
+connected between them to ensure electrical isolation for power supply and data
+lines.
+The power supply is isolated by the transformer in the mains adapter or by a
+DC/DC converter in connecting cable ZA-2690-UK. Data and trigger cables are
+equipped with optocouplers. If analog output cables are not electrically isolated
+the recording device or the sensors must be zero-potential.
+
+                                                                                21
+9.    DISPLAY AND KEYPAD
+9.1 Display and menu selection
+Measuring instrument ALMEMO® 202-S and ALMEMO® 204 incorporates a dis-
+play comprising a dot-matrix LCD with 128x64 pixels or 8 rows each 8 pixels
+high (4) .
+The menu selection screen offers the following
+items (s. 10):
+3 meas. menus for acquiring meas. values (s. 11),
+Additional function menus (s. 14), also accessible
+from any measuring menu by pressing key <FCT> ,
+Three programming menus (s. 15) for programming
+the sensors, device parameters (s. 16), and output
+modules (s. 17) ,
+´Info´ menu (s. 10) for information regarding the de-
+vice and the sensors
+To call up menu selection (depending on the menu) press:    ◄ ...or <MENU>
+To switch display illumination ON / OFF (s. 16.4)          <  ON > / <  OFF >
+To switch the device OFF press:                             ON and hold down
+To select menus press:                                        or      ...
+To call up the selected menu press:                           or PROG
+To view the most important device information:             < INFO>
+
+9.2 Measured value display and status symbols
+To access the sensor menu go to the sensor list
+and press key M◄ ◄ The display then shows the
+selected measuring point, the measured value,
+and in some cases the functions of importance for
+this measured value, plus further measuring
+channels assigned to the connector in question.
+For the measured value in question a row of status
+symbols is available:                                      Symbol:
+No sensor, measuring point deactivated:                    ´- - - - -´
+Relative measuring with respect to a reference value:      REL
+Meas. value modified with sensor correction or scaling:    º
+Averaging in progress:                                     »
+Output function Diff, Hi, Lo, M(t), Alarm (s. 15.12.5):    D,H,L,M,A
+C Compensation: T Temperature, P Atm. pressure             CT. P. (. flashes)
+Limit value infringement:                                  s or t flashes
+Measuring range overshot                                   O flashes
+Measuring range undershot                                  U flashes
+Sensor breakage / Sensor voltage low: Display ´-.-.-´      B flashes / L flashes
+22
+                                                                           9. Display and keypad
+
+Battery voltage <3.4 V, remaining capacity <10%                      ´µµµµµµµµµ¶ flashes
+In the process control or data logger menu the top status bar also displays
+the following symbols for checking the device status:
+Measurement stopped or started:                              ll or ©
+Values saved in individual value memory:                     MEM
+Meas. point scan started with data output via interface: COM
+Measuring point scan started and data being saved:           REC
+Start time or end time of meas. operation programmed: l© or ©l
+Status of the relays (external output module) open / closed: R-- or R01
+Display illumination activated or on pause:                  * or *
+Battery status : full / half / empty:                        ´´´´´´´´´¶, ´´´´´µµµµµ¶, ´µµµµµµµµµ¶ flashes
+9.3 Function keys
+The way in which the function keys F1 , F2 and
+the cursor keys ◄ , ► operate may vary from
+menu to menu (5). Their function is indicated as
+an abbreviation in the bottom line of the display
+(softkeys). In the instructions and documentation
+these softkey abbreviations are shown in angle
+
+brackets e.g. <START> .
+
+
+
+
+In all measuring menus the following function
+keys are available:
+To select the measuring point press cursor keys:                              or       ...
+Softkey symbol which lights up in the middl:                                <M>
+To call up function menu selection                                          < FCT > or F2
+Navigation through several function menus:                                  < ►F > or < F◄ >
+Navigation through several programming menus:                               < ►P > or < P◄ >
+To return to menu selection:                                                < MENU > or ◄
+To return to the most recent Measuring menu:                                < M◄◄ >
+The following softkeys only appear when the user selects a function menu or a
+programming menu (e.g. sensor programming):
+To return from the measuring menu to the function menu press:                   < ►►F > or ►
+To return from the meas. menu to the last programming menu press:               < P◄◄ > or F1
+
+
+
+
+                                                                                                     23
+9. Display and keypad
+
+9.4 Function selection
+Each menu comprises a number of functions; these
+may have to be activated or programmed during op-
+eration.
+
+In conjunction with certain functions a context-sen-
+sitive help window will appear.
+
+To select a functions press:                              PROG
+The first modifiable parameter is highlighted in inverse font: 25.45
+Help is provided by the softkey symbol:                       <F> (for function selection)
+To jump forward to the next function press:                     or         ...
+Depending on function the keys F1 , F2 and
+ ◄ , ► are assigned the desired meaning, e.g.
+Set measured value to zero                                    <ZERO>
+Adjust measured value                                         <ADJ>
+Delete the maximum / minimum value                            <CLR>
+Clear value memory                                            <CLRM>
+Clear memory card                                             <CMEM>
+Set a parameter directly                                      <SET>
+Cancel the function                                           <ESC>
+
+9.5 To enter data
+When a programmable parameter is selected its current value can be cleared
+or reprogrammed directly (s. 9.4).
+To delete a programmed value press:                  < CLR >
+To program a value press:                            PROG
+You should now be in programming mode:               <P> in the middle of the softkey bar
+The cursor flashes below the first input position   Base value:         0025.0 °C
+To increment the selected digit:                        ...
+To decrement the selected digit:                        ...
+To change the arithmetic sign of a numeric value: < +/- >
+To move forward to the next position:                  
+The cursor now flashes below the second position Base value:            0025.0 °C
+To move back to the previous position:                 
+Each position is programmed just like the first         /  ..., 
+To save and exit:                                     PROG
+To cancel without saving:                            <ESC>
+
+
+24
+                                                          9. Display and keypad
+
+When entering a series of alphanumeric characters select the appropriate
+group:
+For upper-case characters:                      <ABC>
+For lower-case characters:                      < abc >
+For numbers only:                               < 123 >
+For arithmetic sign:                            <+->
+When entering certain parameters (e.g. measuring range, relay variant, etc.) this
+procedure can be used to select and program not only characters but whole
+designations.
+
+
+
+
+                                                                              25
+10. MENU SELECTION
+The menu selection screen offers three measuring menus (s. 9.1).
+  1. M Sensor list s. 11.1                      M*Sensor list-display        ©
+  2. M Meas. points list s. 11.3                M Meas. points list
+  3. M U2 Data logger s. 11.4, 13 plus          M U2 Data logger
+                                                F Function menus FCT
+  4. a series of F Function menus s. 14         P Sensor programming
+     and 3 Programming menus:                   P Device configuration
+                                                P Output modules
+                                                     INFO   Mªª   F    ©   *ON
+   5. P Sensor programming s. 15
+   6. P Device configuration s. 16
+   7. P Output modules s. 17 if available
+To display the most important information regarding the device INF0
+Here, when submitting questions, you can find V7 ALMEMO 202
+the exact device type together with its firmware V: A202 7.12 Option: KL
+version, options, and serial number. Any sensor Serial-No:        H12040607
+                                                      Sensor-No: 0: FHAD46 6.67
+can be selected by pressing ▲ / ▼ and identi- Meas. channels: V5: 08 D7: 03
+fied on the basis of its order number (if available). UBat: 4.1 V    Us: 9.1 V
+To determine the power supply requirements www.ahlborn.com
+both the battery voltage and the sensor voltage Mªª MENU M                      .
+can be displayed. You can obtain any other help
+you might need at our WEB address.
+Having accessed the Sensor list with its display
+of all connected sensors, you can use keys ▲ /
+▼ to select one particular sensor; from here there
+are three possibilities.
+1. With key <M◄◄> you can access the universal
+   measuring menu Sensor display (s. 11.1).
+2. With key <KONF> you can access the Sensor
+   configuration menu, specially provided by the
+   selected D6 or D7 sensor for the purpose of
+   programming its individual measuring ranges
+   and parameters (s. 15.10).
+3. With keys PROG or ► you can open the Sensor channels menu with its
+   display of all channels available to the sensor selected. Here, similarly, if a
+   particular channel is selected, you can access the           Sensor display
+   (with <M◄◄> ) or sensor programming (with <P ►> ) (s. 15).
+
+
+
+
+26
+11. MEASURING MENUS
+The menu Meas. points list provides not only the sensor display (listing all
+measured values for a particular sensor plus any appropriate compensation val-
+ues) but also a clear overview of all measuring channels together with the most
+important data on each (s. 11.3). To output measured values to an interface or
+memory at a certain scanning rate and output cycle, you can select user
+menu U2 Data logger . If these do not completely meet your requirements, you
+can also assemble your own user menu from a range of over 50 functions (s.
+13). Each measuring menu can, by means of function menus, also be assigned
+various functions (s. 14).
+
+11.1     Sensor display menu
+Via the sensor list you can access the intelli-
+gent Sensor display menu. In the first line you will
+see the measured value (up to seven digits in
+length, large format), the measuring point, and the
+units (up to six characters in length, small format).
+Below this appear the measuring point designation
+(up to 20 characters in length) and certain symbols
+for checking the measured value status (s. 9.2). Below this, depending on the
+quantity and range, it lists all functions of importance for this measured value
+(e.g. compensation values) plus any further measuring channels assigned to
+the sensor in question.
+Additional measuring functions can be implemented by means of function
+menus (s. 14). Symbol <M> in the middle of the softkey bar indicates that the
+measuring point can be selected by pressing keys ▲ / ▼.
+
+11.1.1       Measuring channel selection
+With key  all active measuring channels can be selected one after the other
+and the latest measured value of each can be displayed. With key  the
+previous channel is displayed. When a particular measuring channel is selected
+the associated input channel is also selected at the same time.
+
+
+
+         When performing this selection it should be noted that with this V7
+         device the channel numbering system has been changed; the chan-
+         nels are now numbered per sensor.
+To increment the measuring channel:                   
+To decrement the measuring channel:                   
+
+11.2     Measured value correction and compensation
+To achieve maximum measuring accuracy zero-point correction can be performed
+for sensors as early as the Sensor display menu. Universal two-point adjustment
+can be performed for all sensors via the function menus Two-point adjust-
+ment (with two actual values and two setpoint values) and Scaling (s. 14.3,14.4
+). Any D6 or D7 sensor whose measurable variables are affected by ambient tem-
+
+                                                                             27
+11. Measuring menus
+
+perature or atmospheric pressure is already compensated internally and its asso-
+ciated values are shown in the sensor display (s. 11.2.2).
+
+11.2.1       Setting measured values to zero
+One very useful function is to zero the measured
+value at certain locations or points in time to act 00:              23.4      °C
+as a reference value from which to observe sub-      Temperature             REL
+sequent deviations. Having selected the meas-
+ured value function the softkey <ZERO> will ap-
+pear. Pressing this key saves the displayed ZERO ESC F                          .
+measured value as base value and resets it to zero (s. 15.7).
+Select the 'Measured value' function (s. 9.4):       00: 23.4 °C
+To zero the measured value:                            <ZERO>
+   The measured value should then show:               00: 00.0 °C and symbol REL
+   The base value is assigned measured value: Base value: 23.4 °C
+To cancel zero-setting, after selecting this function: <ZERO> press and hold down
+          If the function is locked (s. 15.4) the base value is not saved on the
+
+         plug but only temporarily to RAM where it is retained until the device
+          is next switched off. This status is indicated in the display by the sym-
+          bol REL ; in other cases the symbol º appears.
+          If you prefer to disable the zero-setting function completely, the chan-
+          nel in question must be locked at level 6.
+
+11.2.2       Atmospheric pressure compensation
+Measured variables affected by ambient atmospheric pressure may, in the event
+of substantial deviation from normal pressure (1013 mbar), be subject to certain
+measuring errors.
+e.g. error per 100 mbar:                      Compensation range
+Rel. humidity psychrometer approx. 2%         500to 1500 mbar
+Mixture ratio, cap.           approx. 10 % Vapor pressure VP up to 8 bar
+Dynamic pressure              approx. 5%      800 to 1250 mbar
+O2 saturation                 approx. 10%     500 to 1500 mbar
+It is important therefore, especially when working at significant altitudes above
+sea level, to take due account of atmospheric pressure (approx. -11 mbar / 100
+meters above mean sea level, MSL).
+Any D6 or D7 sensor whose measurable variables are affected by atmospheric
+pressure incorporates its own atmospheric pressure sensor; this performs atmos-
+pheric pressure compensation automatically. This value is normally available as
+a measuring channel but it is also displayed in the menu Sensor display as at-
+mospheric pressure compensation for appropriate measurable variables.
+A measured atmospheric pressure compensation can be displayed in menu CP.
+
+
+
+
+28
+                                                                     11. Measuring menus
+
+11.3       Measuring points list menu
+The best overview of all measuring points with
+measured values and function values is obtained
+via the menu '' Meas. points list .
+
+This menu can be combined with selected func-
+tions:
+When the list is first called up it appears with maximum six Meas. points list: Range
+measured values, the units, and measuring range:             0.0:   423.12 g/m³ DIGI ...
+The measured value can be linked to a series of functions
+by pressing keys:                                            < F > , < F > ...
+
+Measured value with units (maximum 6 characters) and         Meas. points list: Comments text
+comments text (maximum 20 characters)                        0.0:    423.12 g/m³
+                                                                 AH, dv abs. humidity
+Measured value with maximum value                           Meas. points list: Max value
+                                                            0.0:   23.12 °C            32.67
+Measured value with minimum value                           Meas. points list:   Min value
+                                                            0.0:   23.12 °C            19.34
+Measured value with average value                           Meas. points list: Average val.
+                                                            0.0:   23.12 °C            25.45
+Measured value with limit value, maximum                    Meas. points list: LV-Max
+                                                            0.0:   23.12 °C            30.00
+Measured value with limit value, minimum                    Meas. points list: LV-Min
+                                                            0.0:   23.12 °C            20.00
+To select further measuring points press                     <M> :        or         ...
+
+
+11.4       User menu U2 - data logger
+If a plug-in memory is connected at socket A2, © COM REC                 l©©l R01 * ´´´´´´µµµµ¶
+user menu U1 process control switches auto-
+matically to user menu U2 Data logger . This 0.0:                               27.6          °C
+menu can be used either on its own or just like NiCr Temperature                            º
+any measuring menu in conjunction with the Memory                 cycle:
+                                                           Memory free:
+                                                                             00:00:02 s
+                                                                               518.31 MB
+function menu Data logger functions (s. 14.5).             START MENU M ©©F FCT
+The device status is displayed by certain sym-
+bols in the status bar (s. 9.2). Data acquisition can be set to cyclic via the save-
+to-memory cycle. The save-to-memory cycle depends on whether in the data
+logger functions the memory is activated with the output cycle or with the scan
+cycle (s. 14.5.7). This switchover can also be performed easily and conveniently
+in this menu using the softkeys. The available memory is displayed in the func-
+tion Memory free (s. 14.5.6).
+To set save-to-memory cycle as output cycle with saving: Memory cycles: 00:00:02 s
+To set V6 to scan cycle as 'scan time':                      <SCANT> s. 16.7.2
+To set D7 to scan cycle as 'minimum time':                   <MIN> s. 16.7.2
+                                                                                             29
+12. Measured data scanning and output
+
+To return to output cycle (00:01:00):                  <RESET> s. 16.7.3
+To start a cyclic measuring operation (if cycle >0):   <START>     s. 14.5.5
+To initiate manual meas. value scanning (if cycle =0): <MANU>      s. 14.5.4
+
+
+
+
+12. MEASURED DATA SCANNING AND OUTPUT
+Repeated measuring channel scans are needed in order to continuously monitor
+and acquire measured values from all measuring channels, to record maximum
+/ minimum values, to detect limit value infringements, and then to output all this
+data either via the interface or to memory. With standard sensors this is per-
+formed at the 'sampling rate' (normally 10 mops, s. 16.7.1). With the new D7
+sensors there is also a superordinate 'scan cycle', with which not only standard
+sensors but also all D7 sensors with their fully individual measuring speeds are
+acquired (s. 16.7.2). Output can be performed using this 'scan cycle' or at more
+prolonged cyclic intervals using the 'output cycle' (s. 16.7.3). For certain appli-
+cations output can also be initiated manually at specifiable points in time.
+
+Cyclic output
+For cyclic output via the interface or to memory either the 'output cycle' or the
+'scan cycle' must have been programmed and the output configured appropri-
+ately (s. 14.5.7). Once cyclic output has started all measured value scans are
+output cyclically in table format (see Manual 6.5.1.3).
+To start a cyclic measuring point scan                  <START>
+The cycle timer should then be seen counting down until the next cycle.
+To stop a cyclic measuring point scan                   <STOP>
+
+Once-only output
+If the output cycle is deleted, a once-only measuring channel scan can be initi-
+ated by pressing key <MANU> (see Manual 6.5.1.1).
+Once-only manual measuring point output             <MANU>
+Each time a key is pressed again the measured values will be processed in the
+same way with the associated actual measuring duration.
+
+
+
+
+30
+13. USERMENUS
+Despite these flexible combinations of measuring menus and function menus
+there are still certain applications where an individual collection of functions
+might be preferred (s. 14). This is the purpose of user menu U2 Data logger ;
+these can be assembled and configured completely freely using the ALMEMO®
+Control software (s. 11.4). You can choose the functions you require from the
+following list and arrange these on the display exactly as you wish; the only
+restriction is the available space, namely 7 rows.
+
+
+13.1                Functions
+Functions                                                 Display                                                                   Keys                 Cmd
+Measured value - small          00: 234.5°C Temperature ZERO ADJ                                                                                         o 15
+Measured value - medium
+3 rows                                                    00: 1234.5 °C                                                                      ZERO ADJ
+                                                                                                                                                         o 16
+
+Measured value Bar chart          |¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹|¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹ ¸ ¸ ¸ |
+                                                                                                     ®®® ®®®®®®®®® ®®®®®®®®® ®®®®®®®®®                   o 34
+2 rows                           5.0                                    S220 mls                                                       15.00
+Limit value, maximum (s. 15.5) Limit value - max 1234.5 °C                                                                                   OFF   ON    o 00
+Limit value, minimum:           Limit value, min -0123.4 °C                                                                                  OFF   ON    o 01
+Base value (s. 15.7)            Base value ------°C                                                                                          OFF   ON    o 02
+Factor:                         Factor 1.12345                                                                                               OFF   ON    o 03
+Exponential                     Exponential 0                                                                                                OFF   ON    o 48
+Zero point (s. 15.6)            Zero point ------°C                                                                                          OFF   ON    o 04
+Gain                            Gain ------                                                                                                  OFF   ON    o 05
+Analog start (s. 15.12.3)       Analog - start 0.0 °C                                                                                        OFF   ON    o 06
+Analog end                      Analog - end 100.0 °C                                                                                        OFF   ON    o 07
+Range (s. 15.9)                 Range DIGI                                                                                                    CLR        o 08
+Maximum value (s. 14.1)         Maximum value 1122.3 °C                                                                                       CLR CLRA   o 09
+Minimum value:                  Minimum value 19.3 °C                                                                                         CLR CLRA   o 10
+Average value (s. 14.2.3)       Average value ------                                                                                          CLR CLRA   o 11
+Output cycle (s. 16.7.3)        Output cycle 00:00:00 U                                                                                       CLR        o 12
+Date, time-of-day (s. 16.1)     Time 12:34:56 Date 01.02.00                                                                                   CLR        o 14
+Averaging mode                  Averaging mode CONT                                                                                           CLR        o 18
+Sampling rate: (s. 16.7.1)      Sampling rate 10 mops                                                                                        OFF   ON    o 19
+Cycle timer (s. 12)             Cycle timer 00:00:00 U                                                                                        CLR        o 20
+Mean number (s. 14.2.2)         Number 00000                                                                                                             o 22
+Range, comments text            DIGI Temperature » H º                                                                                                   o 24
+Diameter (mm) (s. 14.2.6)       Diameter 0000 mm                                                                                              CLR        o 25
+Cross-section (cm2) (s. 14.2.6) Cross-section 0000 c¥                                                                                         CLR        o 26
+Maximum, date and time-of-day Maximum time 12:34 01.02.                                                                                                  o 28
+Minimum, date and time-of-day Minimum time 13:45 01.02.                                                                                                  o 29
+Empty line                                                                                                                                               o 30
+Line:                           __________________                                                                                                       o 31
+                                                                                                                                                            31
+13. Usermenus
+
+Smoothing (s. 14.2.1)         Smoothing 10                                            CLR                                                          o 32
+Memory free (s. 14.5.6)       Memory free 502.1 KB                                   CMEM PMEM                                                     o 33
+Device designation (s.16.2)   Company name - A Specimen                               CLR                                                          o 36
+Text1:                                                                                CLR                                                          o 37
+                              1: Comments line
+Text2:                                                     CLR                                                                                     o 38
+                              2: Comments line
+Text3: (s. 13)                U1 Menu title                CLR                                                                                     o 39
+Locking (s. 15.4)             Locking 5                    CLR                                                                                     o 42
+Setpoint (s. 14.3)            Setpoint 1100.0 °C           OFF ADJ                                                                                 o 45
+Measuring time (s. 14.2.3)    Meas. duration 00:00:00.00   CLR                                                                                     o 46
+Actual measuring duration     Measuring duration 00:00:00  CLR                                                                                     o 47
+Scan cycle (s. 16.7.2)        Scan cycle 01.000 s         SCANT MIN                                                                                o 53
+
+
+13.2       Configuration of user menus
+In menu selection select User menu U1.
+To configure this please connect the device via a data cable to your PC and start
+the supplied ALMEMO® Control software.
+Click once with the mouse on                            Search the network
+You then reach                                          Device list
+Select the device and press                             Program the user menus
+Choose the desired functions on the left side and
+drag-and-drop into the menu window on the right.
+          For all functions concerning measured values (e.g. maximum, aver-
+
+         age value, bar chart) you must in each case enter the measured value
+          of the measuring point first and then the associated functions.
+You are advised to use a meaningful menu title :           User menu title
+Once completed save the menu in the device as U1 : Save menu, U1, OK
+You can also save all your menus on the PC and reload these as and when
+required.
+Example of a freely configured user menu 'bar chart'
+User menus can be freely configured using the      01: 21.67 °C                                                 Temperature
+ALMEMO® Control software, e.g. a user menu          |¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹|¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹®®®¸®®®®®®®®®¸®®®®®®®®®¸®®®®®®®®®|
+                                                   10.00                                      Ntc °C                                                      30.0
+Bar chart . With the functions 'measured value,
+                                                   11:                   38.1 %H Humidity
+small' and 'bar chart' two channels with meas-      |¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹¹¹¸¹¹¹¹¹¹¹®®¸®®®®®®®®®|®®®®®®®®®®¸®®®®®®®®®¸®®®®®®®®®¸®®®®®®®®®¸®®®®®®®®|
+ured value and bar chart diagram can be shown.     0.0                                    % rH %H                                                         100.0
+                                                                             MENU                       M               ©©F                  FCT
+Measuring point selection
+When a measuring point is selected, it is always the first measuring channel that
+is indicated. This can be selected directly, as in any menu, by means of: 
+or        ...
+To change the other channels, the measuring point                             PROG                                                                            and
+
+32
+                                                               13. Usermenus
+
+must be selected as function by means of keys            or      ...
+The selected measuring point can now be changed        < M ▲> , < M ▼> ...
+The process of measuring point selection is terminated < ESC >
+To set the display range the functions 'Analog start' and 'Analog end' in the
+Special functions menu should be used (s. 15.12.3). Having selected these
+functions they can also be entered directly on the appropriate axis by pressing
+PROG and  (s. 9.5).
+
+
+
+
+                                                                             33
+14. FUNCTIONS MENUS
+To manage individual tasks each measuring            FUNCTIONS MENUS:
+menu can be assigned a function menu from the        Max-Min, indiv. Memory ©
+adjacent list. For each measuring operation you      Averaging
+                                                     Two-point adjustment
+can at any time toggle between measuring menu        Scaling
+and function menu.                                   Datalogger function
+
+                                                          CLR   Mªª    F   ©   *OFF
+The Function menu can be accessed via the
+menu selection screen or in measuring menus and function menus by means of
+s. 10.                                           < FCT >
+To access the function menu press                   and  or PROG
+To clear the function menu press                 < CLR >
+Navigation through several function menus        < ►F > or < F◄ >
+To toggle between function menu and meas. menu < M◄◄ > and < ►►F >
+
+14.1      Maximum, minimum, individual value memory
+The function menu          Max. Min. Individual      ll          MEM             * ´´´´´´µµµµ¶
+memory shows not only the measured value but
+also the continuously acquired maximum and
+                                                     0.3:              25.45 °C
+                                                     Dewpoint temperature
+minimum values for the selected measuring            Min:   25.37 Max:       31.34
+point plus an individual value memory sufficient     MEM: P12:          25.45 °C
+for 100 individual values.                            MEM Mªª M LISTM FCT
+
+
+Maximum value, minimum value
+Function Min and Max :                                   Min:    25.37 Max:  31.34
+To clear this memory select the function (s. 9.4): Min:          25.37 Max:  31.34
+To clear maximum, minimum, and average values for all channels <CLRA>
+Whenever this data is deleted, the current measured value will, since measuring
+is a continuous process, appear again immediately. These peak values will, if
+the device has been so configured, be cleared each time a measuring operation
+starts (default setting, s. 16.9).
+Individual value memory
+Each measured value of any channel can be saved at the touch of a button. The
+measured value is displayed in the function MEM together with its units and position
+number and MEM is highlighted in the status bar. The user can choose whether to
+clear the whole memory or just the last value. All data thus saved can be shown
+in the display or output in list form via the interface.
+To continuously save the measured value                    <MEM>
+Memory display with position                              Memory: P12: 25.45 °C
+After selecting this function, to clear the last position <CLRP>
+To clear all saved values                                  <CLRM>
+To display all saved values                                <LISTM> and <F ►> ..
+To output all saved values                                 <PRINT>
+34
+                                                           14. Functions menus
+
+Interface commands                               Response
+To save a measured value                 S-4
+To output memory data                    P-04    Memory:
+                                                 P01: 0.0: +022.12 °C
+                                                 P02: 0.0: +022.12 °C
+                                                 P03: 1.0: +0039.9 %H
+                                                 P04: 1.0: +0039.9 %H
+                                                 P05: 2.0: +0007.6 °C
+To clear the memory                      C-04
+
+14.2     Averaging
+The average of a measured value is needed for various applications.
+e.g. Smoothing a widely fluctuating measured value (e.g. wind, pressure, etc.)
+       Average flow velocity in a ventilation conduit
+       Hourly or daily average values for weather data (temperature, wind, etc.)
+       Also for consumption values (electric current, water, gas, etc.)
+The average value M    � of a measured value is obtained by
+adding together a series of measured values (Mi) and then
+dividing this total by the number of measured values used
+(N).
+If, in function selection, averaging is selected, a AVERAGING:
+new selection menu will appear listing the vari-
+                                                      Sliding, damping
+ous averaging modes.                                  over Meas. operations    ©
+These include measured value smoothing for the over Time
+selected channel with a sliding average window, over        Cycles
+                                                      over Meas. points
+averaging over individual measuring operations
+selected by place or time, averaging over time,              Mªª F     ©    CLR
+over cycles, or over specified measuring points.
+To select an average value menu                            and  or PROG
+To clear averaging for the selected channel            <CLR>
+
+14.2.1 Smoothing meas. values by means of a slid-
+ing average
+The first averaging method applies exclusively
+to the measured value of the selected channel; 1.3:            25.45 m¡
+this is used to smooth measured values of an L840 Flow
+unstable or strongly fluctuating nature, e.g. flow Damping:         15
+turbulence, by means of a sliding average over
+a specified time frame. The level of smoothing           Mªª M     FCT
+can be set in the Smoothing function by speci-
+fying the number of measured values to be averaged (range 0 to 99). The
+smoothed measured value can thus also be used in all subsequent evaluation
+functions in combination with averaging over individual measured values (s.
+14.2.2).
+
+                                                                             35
+14. Functions menus
+
+
+
+
+To smooth a measured value over e.g. 15 values        Smoothing:        15
+                                                     Sampling rate:          10 M/s
+Time constant (s) = Smoothing x Scan time = 3s at a channel
+
+
+
+        In most D6 and D7-sensors, the moving average is already built into
+        the sensor. It is configured by entering the averaging time in the sensor
+        menu. The damping is no longer available in this case.
+How the averaging menus operate:
+
+
+
+       The following averaging menus use some of the standard functions
+       such as averaging mode, output cycle, sampling rate - all appropriately
+       reprogrammed. Data output via the interface or to memory is possible
+       but this must be configured. To also display the average value acquired
+       as it is being output a function channel M(t) must be activated on an
+       additional channel for the sensor in question (s. 15.9).
+
+14.2.2 Averaging over manually selected meas. opera-
+tions
+To obtain the average of individual measuring
+operations at particular locations or times select   1.3:         25.45 m¡
+the menu Average over meas. operations .             L840 Flow
+Here individual measuring point scans 'Ei' can       Average value:     24.57 m¡
+be initiated manually.                               Number:            00013 U
+
+                                                     MANU   Mªª   M   VOL© FCT
+
+
+
+
+1. To select and then clear an average value         PROG , <CLR>
+   The Average value function displays             Average value:  ----- m¡
+   The Numberl function displays                    Number:          00000 U
+2. Einzelmesswerte Ex.x manuell abfragen:           <MANU>
+   The Average value function displays              Average value:   12.34 m¡
+   The function Numberl displays                    Number:          00001
+3. Repeat step 2 for each manual measured position .
+For flow probes call up the 'volume' menu by pressing: <VOL ►> s. 14.2.6
+
+
+36
+                                                             14. Functions menus
+
+14.2.3       Averaging over time
+To determine average values over a certain dura-
+tion there are two possibilities - either by pressing 1.3:
+the 'start' and 'stop' keys accordingly or by enter- L840 Flow
+                                                                      25.45     m¡
+
+ing a duration for averaging which is started man-
+                                                      Average value:     24.57 m¡
+ually but will stop automatically. A measuring M. duration:          00:01:30.56 U
+point scan is always performed at start and stop
+in order to record the start value, end value, and START Mªª M VOL© FCT
+average value - each with the applicable time-of-day.
+
+
+
+
+To delete the average value and actual measuring duration automatically on start
+(s. 16.9) or on selecting the average value press     <CLR>
+Read out the measuring duration in the function      M. Duration: 01:23.40 U
+Start averaging                                       <START>    Verification: »
+Stop averaging                                        <STOP>
+Or, alternatively
+To enter a certain averaging duration in seconds, select and program the func-
+tion Meas. Duration ,
+The function changes automatically to                 Aver. duration:       020 U
+   Start averaging                                    <START>    Verification: »
+   Stop averaging after expiry of averaging duration
+Read out the average value in the function:           Aver. Value: 13.24 m¡
+With flow sensors calculate volume                     <VOL ►> s. 14.2.6
+
+14.2.4       Averaging over a cycle
+To determine hourly or daily average values the
+average values must be acquired at cyclic inter-     0.0:    25.45 °C
+vals. An output cycle is programmed to ensure        Ntc Temperature
+that the average value, maximum value, and           Average value:       24.57 °C
+                                                     Cycle-Timer:      00:02:30 U
+minimum value are cleared after each cycle but
+continue to appear in the display throughout the     START   Mªª   M         FCT
+following cycle.
+
+
+
+
+                                                                                     37
+14. Functions menus
+
+Program the output cycle (s. 16.7.3 12)               Output cycle: 00:15:00 Un
+Start measuring operation, averaging in progress       <START>      Verification: »
+Stop the measuring operation                           <STOP>
+Read out the average value of the last cycle in function Aver. value: 13.24 mls
+
+14.2.5       Averaging over measuring points
+An average value can also be determined over any
+two measuring points. In the menu Average over 0.0:          21.45 °C
+meas. points you can set the start channel (refer- Ntc Temperature
+ence channel 2) with the measuring point in the first to Channel: 1.0:    28.45 °C
+line and, having selected the function to channel Average value:           24.57 °C
+also the end channel (reference channel 1). The av- Mæ ESC F                  Må
+erage value M(n) should be programmed to function
+channel M1.3. (s. 15.9).
+Measuring point scanning is continuous.
+Average                value              M(n)               from               M0.0
+( reference chann. 2) to M1.0 ( reference chann. 1)
+
+14.2.6       Volume flow measurement
+To determine the volume flow 'VF' in flow conduits multiply the average flow
+velocity v� by the cross-section area 'XS'
+         VS =v� . XS . 0.36                VS = m3/h, v� = m/s, XS = cm2
+The average flow velocity v� can be acquired in the following ways.
+1. Averaging over individual measurements (s. 14.2.2)
+2. Averaging over time (s. 14.2.3)
+To obtain approximate air volume measurements at air vents and gratings the
+user should apply the flow sensor at one end, start averaging, and proceed uni-
+formly over the whole cross-section, and, on reaching the other end, stop aver-
+aging.
+If the average value is assigned m/s as units,
+the volume flow can be determined by calling up
+                                                                 1934.    m3/h
+                                                   Volume flow
+the volume flow menu directly from the average Chan. type: rectangle k: 1.00
+value menu by pressing <VOL ►> .                   width: 150 depth:     175mm
+
+This lists the following functions for calculating              Fª           FCT
+the cross-section
+ Chan. type: Rectangular with width and depth,        Chan.type: Tubular k:1.00
+             Tubular with diameter or                 Diameter:   00175 mm
+             Surface with cross-section               Cross-section: 02345 cm²
+             including correction factor 'k'
+Display of volume flow m3/h:                          Volume flow        1934. m3/h
+
+
+38
+                                                              14. Functions menus
+
+14.3      Two-point adjustment with Setpoint entry
+For universal error correction at any two points TWO-POINT ADJUSTMENT:
+the function menu Two-point adjustment is 0.0:               1.67 °C Temperature
+provided. If the actual values at two points are Actual     val.1: ----- 2: ------
+                                                     Setpoint 1:    0.00 2: 100.00
+known, these can be entered together with the Zero-point:                 ------ °C
+associated setpoints. If not, two setpoint states Gain:                   ------
+must be created and adjusted online. Usually, ADJ ESC F                        FCT
+for the first measuring point, a zero-point adjust-
+ment is performed; however, any other setpoint is equally possible. For the sec-
+ond measuring point a gain adjustment is performed and all correction values
+are recalculated (s. 15.6).
+Two-point adjustment (actual values are cleared)
+1st Measuring point
+    Place the sensor in 1st status                     0.0:       0.4 °C
+    (e.g. icy water, unpressurized, etc.),             Actual val.1: -----
+     Select and enter setpoint 1                       Setpoint1: 0.0
+     Adjust meas. value to setpoint 1 by pressing       <ADJ>
+     Measured value should now display setpoint 1 0.0:            0.0 °C
+2nd Measuring point
+    Place the sensor in 2nd status                     0.0: 99.45 °C
+    (e.g. boiling water, known weight, etc.)                                2: -----
+    For the second meas. point enter setpoint 2                              2: 100.0
+    Adjust gain in function 'setpoint 2' by pressing    <ADJ>
+Measured value should now display setpoint 2           0.0: 100.0 °C
+Correction value calculation:
+Also enter known actual values in function             Actual val.1: 0.4 2: 100.0
+and calculate correction in function setpoint 2 by pressing <ADJ>
+
+
+
+14.4
+            If the sensor is locked, a confirmation request will appear asking
+            whether adjustment should indeed be performed.
+
+          Scaling
+Sensors or transmitters with standardized signal SCALING: 0.1:          4.67 mA
+output will usually have to be scaled to be able Actual val.1: 04.000 2:20.000
+to display the physical variable. If two actual val- Decimal point: 1 Unit:     °C
+                                                     Setpoint 1: -100.0 2:    400.0
+ues and 2 setpoints have been entered, the Gain:                         ------
+menu SCALING will, as in the previous chapter Base:                    720.0 °C
+(s. 14.3), perform the task of calculating the scal- Factor:          0.3125 E2
+                                                      ADJ ESC F              ON
+ing values, base value and factor (s. 15.7). The
+desired units, the decimal point position, and the number of decimal places must
+also be entered.
+Calculating the scaling values
+After entering all the necessary parameters the scaling values
+are calculated in function 'setpoint 2' by pressing < ADJ >
+
+                                                                                  39
+14. Functions menus
+
+Scaling by means of two-point adjustment
+Sensors adjusted via the factor, e.g. force transducers and displacement trans-
+ducers, can also be adjusted online. (as described in 14.3).
+1. Simulate, select, and enter setpoint 1:            Setpoint1: -100.0
+   Adjust in Setpoint1 by pressing                     <ADJ>
+2. Simulate setpoint 2 ,
+   elect and enter setpoint 2                                  2: 400.0
+Two-point adjustment in setpoint 2 by pressing         <ADJ>
+
+
+
+           It is also possible to adjust the end value only - without changing the
+           zero-point.
+
+14.5      Data logger functions                     © COM REC     l©©l R01 * ´´´´´´µµµµ¶
+                                                    Time: 12:34:56 Dat.: 01.01.06
+The four function menus can be used to acquire      Memory Cycle:      00:00:02 s
+and record measured values from all measuring       Memory free:         513.31 MB
+points either manually at specifiable points in     Number:             01-001 A
+                                                    Filename:          ALMEMO.001
+time or cyclically over a specifiable period (s.    Com: Memory comment
+Hb. 6.5).                                           START Mªª          ©F MANU
+
+
+14.5.1       Internal data memory
+The data logger ALMEMO® 202-S and ALMEMO® 204 has an internal data
+memory of 8 MByte EEPROM, sufficient for approx. 400,000 measured values
+(depending on the number of channels). If the supply voltage fails, the measured
+data are retained. The total memory capacity and the free memory space can
+be seen from the two functions Internal memory and Free memory. The organi-
+zation can be reconfigured from ring to linear memory. The basics for data stor-
+age in ALMEMO® instruments are described in the manual chapter 6.9. ATTEN-
+TION: Only one sensor configuration is stored in the internal memory at the first
+start, additional sensors will be added at the next start. However, if other sensors
+are connected, the memory must be read out and deleted before the next re-
+cording is made.
+
+14.5.2 External               plug-in        memory             incorporating
+Memory card
+Measured data is written to the memory card via the plug-in memory connector;
+this data is saved in standard FAT16 table format. The SD card can be formatted
+and its contents can be read out or deleted - using the SD card adapter on any
+standard PC equipped with a card reader. This data can also be imported into
+MS-Excel or into Win-Control. In the course of a measuring operation the plug-
+in memory and the memory card must not be unplugged; this would cause all
+temporarily buffered measured values to be lost.
+Memory capacity still free                         Memory free:     321.75 MB
+File name (maximum 8 characters plus index)        File name:     ALMEMO.001
+40
+                                                                  14. Functions menus
+
+Before starting any measuring operation you can, in the File name function,
+enter an 8-character file name. In the absence of a user-defined file name, the
+default ´ALMEMO.001´ or the name most recently used will be suggested auto-
+matically. So long as the connector configuration is not altered, any number of
+measuring operations can be saved - either manually or cyclically, also with
+number codes, all in the same file (s. 14.5.3).
+If, however, the connector configuration has been changed since the last
+measuring operation, a new file will be created; and, if no new file name has
+been programmed, the index in the file name extension will automatically be
+incremented by 1, e.g. ´ALMEMO.002´. Similarly, if the file name now entered
+already exists, a new file will be created with the same file name prefix but with
+a new index.
+To check that the plug-in memory is functioning properly there is an LED incor-
+porated in the handling end; this indicates the following states.
+● No memory card is detected     LED flashes once long and then three times short
+● Data is being recorded         LED flashes in the same rhythm as the cycle
+● Data is being read out         LED lights up continuously for the duration of data output
+
+
+
+          When inserting the plug-in memory make sure that the card remains
+          latched in position. Memory cards do not support ring memory mode.
+
+14.5.3        Numbering of measuring operations
+To identify measuring operations or series of measuring operations these can
+before starting be assigned unique numbers. This number will be output and /
+or saved with the start of the next measuring point scan. When reading out
+individual measuring operations these can thus be attributed to certain measur-
+ing locations or measuring points (s. Manual 6.7).
+When the Number function is selected a 6-digit number is entered as normal
+(s. 9.5). You can use digits 0 to 9 and characters A, F, N, P, and '_'(space). The
+number is activated as soon as it has been entered and will be followed by 'A'
+until the next measuring operation is saved to memory.
+Function Number: (e.g. room 12, meas. point 1)         Number:          12-001 A
+To zero-set and deactivate the number                   <CLR>
+To activate / deactivate the number                     <ON> , <OFF>
+To increment and activate the number                    < +1 >
+
+14.5.4        Once-only saving of all measuring points
+Once-only manual measuring point scans for saving the current measured val-
+ues from all active measuring points can be initiated by pressing key <MANU> .
+(see Manual 6.5.1.1).
+To initiate a once-only manual measuring point                     <MANU>
+The following symbols will be highlighted briefly in the status bar (s. 9.2).
+The start arrow will light up briefly and then go out again            ´© ´
+If data is being output via the interface ´COM ´ will light up briefly.
+                                                                                        41
+14. Functions menus
+
+If measured values are being saved, ´REC ´ will light up briefly.
+Each time a key is pressed again the measured values will be processed in the
+same way with the associated actual measuring duration.
+
+14.5.5       Cyclic saving of all measuring points
+For cyclic measured value recording either the output cycle or the scan cycle
+must be programmed in the next menu and saving-to-memory must be activated
+accordingly (see Manual 6.5.1.2). The 'save-to-memory cycle' function will then
+indicate the cycle being used for data logging (s. 11.4). Having selected this
+function you can specify the cycle directly (s. 9.5).
+Function Save-to-memory cycle                         Memory cycle: 00:02:00 s
+The procedure for setting the data and time-of-day is described in Section 16.1.
+The measuring operation can be started by pressing <START> and stopped by
+pressing <STOP>. Each time a measuring operation starts, if the device has been
+so configured, the maximum, minimum, and average values of all measuring
+points will be cleared (default, see 16.9).
+To start a cyclic measuring point scan                  <START>
+The following symbols will be highlighted continuously in the status bar, i.e. so
+long as the measuring operation is running (s. 9.2).
+The START arrow lights up.                             ´© ´
+If data is being output via the interface,             ´COM ´ will light up.
+If measured values are being saved,                    ´REC ´ will light up.
+To stop a cyclic measuring point scan press             <STOP> ´ll ´
+
+14.5.6       Memory capacity, memory output and clear-
+ing
+When measured values are being recorded the 'memory capacity free' function
+continuously displays the memory capacity still available. Selecting this function
+enables two softkeys, one for direct memory output and one for memory clear-
+ing.
+Function memory capacity free e.g.                   Memory free: 238.4 kB
+   Output memory in table format                            <PMEM>
+   Completely delete the memory card’s contents             <CMEM>
+If an SD memory card is being used the device itself can only read out in table
+mode the measured data contained in the file most recently used (s. 14.5.2). For
+the duration of memory output the LED on the handling end lights up continuously.
+The most sensible approach is to remove the memory card and copy the files via
+the SD card adapter and USB card reader directly onto a PC. These can then be
+imported either into MS-Excel or into Win-Control (as of V.4.8.1).
+
+
+42
+                                                            14. Functions menus
+
+14.5.7       Scanning configuration
+The following menu, accessible by pressing key Memory Ext.:              514,41 MB
+< ►F > , first shows the total memory capacity of Output cycle: 00:01:00 s U
+the SD card being used. The functions 'Output cy- Save: -           Oversampling:-
+                                                       Scancycle:       00.002 s
+cle' (16.7.3), 'Scan cycle' (16.7.2), and 'Sampling Save: Ø            Output: -
+rate' (16.7.1) can be used to define exactly how data Sampling rate:         10 M/s
+from standard and D7 sensors should be scanned Scan mode:              Normal
+                                                        Mªª Fª          ©F    FCT
+and saved to memory. Here all settings are listed.
+The way in which saving-to-memory is activated will affect the resulting 'save-
+to-memory cycle'(s. 14.5.5)
+Output cycle with save-to-memory activation
+For a relatively slow (one second up) cyclic saving of measured values from all
+sensors the Output cycle with saving-to-memory activated should be used. If
+all channels do not appear every time in the period provided, oversampling can
+be enabled. As soon as an operation is started the cycle timer should then be
+seen counting down until the next cycle.
+Enter the cycle in format ´hh:mm:ss´ s. 16.7.3: Output cycle: 00:01:00 s U
+Clear the cycle and end current scan                  <CLR>           00:00:00 s U
+Function ' save-to-memory activation' in the output cycle Save: -
+   Saving to memory activated (default setting):      <ON>         Ø
+   Switching off the saving function                  <OFF>        -
+Allow oversampling                                   Oversampling:-
+For quicker processes, in particular with D7 sensors, saving-to-memory should
+be activated at the scan cycle. For standard sensors the speed is prescribed
+by the sampling rate; for D7 sensors it is prescribed via the minimum actual
+measuring duration.
+Select scan cycle s. 16.7.2:                         Scan cycle: 00.005 s
+   Switch saving OFF                                  Save:        -
+   Switch saving ON                                  <ON>          Ø
+   Switch output OFF                                 <OFF>           Output:      -
+   Switch output ON                                  <ON>            Output:      Ø
+Enter sampling rate s. 16.7.1:                       Sampling rate:       10 mops
+
+14.5.8       Scan mode
+For automatic data logger operation and / or measured value scanning by the
+computer there are four scan modes available.
+Normal Internal cycle or cyclic scanning by the computer
+Sleep Internal cycle only, automatically switching off, for long-term monitoring
+Monitor Internal cycle, not disturbed by computer scans
+Fail-safe Cyclic scanning by the PC; after any failure, an internal cycles
+Function 'scan mode':                              Scan mode:           Normal
+Set scan mode s. 9.5 or by means of key:            <SET>
+
+
+                                                                                43
+14. Functions menus
+
+Sleep mode
+Running the device in sleep mode is suitable for long-term monitoring involving
+long measuring cycles. In energy-saving sleep mode the device switches off com-
+pletely after each measuring point scan: (for sensors with their own power supply
+a wakeup delay can be set); sleep mode switches on again automatically after the
+cycle expires - ready for the next measuring point scan. In this way with just one
+set of batteries or one battery recharge over 15,000 measuring point scans can
+be performed; for a cycle lasting 10 minutes this represents an available runtime
+of over 100 days.
+
+            When sleep mode is selected (subject to a check window being con-
+             firmed), all necessary parameters can be configured.
+For data recording in sleep mode please perform the following steps :
+1. Enter a cycle lasting at least two minutes        Cycles:        00:05:00
+2. Activate saving to memory in the cycle            Save: Ø Mode:Normal
+3. Select scan mode                                  Save: Ø Mode::Normall
+4. Program sleep mode s. 9.5                                        Mode:
+5. In the menu Data logger start measuring operation by pressing <START>
+    The device should then display                   Sleep On        Sleep
+    The device then switches off and the only visible activity
+    is the flashing red at the top of the display    LED ´SLEEP´ (4) flashes
+6. In the specified cycle the device switches on
+    automatically, performs one measuring point
+    scan, and then switches off again
+7. To quit sleep mode press                           <ON>
+8. To terminate the measuring operation press         <STOP>
+
+
+
+           A measuring operation can be started in sleep mode using the start
+           time; however, in sleep mode it cannot be stopped using the end time
+           and fixed measuring period (s. 14.5.9).
+
+Monitor mode:
+The new monitor mode should be used if a data logger, being operated on a
+cyclic basis, is to be monitored occasionally by the computer. Internal cyclic
+scanning is not influenced in any way by software scanning. (In Win-Control
+'safe initialization' must be switched off.)
+The internal cycle is started as soon as the software starts; it may also have
+been started previously. When scanning with the internal cycle no data is output
+to the interface. In order to record data the memory must have been activated.
+n the 'mode' function the 'monitor' variant must be programmed Mode:Monitor
+
+Fail-save mode:
+Fail-safe mode is suitable when scanning is purely software-based; it merely
+ensures, in the event of computer failure, that scanning will continue on an in-
+ternal cyclic basis. In this mode the cycle programmed in the device must be
+longer than that needed for software scanning (e.g. device cycle 20 seconds,
+
+44
+                                                              14. Functions menus
+
+software cycle 10 seconds). Software scanning keeps resetting the internal cy-
+cle with the effect that this cycle is only actually used if software scanning fails.
+(Here, similarly, in Win-Control 'safe initialization' must be switched off.).
+The internal cycle is started as soon as the Win-Control software starts; it may
+also have been started previously. When scanning with the internal cycle no
+data is output to the interface. In order to record data the memory must have
+been activated.
+In the 'mode' function the 'fail-safe' variant must be programmed Mode:FailSave
+Memory time available
+An important parameter for data recording, appearing in the third data logger
+menu, is the memory time available. This depends on the memory capacity, the
+number of active measuring channels, the sampling rate, and the actual meas-
+uring duration for each D7 sensor.
+Memory time available                                 Memory time:     24d 13h
+With the ALMEMO® 202-S and ALMEMO® 204 with internal memory, endless
+recording is possible if the parameter ring memory is activated. In this mode,
+when the memory is full, the first data is overwritten and the last data is availa-
+ble. (see Hb. 6.10.13.2).
+Linear memory without overwriting data:
+Ring memory: with overwriting of data:
+
+14.5.9       Starting and stopping measuring operations
+A measuring operation can be started and Memory time:                   24d 13h
+stopped not only by pressing the appropriate Meas. period:              00:00:00.00
+keys but also using numerous other methods; Meas.         duration::
+                                                    Start time:
+                                                                         01:00:00
+                                                                        07:00:00
+these are described in the Manual, Section 6.6. Start date::            01.01.07
+These operating instructions describe, in Sec- End time:                17:00:00
+tion 15.12.2, the start time and end time, the End      date:
+                                                      Mªª Fª
+                                                                        01.01.07
+                                                                             FCT
+fixed measuring period, and limit value actions
+and, in Section 17.2, the relay and trigger variants.
+Start date and time-of-day, end date and time-of-day
+A measuring series can be started / stopped automatically at specifiable times.
+For this purpose the start date and time-of-day and the end date and time-of-
+day must be programmed. If no date has been programmed, the measuring
+operation will be performed every day within the period set. Or, alternatively,
+instead of specifying the end time, the fixed measuring period itself can be pro-
+grammed. The total actual measuring duration since starting is shown in the
+´actual measuring duration´ function.
+
+
+         This is assuming of course that the current time-of-day has been pro-
+          grammed. Sleep mode takes no account of end time or fixed measur-
+          ing period.
+To access the menu press < ►F >
+Function Measuring period (Format hh:mm:ss): Meas. period:            00:10:00
+
+                                                                                  45
+14. Functions menus
+
+Function Start time (Format hh:mm:ss):                Start time:      07:00:00
+Function End time (Format hh:mm:ss):                  End time:         ------
+Function Start date (Format tt:mm:jj):                Start date:      01.05.07
+Function End date (Format tt:mm:jj):                  End date:         ------
+Meas. duration start (Format hh:mm:ss.hh): Meas. duration: 00:01:23.45
+To clear these values, after selecting this function, pres <OFF>
+If the start time-of-day for a measuring operation has been programmed, the
+following symbol appears in the status bar                        ´l©´
+If the end time-of-day or the fixed measuring period for a measuring operation
+has been programmed, the following symbol appears in the status bar ´©l´
+
+
+
+
+46
+15. SENSOR PROGRAMMING
+Since on ALMEMO® devices all sensor programming is stored in the ALMEMO®
+connector itself, the user will not normally need to reprogram each time. Program-
+ming will only be necessary e.g. if sensor errors are corrected, if your own sensors
+are scaled, or if certain limit values are stipulated; in these circumstances there
+are comprehensive programming functions available.
+In the Channel functions menus all parameters for * CHANNEL FUNCTIONS 1 *
+a channel can be viewed and checked and (so Connector: M0 Channel: 0.0
+long as the appropriate sensor is plugged in) can Design.:     DewpointTemperature
+                                                       Averaging mode:       CONT
+be entered and modified via the keypad. Series Locking:                          5
+sensors by default have the locking mode ena- Limit v. Max:                3.50 °C
+bled to protect them against unintended altera- Limit       v. Min:
+                                                        Mªª MENU M ©P
+                                                                           ------
+tion; if modification really is required this locking
+mode must first be lowered to an appropriate level (s. 15.4).Functions can only
+be selected if the locking mode allows.
+To select all four menus for sensor programming < ►P > ... and < P◄ > ...
+
+15.1      Selecting the input channel
+To view or edit a sensor's parameters you must first select the menu Channel
+functions 1 and then set the required input channel by means of keys ▲ or ▼
+; (new V7 channel numbering applies). Only sensors actually connected and
+channels actually activated can be processed. To activate a new channel
+key <MALL> should first be pressed; this accesses all selectable channels. Then
+key <MACT> should be pressed; this accesses only those that are active. For
+each input channel the associated connector number is displayed.
+Menu Channel functions 1 :
+Display of connector number and channel             Connector:0     Channel:0.0
+To select the next input channel                     ▲
+To select the previous input channel                 ▼
+To access all possible channels                      <MALL>
+To access all active channels only                   <MACT>
+
+15.2      Channel designation
+Each measuring channel can be assigned an alphanumerical designation
+(standard sensors up to 10 characters, D7 sensors up to 20 characters); this
+should denote as clearly as possible the type of sensor, measuring location, and
+/ or purpose. This designation is included in all standard measured value dis-
+plays. In the case of a measured value output via the interface this channel
+designation appears online as soon as a scan starts; in the case of output from
+memory it appears in the table header as ´COMMENTS TEXT´ (s. Manual 6.6.1).
+To enter name in Designation function s. 9.5         Design.: Dew-point
+'!' at the end of the designation indicates multi-point calibration (s. 15.11).
+
+
+                                                                                 47
+15. Sensor programming
+
+15.3      Averaging mode
+The various averaging modes that can be defined via the Averaging mode
+function are described in 14.2 and in the Manual, Section 6.7.4.
+Function - no averaging:                                 Averaging mode -----
+Averaging - start to stop or over individual measuring operations       CONT
+Averaging - over all scans per output cycle                             CYCL
+To set the averaging mode s. 9.5:                      Averaging mode CONT
+
+15.4      Locking the sensor programming
+The functional parameters for each measuring point are protected by means of
+the locking mode; this can be set to the desired locking level (see Manual
+6.3.12). To enable programming the locking mode must first be lowered to an
+appropriate level. If in the display there is a dot after the locking mode, this
+means that programming cannot be modified.
+Locking level             Locked functions
+          0               none
+          1               measuring range + element flags + output mode
+          3               + units
+          4               + zero-point correction and gain correction
+          5               + base value, factor, exponential
+          6               + analog output, start and end
+                          + zero-point adjustment, temporary
+          7               + limit values, maximum and minimum
+Function Locking mode :                                Locking:     5
+In the Channel functions menu the functions are listed from top to bottom and in
+such a way that the locked functions cannot be selected.
+
+15.5      Limit values
+Two limit values (maximum and minimum) can be programmed per measuring
+channel. Exceeding one of these limit values is treated as a fault (in the same
+way as exceeding a measuring range limit or as sensor breakage). In the dis-
+play, in front of the measured value affected, the appropriate arrow  or  ap-
+pears and the alarm relays connected by relay cable are triggered (s. 17.2).
+Limit values can also have relays assigned to them (s. 15.12.2). The alarm sta-
+tus will remain in effect until the measured value returns to within the prescribed
+limit values by the amount set as hysteresis. Hysteresis is set by default to 10
+digits but this can be adjusted to any number of digits between 0 and 99 (s.
+16.8). A limit value infringement can also be used to start or stop a measuring
+operation (s. 15.12.2).
+
+
+
+
+48
+                                                             15. Sensor programming
+
+Function:
+Enter the limit value, maximum (s. 9.5):            LV Max:               123.4 °C
+Enter the limit value, minimum                      LV Min:              ----- °C
+To switch limit value off                            <OFF>
+To switch limit value on                             <ON>
+
+15.6      Correction values
+Sensors can be corrected in terms of zero-point * CHANNEL FUNCTIONS 2 *
+and gain by means of the 'zero-point' and 'gain' Connector: M0 Channel: 0.0
+correction values (see Manual 6.3.10). The cor- Base    value:
+                                                  Factor, Exp:
+                                                                  ------ °C
+                                                                  ------ E0
+rected values can then also be scaled by means Zero point:        ------ °C
+of BASIS and FACTOR (s. 15.7). These func- Gain:                     ------
+tions can be accessed in menu Channel functions Range,   Unit:
+                                                    Mªª Pª     M
+                                                                    DIGI °C
+                                                                   ©P
+2 by means of key < ►P > .
+Corrected measured value = (measured value - zero-point) x gain.
+Functions:
+Zero-point correction:                                Zero point:     ----- °C
+Gain correction:                                      Gain:     ----- °C
+To switch on and off press                             <OFF> or <ON>
+Once the scaling values have been programmed and the actual measured value
+thus modified, the correction arrow appears indicating the measured value sta-
+tus º (s. 9.2).
+           With option KL sensors can attain maximum accuracy by means of
+
+
+15.7
+           multi-point calibration (s. 15.11).
+
+          Scaling, decimal point setting
+To display a sensor's electrical signal as a measured value with a physical quan-
+tity it is nearly always necessary to perform a zero-point shift and multiplication
+by a factor. To perform these steps the functions 'base' and 'factor' are provided.
+For a detailed description of scaling, with an example, please refer to the Man-
+ual, Section 6.3.11.
+    Displayed value = (corrected measured value - base) x factor.
+The ´factor´ can be programmed within the range -2.0000 to +2.0000. For fac-
+tors below 0.2 or above 2.0 the decimal point setting should be specified by
+entering the 'exponent'. Using the 'exponent' function the decimal point can be
+shifted as far to the left (-) or to the right (+) as the display and interface permit.
+An exponential view of measured values is not possible.
+
+
+
+
+                                                                                     49
+15. Sensor programming
+
+Functions:                                          SCALING:     0.1:    4.67 mA
+Base value:     ------                              Actual val 1:04.000 2: 20.000
+Factor,Exp:     ------ E0                           Decimal point: 1 Unit:        °C
+                                                    Setpoint 1: -100.0 2:      400.0
+To calculate the scaling values automatically       Gain:               -------
+from the actual value and setpoint the function     Base value:         720.0 °C
+                                                    Factor, Exp:       0.3125 E2
+menus include a special menu Scaling (s. 14.4).             Mªª M             FCT
+Once the scaling values have been programmed and the actual measured value
+thus modified, the correction arrow appears indicating the measured value sta-
+tus º (s. 9.2).
+
+15.8      Changing the units
+For each measuring channel the default units for the quantity and measuring
+range can be replaced with any other units, two characters for standard sensors,
+up to six characters for D7 sensors (see Manual 6.3.5). All upper-case and
+lower-case letters, special characters °, Ω, %, [, ], *, -, =, ~, and space (_) can
+be used. The units are shown after the measured value or programming value
+in question.
+To change the units use the function:         1 Range, Units: DIGI °C
+          If °F is entered as units the temperature value will be converted auto-
+
+         matically from degrees Celsius to degrees Fahrenheit. Entering the
+          appropriate two characters will automatically generate the following
+          units: for m¡ enter ms, for ¦¢ enter mh, for ¤¥ enter Wm, and for g£
+          enter gk..
+
+15.9      Selecting the measuring range
+With this device the individual measuring ranges for D6 and D7 sensors can
+only be modified via the 'sensor configuration' menu (s. 15.10). This section de-
+scribes which function channels can also be used. Please note that locking is
+always completely canceled, i.e. the locking level is reset to zero (s. 15.4). To
+activate a new measuring channel key <MALL> should first be pressed; this
+accesses all selectable channels; then select the required input channel, and
+then enter the measuring range (s. 15.1). When the new measuring range entry
+is confirmed all programming values for that input channel will be deleted.
+Function, select measuring range                          Range, Units: DIGI °C
+To access all possible measuring channels                  <MALL>
+To deactivate a channel                                    <OFF>
+To activate a channel                                      <ON>
+Programming the range is as for data input 9.5             PROG , ▲ , ▲ , PROG
+In      the      input      window        all    abbreviations     appear     one
+after the other, as listed in the following table         Range:       DIGI
+
+
+
+50
+                                                                    15. Sensor programming
+
+                                                             xxxx
+There is also a help window for identifying the             Average values over
+sensor in question.                                         time M(t)
+
+
+                    Sensor                Connector / Measuring range              Units Display
+                                         cable / sensor
+Sensor voltage                           any                        0.00...20.00        V    Batt
+Frequency                                ZA 9909-AK                  0... 25000        Hz    Freq
+Pulses                                   ZA 9909-AK                  0... 65000              Puls
+Digital input                            ZA 9000-EK2                0.0... 100.0        %     Inp
+
+Digital interface                        ZA 9919-AKxx        -65000... +65000                DIGI
+Measured value (Mb1)                     any                                        f(Mb1)   Mess
+
+Differential (Mb1-Mb2)                   any                                        f(Mb1)    Diff
+
+Maximum value (Mb1)                      any                                        f(Mb1)   Max
+
+Minimum value (Mb1)                      any                                        f(Mb1)   Min
+
+Average value over time (Mb1)            any                                        f(Mb1)   M(t)
+
+Number of averaged values (Mb1)          any                                                  n(t)
+
+Average val. over meas. points (Mb2, Mb1) any                                       f(Mb1)   M(n)
+
+Total from measuring points (Mb2, Mb1)   any                                        f(Mb1)    S(n)
+
+Total number of pulses (Mb1)             ZA 9909-AK     s.Man.6.7.1 0..65000                  S(t)
+
+Pulses / print cycle (Mb1)               ZA 9909-AK     s.Man.6.7.1 0..65000                  S(P)
+
+Alarm value (Mb1)                        any            s.15.12.5    0/100              %    Alrm
+
+                 ����1· Q
+Volume flow m3/h Mb                      any            s.14.2.6                     m3/h    Flow
+
+Timer 1                                  any                          0...65000         s    Time
+
+Timer 2 (exponent -1)                    any                        0.0...6500.0        s    Time
+  Mbx = reference channels
+With the function channels it is possible to represent function parameters from
+measured value processing or from calculated results obtained by linking certain
+measured values on measuring channels (see Manual 6.3.4). Reference to the
+actual measuring channels is provided by one or two reference channels. For
+all function channels the default reference channels Mb1 and Mb2 are available
+on the appropriate plug; these do not need programming.
+
+
+
+                                                                                               51
+15. Sensor programming
+
+Function                      Function channel           Ref. channel 1    Ref. channel 2
+
+Function parameters (Mb1)     on channel 2, 3, or 4      Mb1 = channel 1
+
+Differential (Mb1-Mb2)        on channel 2, 3, 4 (Mb1)   Mb1 = channel 1   Mb2=M0.0
+Average value over Mb2, Mb1   on channel 2, 3, 4 (Mb1)   Mb1 = channel 1   Mb2=M0.0
+Total over Mb2, Mb1           on channel 2, 3, 4 (Mb1)   Mb1 = channel 1   Mb2=M0.0
+Arrangement of channels on the plugs:
+Once the quantity has been programmed the default reference channels can be
+used (see above). Settings for the reference channels are described in 15.12.6.
+
+15.10 Sensor configuration
+D6 and D7 sensors can be assigned new quantities, measuring ranges, and
+individual parameters completely unknown to the measuring instrument. Each
+such sensor must therefore provide its own sensor menu for defining the sensor
+configuration with all its special settings (i.e. measuring ranges, compensation
+values, sampling rate, smoothing, etc.). The menu 'sensor configuration' can
+be accessed by selecting the sensor in question from the 'sensor list' and press-
+ing key <KONF> (see 10). Settable parameters are described in the operating
+instructions 'Digital ALMEMO® D6 sensors' and 'Digital ALMEMO® D7 sensors'.
+
+15.11 Multi-point calibration
+All purely digital ALMEMO® sensors (i.e. DIGI, D6, D7 sensors) can be corrected
+in their characteristics by means of multi-point calibration using the ALMEM®
+Control software. DIGI sensors permit characteristics with up to 36 interpolated
+values; with D6 and D7 sensors each of the four primary channels can be cor-
+rected (D6 with 36 interpolated values in total, D7 with 36 interpolated values
+per primary channel). In so doing only the deviations are added to the original
+characteristics (interpolated on a linear basis); accuracy is thus appreciably im-
+proved. This correction process can be performed at our works as part of a
+factory or DAkkS calibration or with the ALMEMO® 202-S or ALMEMO® 204 if it
+has option KL enabled.
+'!' at the end of the channel designation indicates that the channel is subject to
+multi-point calibration.
+
+15.12 Special functions
+On the 202-S and 204 measuring instrument, in              * SPECIAL FUNCTIONS 1 *
+the two Special functions menus, all sensor pa-            Connector: M0 Channel: 0.0
+rameters can be accessed; these may be                     Cycle factor:         01
+                                                           Action Max:      Start R21
+needed only occasionally in routine operation              Action Min:        End R22
+but may in many applications be very useful,               Analog Start:       0.0 °C
+(see Manual 6.10) Some of these functions are              Analog End:      300.0 °C
+                                                            Mªª Pª       M ©P        .
+52
+                                                         15. Sensor programming
+
+highly complex and should only be considered if
+the user is fully aware of how they work and what
+effect they may have.
+The two 'special functions' menus can be accessed after sensor programming
+by means of key                                   < ►P > ... or ► ...
+To return to the previous menu                    < P◄ > ... or ◄ ...
+
+15.12.1 Cycle factor
+To adapt data recording on the basis of the output cycle to the speed of change
+at individual measuring points certain measuring points can be programmed
+with a cycle factor between 00 and 99 which will cause them to be output less
+frequently or not at all (see Manual 6.10.6). Only faulty measuring points, e.g.
+in the event of a limit value infringement, will always be output. This cycle factor
+is by default completely disabled or set to 01 for all measuring points; i.e. all
+activated measuring points are output in each output cycle. If some other factor
+e.g. 10 is entered, the measuring point in question will only be output every 10th
+cycle; if 00 is entered it will not be output at all.
+Enter the cycle factor in function (s. 9.5)            Cyce factor:         01
+Clear the cycle factor by means of                      <CLR>
+
+15.12.2 Actions triggered by limit value infringe-
+ment
+Relay assignment
+For reporting alarms both limit values are by default used for all a device's meas-
+uring points (s. 15.5); i.e. a limit value infringement at any measuring point will
+trigger any appropriately programmed relay connected via an alarm relay cable
+or relay adapter (see Manual 5.2/3). This relay remains energized until all meas-
+ured values return to within the prescribed limit values by the amount set as
+hysteresis. If no limit value has been set the measuring range limit is used as
+limit value. A sensor breakage always triggers an alarm.
+To ensure that disturbances can be reliably recognized and selectively evalu-
+ated it is possible, in the functions Action Max and Action Min , to assign indi-
+vidual relays to specific limit values. A relay can have more than one limit value
+assigned to it. For this purpose the relay cables offer two relays; the new relay
+adapter (ZA-8006-RTA3) offers up to 10 relays. In the output module for the
+relay the mode should be set to variant 2 (assigned internally) (s. 17.2, Man.
+6.10.9).
+To activate relay 'xx' in the event of overshooting limit value maximum:
+                                                         Action Max:    ----- Rxx
+To activate relay 'xy' in the event of undershooting limit value minimum:
+                                                        Action Min:     ----- Rxy
+To clear relay assignment press                          <CLR>
+To program the output module (s. 17, 17.2):              Socket: A2    ZA8006RTA3
+
+                                                                                 53
+15. Sensor programming
+
+To select a relay port                                Port: 20
+                                                      Relais: Normally Open 0.5A
+To set variant 2 (assigned internally)                2: Assigned internally
+
+Controlling a measuring operation
+A limit value infringement can be used not only to report an alarm but also to
+control a measuring operation (see Manual 6.6.3). Commands can be assigned
+to a limit value by means of the functions :
+ Action Max and Action Min                                           Rxx
+Start meas. operation at limit value, max.: Action Max: Start       R--
+Stop meas. operation at limit value, min.: Action Min:     Stop     R--
+Manual scan at limit value, maximum:         Action Max:   Manu     R--
+Zero-set timer 2 at limit value, maximum: Action Max: TZero         R--
+Execute macro 5 to 9 at limit value, max.: Action Max: Macro5       R--
+                                                            ....
+To set action press:                        <SET>
+To clear action press:                      <CLR>
+
+15.12.3 Analog output start / end
+The analog output of measured values to the analog output modules or to the
+display as a bar chart must in most cases be scaled to a particular sub-range
+(see Manual 5). This can be done by simply stipulating the start value and end
+value of the range to be displayed. This range will then be mapped to the analog
+range 2 V, 10 V, 20 mA, or a bar chart display with 100 pixels.
+To program the analog output - start                 6 Analog Start: 0.0°C
+To program the analog output - end                   6 Analog End:      100.0°C
+These two parameters, 'analog output start' and 'analog output end', are also
+saved in the sensor EEPROM and can thus be individually programmed per
+channel; i.e. when channels are switched through manually each measurable
+variable can be individually scaled. The flag for switching over from 0 - 20 mA
+to 4 - 20 mA is programmed via the element flags (s. 15.12.7, 17.3).
+
+15.12.4 Minimum sensor supply voltage
+As with all ALMEMO® devices the sensor supply * SPECIAL FUNCTIONS 1 *
+voltage on the 202-S and 204 is monitored. The Connector: M0 Channel: 0.0
+                                                  U-Sensor Min:          12.0 V
+sensor supply voltage is displayed in the INFO Output function:           MESS
+menu (s. 10). Some sensors, however, will only Ref. channel 1: (0.0) 2: (0.1)
+operate properly with their own supply voltage; Elementflags:         -------
+                                                  Calibration val.: ---------
+this may require e.g. a mains unit. To prevent Mªª Pª                         .
+measuring errors the minimum sensor voltage
+needed by each individual sensor can be entered in 'sensor programming'. If
+the sensor voltage drops below this value the measured value will be treated as
+a sensor breakage and display 'L' flashes see 9.2).
+54
+                                                        15. Sensor programming
+
+To enter the minimum sensor supply voltage            U-Sensor Min:     12.0 V
+To disable voltage monitoring, to clear the value     <CLR>
+                                                      U-Sensor Min:    ---- V
+
+15.12.5 Output function
+If the current measured value of measuring point Mx.x is not actually needed
+but only the maximum, minimum, average, or alarm value, this function can be
+programmed as output function (see Manual 6.10.4). Saving, analog output, dig-
+ital output need then only process the appropriate function value. As verification
+that the output function has been thus changed the measured value is shown
+with the symbols listed below (s. 9.2).
+Examples:
+1. If measured values are being averaged over a cycle the only output value of
+     interest is the average value itself, not the last measured value. When simply
+     recording data this approach saves memory capacity.
+2. The analog measured value from dew sensor FH A946-1 is not really signif-
+     icant. If limit value - maximum is set to approx. 0.5 V and the alarm value
+     function is programmed, the only values received are 0.0% for dry and
+     100.0% for dew.
+Output function              Status symbol              Menu
+Measured value (Mxx)                                    Output function: Mess
+Differential (Mxx-M00)                D                 Output function: Diff
+Maximum value (Mxx)                   H                 Output function: Max
+Minimum value (Mxx)                   L                 Output function: Min
+Average value (Mxx)                   M                 Output function: M(t)
+Alarm value (Mxx)                     A                 Output function: Alrm
+
+15.12.6 Reference channels
+The calculating functions of the function channels usually refer to one (or two)
+particular measuring channel(s) (s. 15.9, Hb. 6.3.4). When programming a func-
+tion channel the reference channel Mb1 is provided automatically by the 1st
+channel of associated sensor connector Mxx1.
+The 2nd reference channel Mb2 (for differential value, average value M(n), etc.)
+is provided initially by measuring point M0.0. In the function Reference channel
+1 you can also set another measuring point as reference channel.
+Program reference channel 1                          Ref. channel 1:(1.0) 2: - -
+For function channels needing a 2nd reference channel (see above) first enter
+reference channel 1 and then the 2nd reference channel (see Manual 6.10.2).
+Program reference channel 2, absolute                Ref. channel 1:(1.0) 2:(0.0)
+
+
+
+            For measuring ranges that do not need any reference channels the
+            display shows only horizontal dashes with the standard channels in
+            brackets (s. 15.9).
+
+                                                                                 55
+15. Sensor programming
+
+15.12.7 Element flags
+Element flags are available per measuring channel; these can be activated to
+implement sensor-specific extra functions (s. Man. 6.10.3)
+3. Measuring bridge with switch for final-value simulation
+4. Measuring channel, cyclic evaluation only
+8. Analog output 4 to 20 mA (instead of 0 to 20 mA)
+On the ALMEMO® 202-S and ALMEMO® 204 element flags 1, 2, 5, 6 have no function.
+Function Element flags                             Element flags:    87654321
+To program element flags       PROG                Element flags:    8-------
+To select element flags                            ► and ◄
+To switch element flags ON / OFF                   ▲ and ▼
+
+
+
+
+56
+16. DEVICE CONFIGURATION
+In the DEVICE CONFIGURATION menu certain
+                                                   * DEVICE CONFIGURATION *
+basic settings can be made, e.g. date, time-of- Time 12:34:56 Date:01.01.04
+day, language, and illumination. The device Device designation:
+designation helps individually identify the device Ahlborn, Holzkirchen
+and facilitates its assignment in a network. In Language:            English
+                                                   Illumination: Ø Duration: 20 s
+network operation the device address is indis- Contrast:                     50 %
+pensable. The baud rate can be adapted for op- Mªª MENU               ©P
+eration with external devices. The default value for hysteresis for alarm relays
+can also be modified.
+
+16.1      Date and time-of-day
+For logging data recordings a real-time clock with date and time-of-day is pro-
+vided; this is buffered by means of the device battery. So long as the device is
+in the switched off status it is possible to change the batteries without date and
+time-of-day being lost. The first line contains the time-of-day on the left and the
+date on the right; by selecting this function (s. 9.4) these can be programmed in
+the format described (s. 9.5).
+Function 'time-of-day'           Format hh:mm:ss          Time:           12:34:56
+Function 'date'                  Format dd.mm.yy          Dat.:           01.05.14
+
+16.2      Device designation
+In the Device designation function (see Manual 6.2.4) any text can be entered
+up to maximum 40 characters in length (s. 9.5). The entry here of an individual
+text can help clearly identify the device in the display (device configuration, 'info'
+menu), or in a software listing (device lists).
+Function Device designation : Device designation: Ahlborn, Holzkirchen
+
+16.3      Language
+The user can choose from German / English / French as the language for func-
+tion labeling and outputs; (other languages are available on request). The soft-
+keys are international; these cannot be changed.
+To select the desired language press             <SET>        in the function:
+Language:      English
+
+16.4      Illumination and Contrast
+Display illumination can be enabled / disabled in the selection menu (and in many
+other menus) by pressing <* ON> or in device configuration in function Illumi-
+nation ; (please note that enabling will double the current consumption). If illumi-
+nation is enabled but no mains adapter is connected, it will switch off again auto-
+matically as soon as a settable illumination duration expires; this starts with each
+pause in key operation and restarts as soon as any key is pressed. The display
+contrast can be set in the Contrast function to any one of 10 levels.
+
+                                                                                   57
+16. Device configuration
+
+Display illumination ON                          Illumination: Ø
+To set the illumination duration (20 seconds to 10 minutes) press
+                                                  <SET> : Duration: 20sec
+If display illumination is enabled,
+the following symbol appears in the status bar        *         Illumination ON
+If display illumination has switched off temporarily,
+the following will light up.                          *         Pause
+To switch ON again without this function press          ◄
+To set the contrast (5 to 100 %) press < - > and < + > : Contrast:         50%
+
+16.5      Interface, device address and networking
+Via the serial interface cyclic data logs and all Device address:          00
+the programming details for the device and for Baud rate:                9600 Bd
+the sensors can be output to a computer (see Scan    Output cycle:     00:01:00 s U
+                                                          cycle:        0.500 s -
+Man. Chap. 6). For connecting to the various in- Sampling rate:              10 M/s
+terfaces we have a series of data cables availa- Hysteresis:                   10
+ble(s. 17.1, Hb. 5.2). All ALMEMO® devices can Configuration:
+                                                      Mªª   Pª
+                                                                        -C------
+be networked together very easily, thus enabling
+the user to centrally acquire and record measured values from several measur-
+ing instruments - even if these are located far apart (see Man. 5.3). To communi-
+cate with networked devices it is absolutely essential that all the devices con-
+cerned should have the same baud rate setting but that each should have its
+own dedicated address; this ensures that only one device responds per com-
+mand. Before starting network operation ensure therefore that all the measuring
+instruments involved are assigned different and unique device addresses. For
+this purpose use the Device address function. On leaving the factory the device
+address is normally set to 00. This can be modified as desired by entering the
+appropriate data as usual (s. 9.5).
+
+16.6      Baud rate, data format
+On leaving our factory the baud rate for all interface modules is programmed to
+9600 baud. In order to avoid unnecessary problems when networking several
+devices together the baud rate should not be altered; rather the computer should
+be set to match. If this is for some reason not possible you can, in the Baud
+rate function, choose from the values 1200 / 2400 / 4800 / 9600 baud or 57.6
+/ 115.2 / 230.4 / 460.8 / 921.6 kbaud (taking care not to exceed the maximum
+baud rate for the interface module). The baud rate setting is saved to the
+EEPROM on the interface module and thus applies to all other ALMEMO® de-
+vices connected.
+To set the baud rate, function (s. 9.5):               Baud rate:      9600 bd
+Data format: 8 data bits, 1 stop bit, no parity (cannot be changed).
+
+
+
+
+58
+                                                        16. Device configuration
+
+16.7     Process control
+As already described in Chapter 12, maximum and minimum values, limit value
+infringements, and analog outputs are acquired from standard sensors at the
+sampling rate and from D7 sensors at the scan cycle. All measuring channels
+can be output to a computer or saved to memory either simultaneously at this
+scan cycle or at more prolonged cyclic intervals at the output cycle.
+
+16.7.1       Sampling rate
+ALMEMO® standard sensors (DIGI or D6) just like all standard devices on meas-
+uring point scans are scanned continuously one after the other at the sampling
+rate (see Manual 6.5.1.3). However, with this device, the sampling rate is not
+based on the conversion rate of an A/D converter; it has simply been set. This
+sampling rate thus determines definitively the data acquisition speed of con-
+nected standard sensors; it can be set via the Sampling rate function to 2.5 or
+10 measuring operations per second (mops). The scan time for all standard
+sensors currently connected, including any special measuring operation, is con-
+tinuously calculated and displayed in the sensor list (s. 10). The measured val-
+ues are internally processed with immediate effect and saved to memory (but
+not output). This can be performed optionally at the quick scan cycle or the
+slower output cycle.
+Function - sampling rate, modify by means of <SET> Sampling rate 10M/s
+
+16.7.2       Scan cycle
+The scan cycle is used for the purpose of acquiring maximum and minimum
+values, limit value infringements, and analog outputs from the new intelligent D7
+sensors. In continuous scanning standard sensors supply their values at the
+sampling rate (s. 16.7.1) and D7 sensors at their own individual actual measur-
+ing duration, as saved in the plug (1 millisecond up to several minutes). The
+actual measuring durations can be found in the sensor list s. 10. The scan cycle
+can in most cases be set to a minimum time with <MIN> ; this helps acquire meas-
+ured values in their full dynamics. However, no unnecessary measured values
+are produced; only those updated since the previous scan are scanned again;
+i.e. for a certain period the list includes only quick sensors subject to a short
+scan cycle and slower sensors only at more prolonged intervals. A special ad-
+vantage in terms of speed and consistency is that all D7 sensors supply meas-
+ured values in parallel and simultaneously; they do not have to be measured in
+sequence one after the other by an A/D converter.
+If it is not necessary for many measured values to be saved to memory at high
+sampling rates, of course a longer scan cycle can be set.
+If only standard sensors are connected and all channels are always to appear
+with the same time-stamp, the scan cycle can be based on the scan time which
+can be selected directly on entering with softkey <SCANT> .
+Enter a scan cycle in format ss.sss:                Scan cycle:      s-
+
+                                                                              59
+16. Device configuration
+
+Set scan cycle to minimum time                      <MIN>              00.001
+Set scan cycle to scan time                     <SCANT>            00.500
+Select output in scan cycle                      ▼                 00.002 s -
+Activate output                                 <ON>               00.002 s U
+Select and activate save-to-memory at the scan cycle in the data logger func-
+tions (s. scan configuration 14.5.7).
+
+16.7.3       Output cycle
+For measured value output via the interface at a relatively prolonged cycle (> 1
+second) 'output cycle' in format hh:mm:ss is provided. The output cycle can also
+be used for determining cyclic average, maximum, or minimum values.
+
+
+
+          If a channel is programmed to averaging mode CYCL, average, max-
+          imum, and minimum values are all deleted with each cycle.
+Enter an output cycle in format hh:mm:ss:           Output cycle: 00:01:00 s U
+Zero-set cycle for manual measuring operation <CLR>
+Reset cycle to 1 minute                             <RESET>
+There is no longer a choice of output formats because the expanded range of
+values can only be expressed in table format (see Man. 6.6.1). This format is,
+as always, ideally suitable for further processing with any standard spreadsheet
+program (see Man. 6.1, printouts).
+
+16.8      Hysteresis
+The hysteresis for an alarm triggered in the event of a limit value infringement
+can be set generally for all sensors from 0 to 99 digits (default 10 digits) in the
+Hysterese function (s. 15.5, Man. 6.2.7).
+Modify hysteresis (0 bis 99) s. 9.5:                   Hysteresis:         10
+
+16.9      Operating parameters
+Certain operating parameters can be configured by the user as software options
+in the function   (s. Man. 6.10.13.2).
+Delete all measured values at the start of a measuring operation
+                                                       Configuration: -C------
+Immediate output via the interface (oversampling)      Configuration: ----A---
+Program the configuration      PROG                    Configuration: -C------
+Select a parameter                                       ► and ◄
+Switch the parameter ON / OFF                            ▲ and ▼
+
+
+
+
+60
+17. OUTPUT MODULES
+The ALMEMO® 202-S and ALMEMO® 204
+                                                      *     OUTPUT MODULES    *
+measuring instrument has two output sockets,
+A1 and A2; these can be used to output meas- Socket: A1
+ured values in analog or digital form or as an DC Data cable
+                                                      0: RS232
+alarm signal. It is also possible to initiate various Baud rate:         9600bd
+functions by means of trigger pulses. To cover
+all possibilities while also keeping the required Mªª MENU P                  -
+hardware to a minimum all necessary interfaces have been integrated in the
+ALMEMO® output cables or output modules.
+These output modules, just like the sensors themselves, are recognized auto-
+matically and listed in the Output modules menu. The numerous connection
+possibilities are described in detail in the Manual, Chapter 5.
+
+17.1      Data cable
+All ALMEMO® data cables and their connection to devices are described in de-
+tail in the Manual, Section 5.2. Other modules for networking the devices are
+described in detail in the Manual, Section 5.3. The interface modules are con-
+nected to socket A1 (2); this is with the exception of network cable ZA-1999-
+NK5 which is used for networking a further device; this must be connected to
+socket A2. In the menu under the socket concerned the following information is
+displayed:                                           Socket                A1:
+                                                          DC Data cable
+Variant 0: Serial standard interface always active        0: RS232
+The baud rate is saved in the cable connector             Baud rate:    9600 bd
+
+17.2      Relay trigger modules
+The elements of the V6 relay trigger cables (ZA 1006-ECG) and the relay trigger
+analog adapters (ZA 8006-RTA3) can have their function variants individually
+configured.
+This offers up to 10 relays or options with 2 of these as trigger inputs or up to 4
+as analog outputs. These modules can be connected equally well to output
+socket A2 or output socket A1 (2).
+To ensure that all elements can be addressed, each of these sockets has been
+assigned 10 port addresses.
+Socket Connection                                               Port addresses
+ A1       V6 output modules at socket A1                              10 to19
+ A2       V6 output modules at socket A2                              20 to 29
+                                                     *         OUTPUT MODULES   *
+                                                     Socket: A2 ZA 8006 RTA3
+In the Output modules menu the elements of           Port:     20
+the output modules can be individually selected      Relay: NO 0.5A
+and functions programmed as follows (s. Man.          2: assigned internally
+                                                      Zustand: aktive close
+6.10.9).
+                                                         Mªª   MENU   P         .
+                                                                                    61
+17. Output modules
+
+First select the port                                    <P> :   ▲   or   ▼
+e.g. port 0, socket A2 (port address 20)                 Port: 20
+This shows the element concerned
+Relays:
+  Relay type, normally open (NO):                        Relay NO
+  Relay type, normally closed (NC):                      Relaiy NC
+  Relay type, changeover:                                Relaiy - changeover
+Relay addressing can be configured to the following variants s. 9.5:
+  0: Alarm if any one channel is faulty                  0: Summated alarm
+  2: Alarm for a programmed channel                      2: Assigned internally
+  3: Alarm if one limit value – max. of all is overshot 3: Summated alarm Max
+  4: Alarm if one limit value – min. of all is undershot 4: Summated alarm Min
+  8: Relay driven via interface or keypad                8: Driven externally
+Variant 2 'assigned internally' is set automatically if a relay is assigned to a limit
+value (s. 15.12.2).
+Power failure can be detected more easily if relay addressing is inverted; i.e. in
+the absence of current the relay drops out and an alarm is triggered. All function
+variants are therefore also provided on an inverted basis.
+Relay addressing - inverted:
+    Variant 2, inverted                          -2: assigned int., inverted
+The activation mode and actual contact status resulting from the relay type
+and driving mode are displayed in the next line.
+Activation mode and relay contact status             Status active, open
+
+Relay variant 8 'driven externally' permits manual activation of the relays via the
+keypad or via the interface (see Man. 6.10.10).
+  Relay variant 8:                                    8: driven externally
+  For manual activation of relays press                <ON> or <OFF>
+
+
+Trigger inputs
+For the purpose of controlling the measuring se- *        OUTPUT MODULES       *
+quence two trigger inputs are provided at ports 8   Socket: A2    ZA 8006 RTA3
+                                                    Port:   8            Adr.:28
+and 9 (keypad or optocoupler). On the relay trig- Trigger: keap.+Optocoupler
+ger analog adapter (ZA-8006-RTA3) the trigger 0: Start-Stop
+source 'key' and / or 'optocoupler' can be config-
+ured             by           means             of Mªª MENU P                  .
+keys PROG , ▲ / ▼ and PROG or the trigger function can, for safety reasons,
+be switched off altogether by means of 'off'.
+The following trigger functions can be programmed as variants:
+   0: Start and stop a measuring operation         0: Start / Stop
+   1: Once-only manual measuring point scan        1: Once-only scan
+   2: Delete all maximum / minimum values          2: Delete all max./min. val.
+62
+                                                                   17. Output modules
+
+  3: Print the measured value                      3: Print
+  4: Start / stop a meas. op., level-controlled   4: Start/Stop level-controlled
+  8: Set measured value to zero                    8: Set meas. value to zero
+ -5: Execute macro 5 (s. Man. 6.6.5)              -5: Macro5
+ -6: Execute macro 6                              -6: Macro6
+ -7: Execute macro 7                              -7: Macro7
+ -8: Execute macro 8                              -8: Macro8
+ -9: Execute macro 9                              -9: Macro9
+
+17.3      Analog outputs
+V5 output modules                                     *         OUTPUT MODULES   *
+For the purposes of analog recording of meas-         Socket: A2
+ured values it is still possible, at sockets A1 and   RC Recording cable
+/ or A2 (2) to connect V5 output modules with an       0: selected Channel    M00
+                                                          Analog value:    02234
+analog output driven by the device, e.g. record-
+ing cable ZA-1601-RK (s. Hb. 5.1.1).
+                                                          Mªª    MENU   P   ©P      .
+
+To select the socket press                               <P> : ▲ or ▼
+The following output modes can be programmed as variants:
+   0: Measured value for the selected measuring channel 0: Selected channel M00
+   2: Measured value for a programmed channel           2: Assigned internally M01
+   8: Programmed analog output (see below)              8: Driven externally
+The analog value appears below this in digits:             Analog value: 08345
+This gives, depending on the analog output, the following output signals.
+    Voltage output                   -1.2 to +2.00 V           0.1mV/Digit
+    Voltage output                   -6.0 to +10.0 V           0.5mV/Digit
+    Current output                   0.0 to 20.0 mA              1µA/Digit
+In variant 2 'assigned internally', after selecting the Mxx function, you can pro-
+gram the measuring point to be output                   2: assigned internally M
+V6 output modules                                     *         OUTPUT MODULES   *
+The new V6 relay trigger analog adapter ZA- Socket: A2           ZA8006RTA3
+8006-RTA3 (see Man. 5.1.3) offers, at ports 4 to Port:     6     Adr.: 26
+                                                  Analog ext. DAC 10V
+7, the option of up to four external analog out- 0: assigned internally: M02
+puts, separately configurable also in the output     Analog value:    02.234 V
+signal.                                             Mªª MENU P        ©P
+New: ZA1601-RI and ZA1602-RU with up to 2
+separately configurable analog outputs.
+To select the port                                 <P> : ▲ or ▼
+e.g. port 6, socket A2 (port address 26)          Port: 26
+The analog module appears with type and output signal 10 V or 20 mA.
+Analog output (D/A converter, external, in module)    Analog ext. DAC       10V
+Can be programmed via keypad to                  Analog ext. DAC        20mA
+(not with ZA160x-RI/RU)
+                                                                                        63
+17. Output modules
+
+The same output modes can be programmed as variants as with V5.
+  0: Measured value for the selected measuring channel 0: Selected channel M00
+  2: Measured value for a programmed channel                2: Assigned internally M01
+  8: Programmed analog output (see above)                   8: Driven externally
+With V6 the analog value appears with the appropriate units. Analog value +08.345 V
+Programmed analog value output (s. Man. 6.10.7)
+If the analog value is to be controlled individually either manually or via the in-
+terface then variant 8 'driven externally' must be set: 8: Driven externally
+Program the output 2.5 V with 10 V output (s. 9.5): Analog value: 02.500 V
+                                                        0.2:    16.7 °C Temperature
+In a special sub-menu the measuring range as-
+                                                6 Analog-Start:      0.0 °C
+signed to the measuring point concerned and 6 Analog-End:          300.0 °C
+actually being used by the selected channel       Current output:   4-20mA
+can, by means of functions Analog-Start and
+Analog-end , be spread over the full 10 V or 20  Mªª    Pª                .
+mA (s. 15.12.3).
+To program the analog output - start            6 Analog-Start:      0.0°C
+To program the analog output - end s. 9.5:      6 Analog-end:     100.0°C
+For 20 mA analog outputs only
+Output either 0 to 20 mA or 4 to 20 mA:         Current output: 4-20 mA
+
+
+
+
+64
+18. TROUBLE-SHOOTING
+The ALMEMO® 202-S and ALMEMO® 204 measuring instrument can be config-
+ured and programmed in many different ways. It is suitable for connecting a
+wide variety of different sensors, other measuring instruments, alarm signaling
+devices, and peripheral equipment. Given these numerous possibilities the de-
+vice may in certain circumstances not behave quite as expected. The cause of
+such unexpected behavior is not usually a device defect; often the cause is in-
+correct operation by the user, an invalid setting, or unsuitable cabling. In such
+event try to pinpoint and clear the problem with the aid of the following tests.
+Error:      No display, display malfunction, keys do not react
+Remedy: Check the power supply; replace the batteries; switch off and then
+            on again; if necessary re-initialize (see 7.5)
+Error:      Measured values are incorrect.
+Remedy: Check all the channel programming very carefully, especially the
+            base value and zero-point ('sensor programming' menu and 'spe-
+            cial functions').
+Error:      Measured values fluctuate unexpectedly or the system hangs in
+            mid-operation.
+Remedy: Check the cabling for any inadmissible electrical connections.
+            Unplug any suspicious sensors.
+            Connect a hand-held sensor in air or a phantom sensor (short-cir-
+            cuit for voltages, 100 Ω for Pt100 sensors) and check.
+            Then reconnect sensors one after the other and check again; if a
+            fault persists for any one connection, check all wiring; if necessary,
+            insulate the sensor concerned and eliminate interference by using
+            shielded or twisted wiring.
+Error:      Data transmission via the interface does not function.
+Remedy: Check the interface module, connections, and settings.
+            Ensure that both devices are set to the same baud rate and trans-
+            mission mode. (s. 16.6)
+            Ensure that the correct COM port on the computer is being ad-
+            dressed. Test data transmission by means of a terminal. (AL-
+            MEMO-Control, WIN-Control, WINDOWS-Terminal)
+            Address the device using its assigned device number ´Gxy´. (see
+            Manual 6.2.1)
+            If the computer is in XOFF status. enter <ctrl Q> for XON.
+            Check the programming by means of ´P15´ (s. Man. 6.2.3)
+            Test the transmit line only by entering a cycle using command
+            ´Z123456´ and check in the display.
+            Test the receive line by pressing <MANU> and check in the display.
+Error:      Data transmission in the network does not function.
+Remedy: Ensure that V7 devices are connected at their own COM port.
+            Check to ensure that all devices are assigned different addresses.
+                                                                               65
+18. Trouble-shooting
+
+             Address all devices individually via the terminal using command
+             ´Gxy´. Addressed device is OK if at least ´y CR LF´ is returned as echo.
+             If transmission is still not possible, unplug the networked devices.
+             Check all devices individually on the data cable to the computer. (see
+             above)
+             Check the wiring for short-circuit or crossed wires.
+             Check that all network distributors are supplied with power.
+             Network the devices again one after the other and check succes-
+             sively. (see above)
+If, after performing the above-listed checks and remedial steps, a device still
+fails to behave as described in the operating instructions, it must be returned to
+our factory in Holzkirchen, accompanied by a brief explanatory error description
+and if available test printouts. With the ALMEMO-Control software you can print
+out screenshots showing the relevant programming details and save and / or
+print out a comprehensive 'function test' in the device list or terminal mode. .
+
+
+
+
+66
+19. DECLARATION OF CONFORMITY
+
+
+
+
+                                67
+19. Declaration of conformity
+
+
+
+
+68
+20. ANNEX
+20.1      Technical data                      (s. Man. 2.3)
+Measuring inputs               2 / 4 ALMEMO® sockets,
+                               suitable for ALMEMO® flat connectors
+                               (only digital sensors DIGI, D6, D7 sensors)
+Measuring channels             2 primary channels,
+                               maximum 9 additional channels per input
+                               for double sensors and function channels
+Sensor power supply            6 / 9 / 12 V; 0.4 A (with mains adapter 12 V)
+Outputs                        2 ALMEMO® sockets,
+                                suitable for all output modules
+Standard equipment
+Display                        Graphics, 128 x 64 pixels, 8 rows of 4 mm
+Operation                      7 keys (4 softkeys)
+Date and time-of-day           Real-time clock, buffered by device battery
+Power supply                   ALMEMO® DC socket, external 6 to 13 VDC
+Batteries                      3 AA alkaline batteries
+Mains adapter                  ZA-1312-NAx, 230 VAC to 12 VDC, min. 1 A
+Adapter cable, electr. Isol.   ZA-2690-UK, 10 - 30 VDC to 12 VDC, 0.25 A
+USB data / power cable         ZA1919-DKU5, 5 V, 0.4 A
+Current consumption            (without input and output modules)
+                               Active mode approx. 31 mA (at 4.5 V)
+                               With illumination approx. 68 mA (at 4.5 V)
+                               Sleep mode approx. 0.05 mA
+Housing                        127 x 83 x 42 mm (LxWxH)
+                               ABS (acrylonitrile butadiene styrene)
+Weight                         approx. 260 g
+Operating conditions
+Operating temperature          -10 to +50 °C Storage temp. -20 to +60 °C
+Ambient atm. humidity          10 to 90 % RH (non-condensing)
+
+
+
+
+69                                                                             69
+20. Annex
+
+20.2     Product overview
+Special measuring instrument ALMEMO® 202-S for digital sensors Order no.
+2 inputs, maximum 20 channels, 2 outputs, cascadable interface,
+7 keys, LCD graphics display, real-time clock,
+data logger via plug-in memory                                       MA 202S
+Special measuring instrument ALMEMO® 204 for digital sensors
+4 inputs, maximum 40 channels, 2 outputs, cascadable interface,
+7 keys, LCD graphics display, real-time clock,
+data logger via plug-in memory                                       MA 204
+Options:
+Multi-point calibration for ALMEMO® 202-S                            OA 202S-KL
+Multi-point calibration for ALMEMO® 204                              OA 204-KL
+Accessories:
+Plug-in memory including micro SD card and reading device            ZA 1904-SD
+Mains adapter with ALMEMO® plug, 12 V, min. 1 A                      ZA-1312-NAx
+ALMEMO® plug for external power supply, 12 V, 1 A                    ZA-1312-FS8
+DC adapter cable, 10 to 30 VDC, 12 V / 0.25 A, electrically isolated ZA-2690-UK
+ALMEMO® data cable, with USB interface, el. Isol., max. 921.6 kbaud ZA-1919-DKU
+ALMEMO® data / power cable, 5 V, USB interface, max. 921.6 kbaud ZA-1919-DKU5
+ALMEMO® data cable with V24 interface, el. Isol., max. 115.2 kbaud   ZA-1909-DK5
+ALMEMO® network cable, electrically isolated, maximum 115.2 kbaud ZA-1999-NK5
+ALMEMO® D7 adapter cable, electrically isolated, length 25 cm        ZA-D700-GT
+ALMEMO® D7 extension cable, not electrically isolated, length xx cm ZA-D700-VKxx
+ALMEMO® V6 input / output cable for triggering and limit value alarm ZA-1006-EGK
+ALMEMO® V6 relay trigger adapter (4 relays, 2 trigger inputs)        ZA-8006-RTA3
+Option 2, analog outputs, electr. isol. configurable 10 V or 20mA    OA 8006-R02
+ALMEMO® Analog output cable, electrically isolated, 1 x 20mA         ZA1601-RI
+ALMEMO® analog output cable, electrically isolated, 2 x 10V          ZA1602-RU
+
+
+
+
+70
+20.3          Index
+Accessories .............................. 70             Device configuration................... 57
+Action Max and Action Min .... 54                         Device designation ..................... 57
+Actions triggered by limit value                          Display........................................ 22
+infringement ............................... 53           Dynamic pressure ...................... 28
+additional channels .................... 21               Element flags ............................. 56
+Analog output start / end............ 54                  end date ..................................... 45
+Analog outputs ........................... 63             External DC voltage supply ........ 18
+Analog value ............................. 64             External plug-in memory ............ 40
+Analog-Anfang und -Ende ......... 64                      Factor ........................................ 50
+Analog-end ............................... 64             Fail-save mode ......................... 44
+Atmospheric                                pressure       function channels ....................... 51
+compensation............................. 28              Function keys ............................. 23
+Averaging ................................... 35          Function selection ...................... 24
+Averaging mode ......................... 48               Functions menus ........................ 34
+Averaging over a cycle............... 37                  Functions of the ALMEMO®
+Averaging over manually meas.                             202-S and ALMEMO® 204 ......... 12
+operations ................................... 36         Gain correction ........................... 49
+Averaging over measuring points                           Housing ..................................... 69
+ ................................................... 38   Hysteresis................................... 60
+Averaging over time ................... 37                Illumination ................................. 57
+Base value ................................ 50            Individual value memory ......... 34
+Battery operation ....................... 18              INF0............................................ 26
+Baud rate ................................... 58          Interface ..................................... 58
+Changing the units ..................... 50               Internal data memory ................. 40
+Channel designation .................. 47                 Introduction ................................ 11
+Configuration.............................. 60            keypad ........................................ 22
+Configuration of user menus...... 32                      KONF ........................................... 52
+Connecting sensors / transducers                          Language ................................... 57
+ ................................................... 20   Limit values ................................ 48
+Contrast ..................................... 57         Locking the sensor programming
+Controlling a measuring operation                          ................................................... 48
+ ................................................... 54   Mains operation .......................... 18
+Correction values ....................... 49              Maximum, minimum, individual
+Current output ......................... 64               value memory ............................. 34
+Cycle factor ................................ 53          Measured value display and status
+Cyclic output ............................ 30             symbols ...................................... 22
+Cyclic saving .............................. 42           Measuring channel selection...... 27
+D6 sensors ................................. 20           Measuring inputs .................. 21, 69
+D7 sensors ................................. 20           Measuring menus ....................... 27
+Data buffering ............................ 19            Measuring operation .................. 13
+Data cable .................................. 61          Measuring points list menu ........ 29
+data format ................................. 58          Memory capacity ........................ 42
+Data logger functions ................. 40                Memory card .............................. 40
+Date and time-of-day ................. 57                 memory output ........................... 42
+decimal point setting .................. 49               Memory time available ............. 45
+Declaration of conformity ........... 67                  menu selection ........................... 22
+device address ........................... 58             Minimum sensor supply ®voltage54
+71                                                                                                           71
+20. Annex
+
+Monitor mode ........................... 44              Scanning configuration............... 43
+Multi-point calibration ................. 52             Selecting the input channel ........ 47
+networking.................................. 58          Selecting the measuring range .. 50                 71
+Numbering                  of          measuring         Sensor channels ....................... 26
+operations .................................. 41         Sensor configuration .................. 52
+O2 saturation .............................. 28          Sensor display menu.................. 27
+ON ............................................... 22    Sensor list ................................. 26
+Once-only output ..................... 30                Sensor programming............ 12, 47
+Once-only saving ....................... 41              Sensor supply ............................ 19
+Operating conditions ............... 69                  Setpoint entry ............................. 39
+Operating parameters ................ 60                 Setting measured values to zeron
+Options ..................................... 70         ................................................... 28
+Order no. ................................... 70         Sleep mode ............................... 44
+Output cycle ............................... 60          sliding average ........................... 35
+Output function........................... 55            Smoothing meas. values ............ 35
+Output modules.......................... 61              Special functions ........................ 52
+Output via an interface ............ 17                  Standard delivery ......................... 8
+Plug-in memory .......................... 70             Standard equipment ................ 69
+Potential separation ................... 21              Standard sensor (V5) ................. 20
+Power supply ....................... 18, 69              Start date .................................... 45
+Process control .......................... 14            Starting and stopping measuring
+Product overview ....................... 70              operations................................... 45
+Programmed analog value output                           Switching ON / OFF ................... 19
+................................................... 64   Technical data ............................ 69
+psychrometer ............................. 28            Time constant ............................. 36
+Putting into service .................... 17             To enter data .............................. 24
+Reference channels ................... 55                Trigger inputs ........................... 62
+Relay addressing - inverted .... 62                      Trouble-shooting ........................ 65
+Relay assignment ...................... 53               Two-point adjustment ................. 39
+Relay trigger modules ................ 61                U-Sensor Min............................. 55
+Safety instructions ....................... 9            User menu U2 - data logger ....... 29
+Sampling rate ............................. 59           Usermenus ................................. 31
+save-to-memory activation ..... 43                       Volume flow measurement ......... 38
+Scaling ................................. 39, 49         Warranty ....................................... 7
+Scaling the analog output ....... 64                     Waste disposal ............................. 8
+Scan cycle.................................. 59          Zero-point correction .................. 49
+Scan mode ................................. 43
+
+
+
+
+72
+Notes
+
+
+
+
+  73
+Notes
+20. Annex
+
+
+
+
+74
+                                          0Your contact
+
+YOUR CONTACT
+AHLBORN Mess- und Regelungstechnik GmbH
+Eichenfeldstraße 1
+83607 Holzkirchen
+Germany
+
+internet : http://www.ahlborn.com
+e-mail : amr@ahlborn.com
+
+
+
+
+                                                    75
+0Your contact
+
+
+
+
+         Despite great care, incorrect information cannot be ruled out.
+                       Technical changes are reserved.
+76
+

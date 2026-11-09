@@ -1,0 +1,14 @@
+[Unit]
+Description=Messkluppe-Display-Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 -u display.py
+WorkingDirectory=/home/pi/Flask_Messkluppe
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+FROM python:3.12-slim-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git ninja-build pkg-config ca-certificates curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir cmake==3.31.6
+COPY scripts/build-camera-onnx-xnnpack.sh /usr/local/bin/
+RUN bash /usr/local/bin/build-camera-onnx-xnnpack.sh /work
+
+FROM scratch
+COPY --from=builder /work/wheels /wheels

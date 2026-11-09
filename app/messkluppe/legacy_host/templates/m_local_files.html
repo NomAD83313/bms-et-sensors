@@ -1,0 +1,282 @@
+{% extends "index.html" %}
+
+{% block page_title %}Local Files{% endblock %}
+{% block extra %}
+<!--
+Weitere Scrips:
+    Tabelle sortieren:
+    http://github.hubspot.com/sortable/
+-->
+
+
+
+<link rel="stylesheet" href="{{ url_for('serveStaticResource', resource='css/sortable-theme-bootstrap.css') }}">
+<script src="{{ url_for('serveStaticResource', resource='js/sortable.min.js')}}"></script>
+<script src="{{ url_for('serveStaticResource', resource='js/jquery.validate.js')}}"></script>
+
+<link rel="stylesheet" href="{{ url_for('serveStaticResource', resource='css/dropzone.css') }}">
+<script src="{{ url_for('serveStaticResource', resource='js/dropzone.js')}}"></script>
+
+
+<!--script src="https://rawgit.com/enyo/dropzone/master/dist/dropzone.js"></script>
+<link rel="stylesheet" href="https://rawgit.com/enyo/dropzone/master/dist/dropzone.css"-->
+
+<style>
+.dropzone {
+    border: 2px dashed #0087F7;
+    border-radius: 5px;
+    background: #e6ffff;
+}
+</style>
+
+<script>
+    
+</script>
+
+<div class="row">
+    <div class="col-lg-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                File List
+            </div>
+            <!-- /.panel-heading -->
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered table-hover sortable-theme-bootstrap" data-sortable>
+                        <thead>
+                            <tr>
+                                <th><p class="fa fa-unsorted"></p> Name</th>
+                                <th data-sortable="false">Remark</th>
+                                <th><p class="fa fa-unsorted"></p> Lines</th>
+                                <th><p class="fa fa-unsorted"></p> Created</th>
+                                <th data-sortable="false">Show</th>
+                                <th data-sortable="false">MDX/ Speed</th>
+                                <th data-sortable="false">Download CSV</th>
+                                <th data-sortable="false">Delete</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for file in files %}
+                            <tr>
+                                <td>{{file[2]}}</td>
+                                <td>{{file[6]|truncate(100,true,'...')}}</td>
+                                <td>{{file[3]}}</td>
+                                <td>{{file[4]}}</td>
+                                <td>
+                                    <a href="{% if not file[1]  or not file[5] %}#{%else%}/local_file_time/{{file[0]}}{%endif%}">
+                                        <button type="button" class="btn btn-info btn-circle " {% if not file[1]  or not file[5] %}disabled{%endif%}><i class="fa fa-bar-chart-o"></i></button>
+                                    </a>
+                                    <a href="{% if not file[1]  or not file[5] %}#{%else%}/local_file_filtered/{{file[0]}}{%endif%}">
+                                        <button type="button" class="btn btn-info btn-circle " {% if not file[1]  or not file[5] %}disabled{%endif%}><i class="fa fa-filter"></i></button>
+                                    </a>
+                                    <a href="{% if not file[1]  or not file[5] %}#{%else%}/local_file_mdx/{{file[0]}}{%endif%}">
+                                        <button type="button" class="btn btn-info btn-circle " {% if not file[1]  or not file[5] %}disabled{%endif%}><i class="fa fa-fast-forward"></i></button>
+                                    </a>
+                                </td>
+                                <td><button data-toggle="modal" data-target="#mdx" data-filename = "{{file[2]}}" data-id = "{{file[0]}}" type="button" class="btn btn-info btn-circle" onclick=""><i class="fa fa-gears"></i></button></td>
+                                <td><a href="{{ url_for('serveStaticResource', resource='_csv/'+file[2] )}}" target="_blank"><img src="{{ url_for('serveStaticResource', resource='images/icons8-csv-26.png')}}"></a></td>
+                                <td><button  data-toggle="modal" data-target="#delete" data-filename = "{{file[2]}}" data-fileid="{{file[0]}}" type="button" class="btn btn-danger btn-circle"><i class="fa fa-times"></i></button></td>
+                            </tr>
+                        {% endfor %}
+  
+                        </tbody>
+                    </table>
+                </div>
+                <!-- /.table-responsive -->
+            </div>
+            <!-- /.panel-body -->
+        </div>
+        <!-- /.panel -->
+    </div>
+    <!-- /.col-lg-6 -->
+   
+</div>
+
+<!-- Modal Delete-->
+<div class="modal fade" id="delete" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="static">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title" id="myModalLabel">Delete Local File</h4>
+      </div>
+      <div class="modal-body">
+       
+        <span class="font-weight-normal">Are you sure you want to permanently delete the file </span>
+        <span id="del_name" class="font-weight-normal"></span>
+       <span class="font-weight-normal">?</span>
+       
+      </div>
+      <div class="modal-footer">
+        <button id="del_confirm" type="button" class="btn btn-danger" data-dismiss="modal" >Delete File</button>
+        <button id="del_close" type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Add MDX-->
+<div class="modal fade" id="mdx" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" data-backdrop="static">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title" id="myModalLabel">Add MDX File</h4>
+      </div>
+      <div class="modal-body">
+        <div class="container-fluid">
+            <div class="row">
+
+                    <div class="col-sm-3">
+                        <div class ="row">
+                            <h4>Lisim inlet speed</h4>
+                            <hr></hr>
+                            <input type="number" step="0.0001" id="mdx_inletSpeed" name="mdx_inletSpeed" value="" class=""> m/min
+                            <h4>Remark</h4>
+                            <hr></hr>
+                            <textarea rows="4" cols="29" id ="local_file_remark" name = "local_file_remark" ></textarea>
+
+                            
+                            
+                            
+                        </div>
+                        <div class ="row">
+                            <h4>Upload new MDX file</h4>
+                            <hr></hr>
+                            <form action="/mdx_upload" method="POST" class="dropzone" enctype = "multipart/form-data"></form>
+                        </div>
+                        
+                    </div>
+                    <div class="col-sm-9">
+                        <h4>Select MDX</h4>
+                        <hr></hr>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-bordered table-hover sortable-theme-bootstrap" data-sortable id="mdx_select">
+                                <thead>
+                                    <tr>
+                                        <th data-sortable="false">#</th>
+                                        <th><p class="fa fa-unsorted"></p> Filename</th>
+                                        <th><p class="fa fa-unsorted"></p> Name</th>
+                                        <th><p class="fa fa-unsorted"></p> Modified</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                          
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                
+            </div>
+        </div>
+       
+      </div>
+      <div class="modal-footer">
+        <button id="mdx_confirm" class="btn btn-success">Save Settings</button>
+        <button id="mdx_close" type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$('#delete').on('show.bs.modal', function (event) {
+    var button = $(event.relatedTarget) // Button that triggered the modal
+    var recipient = button.data('filename') // Extract info from data-* attributes
+    var fileid = button.data('fileid') // Extract info from data-* attributes
+    // If necessary, you could initiate an AJAX request here (and then do the updating in a callback).
+    // Update the modal's content. We'll use jQuery here, but you could use a data binding library or other methods instead.
+    var modal = $(this)
+    modal.find('#del_name').text(recipient);
+    
+    $('#del_confirm').click(function() {
+    console.log(fileid)
+    $.getJSON("/local_file_delete/"+fileid, function(result){
+            if (result.result == true){
+                 button.closest('tr').remove(); 
+            }else{
+
+            }
+        });
+    });
+});
+
+$("#mdx_upload").dropzone({ url: "/file/post" });
+
+$('#mdx').on('show.bs.modal', function (event) {
+    var button = $(event.relatedTarget) // Button that triggered the modal
+    var recipient = button.data('id') // Extract info from data-* attributes
+    $('#mdx_select > tbody').empty();
+    $.getJSON("/mdx_select", function(result){
+        result.forEach(function(e){
+            $('#mdx_select').append(
+                '<tr><td><input type="radio" name="mdx" value="'+e[0]+'" id="mdx_selected_'+e[0]+'"></td><td>'+e[2]+'</td><td>'+e[1]+'</td><td>'+e[3]+'</td></tr>'
+            );
+        });  
+    });
+    $.getJSON("/mdx_selected/"+recipient, function(result){
+        result.forEach(function(e){
+            $("#mdx_selected_"+e[0]).prop("checked", true);
+            $("#mdx_inletSpeed").val(e[1]);
+            $("#local_file_remark").val(e[2]);
+            console.log(e);
+        });
+    });
+    $('#mdx_confirm').click(function(){
+        var valid = true;
+        $("input:radio").each(function(){
+            var name = $(this).attr("name");
+            if($("input:radio[name="+name+"]:checked").length == 0){
+                $("#mdx_select > thead > tr").addClass("danger");
+                valid = false;
+                console.log("select mdx");
+            }
+        });
+        
+        if(!$("#mdx_inletSpeed").val()){
+            $("#mdx_inletSpeed").css('border-color', 'red');
+            valid = false;
+        }
+            
+        
+        if (valid){
+             $("#mdx_select > thead > tr").removeClass("danger");
+             $("#mdx_inletSpeed").css('border-color', '');
+             
+            var radio = $("#mdx input[type='radio']:checked").val();
+            var speed =$("#mdx_inletSpeed").val();
+            var remark =$("#local_file_remark").val();
+              
+            $.getJSON("/mdx_save/"+recipient+"/"+radio+"/"+speed+"/'"+remark+"'", function(result){
+                if (result == true){
+                    
+                     $('#mdx').modal('toggle');
+                     document.location.reload(true);
+                     
+                }else{
+                    console.log(result);
+                }
+            });
+            
+        }else{
+            
+        }    
+    });
+});
+
+$(function() {
+  // Now that the DOM is fully loaded, create the dropzone, and setup the
+  // event listeners
+  var myDropzone = new Dropzone(".dropzone");
+  myDropzone.on("success", function(file) {
+    $('#mdx').modal('show');
+  });
+})
+
+</script>
+
+    
+
+
+{% endblock %}
+
