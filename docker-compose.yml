@@ -14,6 +14,8 @@ services:
     environment: &camera-environment
       TZ: UTC
       CAMERA_URL: ${CAMERA_URL:-}
+      CAMERA_NAME: Camera WiFi
+      CAMERA_DESCRIPTION: Thingino network camera
       RECORDING_DIR: /recordings
       CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
       CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
@@ -41,6 +43,7 @@ services:
       <<: *camera-environment
       DASHBOARD_HOST: 0.0.0.0
       DASHBOARD_PORT: ${CAMERA_DASHBOARD_PORT:-8082}
+      CAMERA_PREVIEW_PATH: ${CAMERA_PREVIEW_PATH:-/ch1}
     volumes:
       - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/recordings
       - ./runtime/cameras/control:/control

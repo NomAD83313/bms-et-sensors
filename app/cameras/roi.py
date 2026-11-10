@@ -60,7 +60,7 @@ def roi_bounds(source_width, source_height, roi):
 
 
 def roi_input_dimensions(input_size, source_width, source_height, roi):
-    """Fit the crop aspect inside the selected model-input bounds."""
+    """Shrink the crop to the model-input bounds without enlarging source pixels."""
     try:
         from .anomaly_control import input_dimensions
     except ImportError:
@@ -71,7 +71,7 @@ def roi_input_dimensions(input_size, source_width, source_height, roi):
     if roi is None:
         return maximum_width, maximum_height
     crop_width, crop_height = bounds[2] - bounds[0], bounds[3] - bounds[1]
-    scale = min(maximum_width / crop_width, maximum_height / crop_height)
+    scale = min(1, maximum_width / crop_width, maximum_height / crop_height)
     width = min(maximum_width, max(1, round(crop_width * scale)))
     height = min(maximum_height, max(1, round(crop_height * scale)))
     if min(width, height) < 32:

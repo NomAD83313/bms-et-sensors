@@ -36,6 +36,17 @@ class AnomalyControlTests(unittest.TestCase):
                 with self.subTest(action=action, threshold=threshold), self.assertRaises(ValueError):
                     anomaly_control.request(action, threshold)
 
+    def test_learning_time_is_validated_and_stored_with_the_command(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for seconds in anomaly_control.LEARNING_SECONDS:
+                command = anomaly_control.request('learn', learning_seconds=seconds)
+                self.assertEqual(command['learning_seconds'], seconds)
+            saved = anomaly_control.read_json(Path(directory) / 'command.json')
+            for value in (0, 30, 300, 120.0, '120', True):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('learn', learning_seconds=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), saved)
+
     def test_configure_accepts_values_above_old_limit_without_starting_detection(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
             result = anomaly_control.request('configure', 8.5)

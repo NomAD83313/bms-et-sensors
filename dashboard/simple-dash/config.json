@@ -63,7 +63,7 @@
           "probe": "/probe/influx"
         },
         {
-          "alt": "Cameras",
+          "alt": "Camera WiFi",
           "icon": "fas fa-video",
           "link": "/cameras/",
           "probe": "/probe/cameras"

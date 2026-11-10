@@ -16,6 +16,14 @@ class StopLoop(BaseException):
     pass
 
 
+class FakeModelGeometry:
+    input_size = anomaly_control.DEFAULT_INPUT_SIZE
+    model_key = anomaly_control.DEFAULT_MODEL
+
+    def set_input_size(self, size):
+        self.input_size = size
+
+
 class WorkerTimingTests(unittest.TestCase):
     def test_iteration_waits_only_for_remaining_detection_or_learning_interval(self):
         for elapsed, learning, expected_wait in ((.4, False, 0), (.05, False, .15), (.4, True, 1.6)):
@@ -24,11 +32,12 @@ class WorkerTimingTests(unittest.TestCase):
                 (root / 'baseline.pt').write_bytes(b'baseline')
                 anomaly_control.write_json(root / 'session.json', dict(monitoring=True))
                 if learning:
-                    anomaly_control.write_json(root / 'command.json', dict(id='learn-timing', action='learn'))
+                    anomaly_control.write_json(root / 'command.json', dict(
+                        id='learn-timing', action='learn', learning_seconds=180))
                 clock = [100.]
                 received = []
 
-                class Model:
+                class Model(FakeModelGeometry):
                     memory = None
                     baseline_frames = 60
                     threshold = 1
@@ -60,6 +69,8 @@ class WorkerTimingTests(unittest.TestCase):
                     self.assertEqual(state['inference_ms'], round(elapsed * 1000))
                     self.assertEqual(state['analysis_interval_sec'], 2 if learning else .2)
                     self.assertEqual(state['collected'], 1 if learning else 0)
+                    self.assertEqual(state['target'], 90 if learning else 60)
+                    self.assertEqual(state['learning_seconds'], 180 if learning else 120)
 
 
 class WorkerFrameQualityTests(unittest.TestCase):
@@ -70,7 +81,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
             jpeg = b'\xff\xd8full-sensor-jpeg\xff\xd9'
             received, fitted = [], []
 
-            class Model:
+            class Model(FakeModelGeometry):
                 memory = None
                 baseline_frames = 0
                 threshold = 1
@@ -89,7 +100,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                 worker = load_isolated_module('app.cameras.anomaly_worker', {
                     'control': control, 'anomaly_control': anomaly_control, 'patchcore_lite': module})
                 def fetch(url, **kwargs):
-                    self.assertIn('fresh=1&analysis=1', url)
+                    self.assertIn('?analysis=1', url)
                     response = io.BytesIO(jpeg)
                     response.headers = {'X-Camera-Analysis-Source': worker.ANALYSIS_SOURCE}
                     return response
@@ -109,7 +120,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
             root = Path(directory)
             (root/'baseline.pt').write_bytes(b'baseline')
             anomaly_control.write_json(root/'session.json', dict(monitoring=True))
-            class Model:
+            class Model(FakeModelGeometry):
                 memory = None
                 baseline_frames = 60
                 def load(self, path): self.memory = True
@@ -133,7 +144,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
             anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=1))
             jpeg = b'\xff\xd8original-full-resolution-jpeg\xff\xd9'
 
-            class Model:
+            class Model(FakeModelGeometry):
                 memory = None
                 baseline_frames = 60
                 threshold = 1
@@ -156,7 +167,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                 worker = load_isolated_module('app.cameras.anomaly_worker', {
                     'control': control, 'anomaly_control': anomaly_control, 'patchcore_lite': model_module})
                 def fetch(url, **kwargs):
-                    self.assertIn('?fresh=1&analysis=1', url)
+                    self.assertIn('?analysis=1', url)
                     response = io.BytesIO(jpeg)
                     response.headers = {'X-Camera-Analysis-Source': worker.ANALYSIS_SOURCE}
                     return response
@@ -178,7 +189,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                 event = json.loads(metadata[0].read_text())
                 self.assertEqual((root / 'events' / event['image']).read_bytes(), jpeg)
                 self.assertEqual((root / 'events' / event['heatmap']).read_bytes(), b'full-resolution-heatmap')
-                render.assert_called_once_with(jpeg, 'distances', 1)
+                render.assert_called_once_with(jpeg, 'distances', 1, roi=None)
 
     def test_error_arriving_during_inference_cannot_create_event_or_learning_sample(self):
         for learning in [False, True]:
@@ -190,7 +201,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                     anomaly_control.write_json(root / 'command.json', dict(id='learn', action='learn', multiplier=1))
                 calls = []
 
-                class Model:
+                class Model(FakeModelGeometry):
                     memory = None
                     baseline_frames = 60
                     threshold = 1
@@ -209,7 +220,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                     worker = load_isolated_module('app.cameras.anomaly_worker', dependencies)
 
                     def fetch(url, **kwargs):
-                        if '?fresh=1' in url:
+                        if '?analysis=1' in url:
                             response = io.BytesIO(b'\xff\xd8jpeg\xff\xd9')
                             response.headers = {'X-Camera-Frame-Token': 'original-token',
                                                 'X-Camera-Analysis-Source': worker.ANALYSIS_SOURCE}
@@ -233,6 +244,35 @@ class WorkerFrameQualityTests(unittest.TestCase):
 
 
 class WorkerResizeTests(unittest.TestCase):
+    def test_saved_full_frame_input_restores_effective_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            anomaly_control.write_json(root / 'session.json', dict(input_size='1920x1080'))
+
+            class Model(FakeModelGeometry):
+                memory = None
+                baseline_frames = 0
+                effective_input_size = (768, 432)
+
+                def set_input_size(self, size):
+                    super().set_input_size(size)
+                    self.effective_input_size = anomaly_control.input_dimensions(size)
+
+            model_module = types.ModuleType('patchcore_lite')
+            model_module.PatchCoreLite, model_module.overlay = Model, Mock()
+            with patch.object(anomaly_control, 'DATA', root), \
+                    patch.object(control, 'CONTROL', root / 'control'):
+                worker = load_isolated_module('app.cameras.anomaly_worker', {
+                    'control': control, 'anomaly_control': anomaly_control,
+                    'patchcore_lite': model_module})
+                with patch.object(worker.time, 'sleep', side_effect=StopLoop):
+                    with self.assertRaises(StopLoop):
+                        worker.main()
+            state = anomaly_control.read_json(root / 'status.json')
+            self.assertEqual(state['input_size'], '1920x1080')
+            self.assertEqual((state['effective_input_width'], state['effective_input_height']),
+                             (1920, 1080))
+
     def test_size_change_requires_new_learning_and_persists_across_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -241,7 +281,7 @@ class WorkerResizeTests(unittest.TestCase):
             anomaly_control.write_json(root / 'command.json', dict(id='resize-1', action='resize', input_size='1024x576'))
             loads = []
 
-            class Model:
+            class Model(FakeModelGeometry):
                 def __init__(self):
                     self.memory = None
                     self.baseline_frames = 0
@@ -277,10 +317,10 @@ class WorkerResizeTests(unittest.TestCase):
                     self.assertEqual(state['multiplier'], 8.5)
                     self.assertFalse(control.enabled())
                 self.assertEqual(len(loads), 1)
-                self.assertEqual((root / 'baseline.pt').read_bytes(), b'old-baseline')
+                self.assertFalse((root / 'baseline.pt').exists())
 
 
-class WorkerMigrationTests(unittest.TestCase):
+class WorkerConfigurationChangeTests(unittest.TestCase):
     def test_model_command_pauses_and_persists_independent_model_layout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -290,7 +330,7 @@ class WorkerMigrationTests(unittest.TestCase):
             anomaly_control.write_json(root / 'command.json', dict(id='switch-model',
                 action='model', model_key='mobilenetv3', multiplier=1.25))
             anomaly_control.write_json(root / 'video-trigger.json', dict(id='old-event'))
-            class Model:
+            class Model(FakeModelGeometry):
                 model_key = 'resnet-fp32'
                 memory = None
                 baseline_frames = 60
@@ -320,9 +360,9 @@ class WorkerMigrationTests(unittest.TestCase):
                     self.assertEqual(status['confirmation_frames'], 3)
                 self.assertEqual(anomaly_control.read_json(root / 'session.json')['model_key'], 'mobilenetv3')
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
-                self.assertEqual((root / 'baseline.pt').read_bytes(), b'previous-baseline')
+                self.assertFalse((root / 'baseline.pt').exists())
 
-    def test_encoder_change_preserves_settings_and_requires_new_learning(self):
+    def test_encoder_change_discards_baseline_and_requires_new_learning(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'baseline.pt').write_bytes(b'previous-encoder-baseline')
@@ -331,7 +371,7 @@ class WorkerMigrationTests(unittest.TestCase):
             anomaly_control.write_json(root / 'command.json', dict(id='learn-previous', action='learn'))
             anomaly_control.write_json(root / 'video-trigger.json', dict(id='previous-event'))
             loads = []
-            class Model:
+            class Model(FakeModelGeometry):
                 memory = None
                 baseline_frames = 0
                 def load(self, path):
@@ -357,7 +397,7 @@ class WorkerMigrationTests(unittest.TestCase):
                     self.assertFalse(control.enabled())
                 self.assertEqual(len(loads), 1)
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
-                self.assertEqual((root / 'baseline.pt').read_bytes(), b'previous-encoder-baseline')
+                self.assertFalse((root / 'baseline.pt').exists())
 
 
 
@@ -369,7 +409,7 @@ class WorkerConfirmationTests(unittest.TestCase):
             anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=8.5))
             anomaly_control.write_json(root / 'command.json', dict(id='confirm-1', action='confirmation', confirmation_frames=1))
 
-            class Model:
+            class Model(FakeModelGeometry):
                 memory = None
                 baseline_frames = 60
                 threshold = 1

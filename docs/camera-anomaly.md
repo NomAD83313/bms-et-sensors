@@ -13,8 +13,9 @@ keeps its separate recording controls; retention and live preview remain indepen
 1. Point the camera at a fixed scene with normal conditions. Choose a model,
    maximum input size and optionally an analysis area (ROI). Apply any changes
    before learning.
-2. Select **Learn normal view · 2 min**. Keep the view normal while 60 frames
-   are collected, one every two seconds. Successful learning replaces the
+2. Select a **Learning time** from 1–4 minutes, then select **Learn normal view**.
+   Keep the view normal while 30–120 frames are collected, one every two seconds.
+   Successful learning replaces the
    previous baseline and starts detection. In anomaly mode, the recording buffer
    is stopped during learning and starts after learning succeeds. Pause cancels collection.
 3. Introduce an obvious temporary scene change and observe the score and badge.
@@ -35,23 +36,21 @@ Pi snapshot mode uses the selected capture resolution (including 3280x2464).
 The browser receives a separate 960x540 preview. Frames with other aspect ratios
 fit inside that canvas with black bars, preserving the complete field of view.
 Native Pi snapshot previews are resized lazily and cached; analysis and recording
-retain the source JPEG. Video still uses a single FFmpeg decoder split into a
-browser JPEG and a full-size JPEG.
+retain the source JPEG. Pi video uses its full-size decoder output for analysis
+and resizes it only when serving the browser. A WiFi camera can use its main
+stream for analysis and a separate substream for the browser.
 
 Learning and detection request
-`/api/live.jpg?fresh=1&analysis=1`. The dashboard returns the full source JPEG with
+`/api/live.jpg?analysis=1`. The dashboard returns the full source JPEG with
 an `X-Camera-Analysis-Source: original-v1` header and decoder-generation token.
 The model decodes this original, crops the selected ROI if enabled, and resizes
 directly to the effective model input. The worker
 rejects a missing source marker, incomplete JPEG, a response above 16 MiB, or a
 decoder token invalidated during inference. Event snapshots and overlays use the
 same full-size analysis JPEG; no later snapshot is requested for an event.
-
-The existing frame-ID lookup remains available for diagnostics. Its cache is
-limited to 32 requested frames and 64 MiB; IDs expire after 15 seconds and all
-cached originals are invalidated on decoder errors. Full-size video JPEG encoding
-adds CPU work, and decoding a full JPEG before model resizing costs more than
-reading the old preview. It avoids enlarging an already reduced image.
+Full-size video JPEG encoding adds CPU work, and decoding a full JPEG before
+model resizing costs more than reading the browser preview. It avoids enlarging
+an already reduced image.
 
 The latest 100 events (JPEG, heatmap and JSON metadata) are retained. Completed event videos use the ordinary video retention policy. The recorder
 discards ordinary temporary buffer segments only in event-only mode.
@@ -135,7 +134,8 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_INTERVAL_SEC=0.2`: detection interval, minimum 0.2 seconds; effective rate is bounded
   by inference and decoder availability.
 - `CAMERA_ANOMALY_CONFIRM_FRAMES=2`: consecutive suspicious frames to confirm, clamped to 1–5.
-- `CAMERA_ANOMALY_NORMAL_FRAMES=60`: clamped to 20–120 successful frames.
+- `CAMERA_ANOMALY_NORMAL_FRAMES=60`: startup default, clamped to 20–120 successful
+  frames. The 1–4 minute UI selection stores 30, 60, 90 or 120 frames for later runs.
 - `CAMERA_DASHBOARD_PORT=8082`: also configures the worker's internal preview URL.
 - `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: `onnx` or `torch`.
 - `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `torch`.
@@ -186,7 +186,7 @@ acquisition, decoder-token validation, event rendering and video recording.
 ```sh
 TASK_TEST_DIR="$PWD/runtime/camera-inference-test"
 mkdir -p "$TASK_TEST_DIR"
-curl -fsS 'http://127.0.0.1:8083/api/live.jpg?fresh=1&analysis=1' -o "$TASK_TEST_DIR/frame.jpg"
+curl -fsS 'http://127.0.0.1:8083/api/live.jpg?analysis=1' -o "$TASK_TEST_DIR/frame.jpg"
 docker run --rm --network none --cpus 4 \
   -v "$PWD:/work:ro" -v "$TASK_TEST_DIR:/bench" -w /work \
   bms-camera-anomaly:local python scripts/benchmark-camera-engines.py \
@@ -195,7 +195,7 @@ docker run --rm --network none --cpus 4 \
 
 Add `--providers cpu xnnpack` when using the XNNPACK wheel.
 
-A two-minute window baseline covers only the current conditions. Clouds, daylight,
+A 1–4 minute baseline covers only the conditions present during that run. Clouds, daylight,
 reflections, curtains and a moved camera can trigger novelty. Relearn when changing
 camera position or scene. For a production line, collect representative normal
 cycles and separate validation footage, choose an ROI, check missed anomalies and
@@ -247,13 +247,10 @@ waiting for its remaining post-window. Live preview remains available.
 Starting again fills a new pre-event buffer; the requested seven-second context
 is available only after enough video has arrived. The worker restores linked
 recording from the saved monitoring selection on restart. Threshold changes do
-not start or stop the session. Legacy recording start/stop API routes also
-request monitor/pause in anomaly mode.
+not start or stop the session.
 
 The library's **Events only** filter is selected by default in anomaly mode.
-It shows event video and any historical unchecked video; uncheck it to see historical continuous
-recordings. Switching modes does not retroactively classify or delete old
-continuous recordings. Video links appear on snapshot cards once remuxing
+Uncheck it to see continuous recordings. Video links appear on snapshot cards once remuxing
 finishes after the post-window. A hand test shorter than the detector's
 two-sample confirmation may not create an event.
 
@@ -284,8 +281,8 @@ model inference, distance search and frame availability; the sampling target doe
 not guarantee 5 FPS. Camera/RTSP latency is additional.
 The worker waits only for the unused part of the target interval. If processing
 already exceeds that interval, it starts the next iteration without an extra pause.
-The UI polls analysis every 0.25 seconds. Normal-view learning still samples
-one frame every two seconds to preserve the two-minute baseline coverage.
+The UI polls analysis every 0.25 seconds. Normal-view learning samples one frame
+every two seconds for the selected 1–4 minute duration.
 The 30-second snapshot cooldown applies within a continuing anomaly; a new
 confirmed anomaly after a normal sample can save a new snapshot immediately.
 
@@ -330,8 +327,10 @@ need a larger maximum input or a wider selection.
 
 With an ROI, **Maximum input** selects the bounding dimensions of the model tensor.
 The crop keeps its own aspect ratio rather than being stretched to 16:9. For example,
-the 768x432 maximum produces 576x432 for a 4:3 crop, 432x432 for a square crop, or
-approximately 346x432 for a 4:5 crop. The status shows the actual input dimensions
+the 768x432 maximum reduces larger crops to 576x432 for 4:3, 432x432 for a square,
+or approximately 346x432 for 4:5. Smaller crops retain their native pixel dimensions:
+a 1722x1051 crop stays 1722x1051 with a 1920x1080 maximum. ROI pixels are never
+upscaled. The status shows the actual input dimensions
 and heatmap grid. Rounding to whole pixels can introduce a small aspect difference.
 Without an ROI, the selected full-frame preset dimensions are used directly.
 
@@ -339,6 +338,7 @@ Apply the final area and maximum input, then select **Learn normal view**. Apply
 a different ROI pauses detection and event-only recording, clears the confirmation
 streak and requires new normal-view learning. Changing source dimensions also
 invalidates the baseline. No new learning starts automatically.
+Baselines saved with enlarged ROI dimensions are rejected and require new learning.
 
 All baselines use format version 6 and record the normalized ROI (or full frame),
 `roi-original-aspect-v1` preprocessing revision, source dimensions and effective
@@ -382,10 +382,10 @@ and live preview remain available independently.
 Without an ROI, the full analysis image is resized to the selected width and height.
 A 16:9 source keeps its proportions; other full-frame aspect ratios retain the
 existing resize behavior. An enabled ROI is cropped first and fitted to the
-selected bounds while preserving its own proportions. Camera
+selected bounds while preserving its own proportions, without upscaling. Camera
 capture/recording resolution remains independent. Both video and snapshot analysis use
-the full source JPEG directly. Inputs larger than the source image still upscale
-it without adding detail. Event snapshots and overlays use the matched
+the full source JPEG directly. Full-frame inputs larger than the source image still
+upscale it without adding detail; an enabled ROI never does. Event snapshots and overlays use the matched
 full-size source frame, independently of this analysis-input limit.
 Higher presets increase CPU, memory and latency.
 Pairwise patch distances are computed in bounded batches. Training selects its
@@ -523,7 +523,8 @@ it for each photograph. Snapshots use the source's configured capture resolution
 The recorder keeps a time-bounded disk ring under `.snapshot-buffer/` and protects
 pre/post-event JPEGs with hard links. At event completion, a background single
 FFmpeg worker encodes H.264 MKV, using timestamps to preserve elapsed time and the
-selected nominal snapshot FPS. There are at most two queued exports plus the
+selected nominal snapshot FPS. The export timeout scales with frame count, up to
+one hour for long, high-resolution events. There are at most two queued exports plus the
 current event; long events split at 300 seconds. Normal frames expire after
 pre-window + post-window + 10 seconds. Protected JPEGs and metadata survive an
 interrupted export and are retried at recorder restart; failed exports retain raw

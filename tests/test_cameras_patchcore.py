@@ -36,8 +36,8 @@ class PatchMemoryTests(unittest.TestCase):
         second = model._image(self._roi_jpeg(change_outside=True))
         torch.testing.assert_close(first, second, rtol=0, atol=0)
         self.assertEqual(model.source_size, (320, 240))
-        self.assertEqual(model.effective_input_size, (576, 432))
-        self.assertEqual(tuple(first.shape), (1, 3, 432, 576))
+        self.assertEqual(model.effective_input_size, (160, 120))
+        self.assertEqual(tuple(first.shape), (1, 3, 120, 160))
         model.set_roi(None)
         self.assertEqual(tuple(model._image(self._roi_jpeg()).shape), (1, 3, 432, 768))
 
@@ -128,7 +128,7 @@ class PatchMemoryTests(unittest.TestCase):
                 reference.set_roi(roi)
                 fast.set_roi(roi)
                 expected, actual = reference.features(jpeg), fast.features(jpeg)
-                self.assertEqual(fast.effective_input_size, (411, 432))
+                self.assertEqual(fast.effective_input_size, (160, 168))
                 heat_width, heat_height = heatmap_dimensions(*fast.effective_input_size, key)
                 self.assertEqual(tuple(actual.shape), (heat_width * heat_height, profile['dimensions']))
                 self.assertEqual(actual.shape, expected.shape)
@@ -154,7 +154,7 @@ class PatchMemoryTests(unittest.TestCase):
             self.assertEqual(artifact['roi'], roi)
             self.assertEqual(artifact['roi_preprocessing'], 'roi-original-aspect-v1')
             self.assertEqual(tuple(artifact['source_size']), (320, 240))
-            self.assertEqual(tuple(artifact['effective_input_size']), (576, 432))
+            self.assertEqual(tuple(artifact['effective_input_size']), (160, 120))
             restored = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx')
             restored.set_roi(roi)
             restored.load(path)
@@ -168,6 +168,7 @@ class PatchMemoryTests(unittest.TestCase):
             self.assertIs(restored.memory, restored_memory)
             before = path.read_bytes()
             for changed in ({'roi_preprocessing': 'old-roi-preprocessing'},
+                            {'effective_input_size': (576, 432)},
                             {'effective_input_size': (768, 432)}, {'source_size': (0, 240)}):
                 torch.save(dict(artifact, **changed), path)
                 corrupted = path.read_bytes()

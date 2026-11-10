@@ -12,10 +12,10 @@ function render() {
     const td = document.createElement('td');
     const title = document.createElement('div'); title.className = 'record-name';
     const icon = document.createElement('span'); icon.className = 'clip-icon'; icon.textContent = '▷';
-    const label = document.createElement('div'); label.textContent = c.kind === 'event' ? 'Anomaly event' : c.kind === 'unclassified' ? 'Unchecked · analysis unavailable' : c.name === 'connection-check.mkv' ? 'Connection check' : cameraName + ' · Main stream';
+    const label = document.createElement('div'); label.textContent = c.kind === 'event' ? 'Anomaly event' : c.name === 'connection-check.mkv' ? 'Connection check' : cameraName + ' · Main stream';
     const filename = document.createElement('small'); filename.textContent = c.name; label.append(filename); title.append(icon,label); td.append(title); tr.append(td);
     for (const text of [datetime(c.timestamp), size(c.bytes)]) { const cell = document.createElement('td'); cell.textContent = text; tr.append(cell); }
-    const saved = document.createElement('td'); saved.className = 'saved'; saved.textContent = c.kind === 'unclassified' ? '● Unchecked' : '● Saved'; tr.append(saved);
+    const saved = document.createElement('td'); saved.className = 'saved'; saved.textContent = '● Saved'; tr.append(saved);
     const actions = document.createElement('td'); const box = document.createElement('div'); box.className = 'row-actions';
     const play = document.createElement('button'); play.textContent = '▷ Play'; play.onclick = () => openClip(c);
     const download = document.createElement('a'); download.textContent = '↓ Download'; download.href = 'api/download/' + encodeURIComponent(c.name);
@@ -76,7 +76,7 @@ function preview() {
   const started = performance.now();
   const next = new Image();
   next.onload = () => { if (paused || document.hidden) return; $('live').src=next.src; $('live').hidden=false; $('live-message').hidden=true; $('live-badge').textContent='LIVE'; liveFailures=0; timer=setTimeout(preview,Math.max(0,100-(performance.now()-started))); };
-  next.onerror = () => { liveFailures++; $('live-badge').textContent='RECONNECTING'; $('live-message').textContent='Live preview unavailable. Reconnecting…'; $('live-message').hidden=false; timer=setTimeout(preview,4000); };
+  next.onerror = () => { liveFailures++; $('live-badge').textContent='RECONNECTING'; $('live-message').textContent='Live preview unavailable. Reconnecting…'; $('live-message').hidden=false; timer=setTimeout(preview,1000); };
   next.src='api/live.jpg?t='+Date.now();
 }
 function openClip(c) { $('player-title').textContent=datetime(c.timestamp)+' · Camera 01'; $('player').src='api/play/'+encodeURIComponent(c.name); $('player-download').href='api/download/'+encodeURIComponent(c.name); $('player-dialog').showModal(); $('player').play().catch(()=>{}); }
@@ -107,6 +107,7 @@ $('start-recording').onclick = () => recordingControl('start');
 $('stop-recording').onclick = () => recordingControl('stop');
 
 let anomalyRequest = false, anomalyEventsKey = '', latestAnomalyState = null;
+let learningDurationLoaded = false;
 let appliedConfirmation = null, pendingConfirmation = null, confirmationFailure = '';
 let inputSizeDirty = false, appliedInputSize = null, pendingInputSize = null, inputSizeFailure = '';
 let appliedModel = null, pendingModel = null, modelDirty = false, modelFailure = '';
@@ -127,8 +128,14 @@ function fittedInput(roi, preset = appliedInputSize) {
   roi = canonicalROI(roi);
   const bounds = modelDimensions(preset || $('anomaly-input-size').value || '768x432');
   if (!roi || !roiSource) return bounds;
-  const width = roi.width * roiSource.width, height = roi.height * roiSource.height;
-  const scale = Math.min(bounds.width / width, bounds.height / height);
+  // Match the backend's inclusive/exclusive crop bounds before fitting the input.
+  const pixelEdge = value => Math.round(value * 1e8) / 1e8;
+  const left = Math.max(0, Math.min(roiSource.width - 1, Math.floor(pixelEdge(roi.x * roiSource.width))));
+  const top = Math.max(0, Math.min(roiSource.height - 1, Math.floor(pixelEdge(roi.y * roiSource.height))));
+  const right = Math.min(roiSource.width, Math.max(left + 1, Math.ceil(pixelEdge((roi.x + roi.width) * roiSource.width))));
+  const bottom = Math.min(roiSource.height, Math.max(top + 1, Math.ceil(pixelEdge((roi.y + roi.height) * roiSource.height))));
+  const width = right - left, height = bottom - top;
+  const scale = Math.min(1, bounds.width / width, bounds.height / height);
   const fitted = {width: Math.round(width * scale), height: Math.round(height * scale)};
   fitted.label = `${fitted.width} × ${fitted.height}`;
   return fitted;
@@ -356,7 +363,15 @@ function syncDetectionControls(data, unavailable) {
   const monitoring = data.monitoring_enabled ?? ['normal', 'suspect', 'anomaly'].includes(data.state);
   $('anomaly-monitor').textContent = coupled ? 'Start detection & recording' : 'Start detection';
   $('anomaly-pause').textContent = coupled ? 'Pause detection & recording' : 'Pause detection';
-  $('anomaly-learn').disabled = capturePending || unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty;
+  const learningSelect = $('anomaly-learning-seconds');
+  if ((!learningDurationLoaded || learning) && [60, 120, 180, 240].includes(Number(data.learning_seconds))) {
+    learningSelect.value = String(data.learning_seconds);
+    learningDurationLoaded = true;
+  }
+  const learningDisabled = capturePending || unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty;
+  learningSelect.disabled = learningDisabled;
+  $('anomaly-learn').disabled = learningDisabled;
+  $('anomaly-learn').textContent = `Learn normal view · ${Number(learningSelect.value) / 60 || 2} min`;
   $('anomaly-monitor').disabled = capturePending || unavailable || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty || !data.baseline_ready || learning || monitoring;
   $('anomaly-pause').disabled = pendingROI !== null || pendingConfirmation !== null || (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
 }
@@ -432,7 +447,13 @@ async function anomalyControl(action) {
     for (const id of ['anomaly-learn', 'anomaly-monitor', 'anomaly-pause']) $(id).disabled = true;
   }
   try {
-    const response = await fetch('api/anomaly/' + action, {method: 'POST', headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'}, body: JSON.stringify({multiplier})});
+    const body = {multiplier};
+    if (action === 'learn') {
+      const seconds = Number($('anomaly-learning-seconds').value);
+      if (![60, 120, 180, 240].includes(seconds)) throw Error();
+      body.learning_seconds = seconds;
+    }
+    const response = await fetch('api/anomaly/' + action, {method: 'POST', headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     if (!response.ok) throw Error();
     if (!configuring) $('anomaly-message').textContent = 'Request sent. Waiting for analysis…';
     setTimeout(refreshAnomaly, 1000);
@@ -568,6 +589,10 @@ $('anomaly-multiplier').addEventListener('keydown', event => {
   if (event.key === 'Enter') { event.preventDefault(); anomalyControl('configure'); }
 });
 $('anomaly-apply').onclick = () => anomalyControl('configure');
+$('anomaly-learning-seconds').addEventListener('change', () => {
+  learningDurationLoaded = true;
+  $('anomaly-learn').textContent = `Learn normal view · ${Number($('anomaly-learning-seconds').value) / 60} min`;
+});
 $('anomaly-learn').onclick = () => anomalyControl('learn');
 $('anomaly-monitor').onclick = () => anomalyControl('monitor');
 $('anomaly-pause').onclick = () => anomalyControl('pause');

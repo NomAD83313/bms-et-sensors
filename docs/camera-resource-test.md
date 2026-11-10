@@ -149,12 +149,11 @@ installed source before using the matrix runner after a code change.
 
 `scripts/benchmark-camera-models.py` measures the actual `PatchCoreLite.features()`
 and `score()` implementations for the production model profiles. Use `--models`
-to select ResNet FP32/static INT8, MobileNetV3 FP32/static INT8, ShuffleNetV2
-×0.5/×1.0 or MobileOne-S0.
+to select ResNet FP32, MobileNetV3, MobileOne-S0, PP-LCNet ×0.5 or MobileNetV4
+ConvSmall ×0.5.
 Run it inside the deployed anomaly image with a private, writable `--work`
-directory. Supply 24 distinct JPEGs in `frames/`. INT8 encoders calibrate on
-private training frames during preparation; existing private `banks/<model>/`
-are validated and reused. Production learning is never replaced.
+directory. Supply 24 distinct JPEGs in `frames/`; existing private
+`banks/<model>/` are validated and reused. Production learning is never replaced.
 
 Run `--phase prepare` once to create private banks from the first twenty frames.
 Then run `--phase isolated` with capture stopped, and `--phase capture` while
@@ -173,8 +172,8 @@ speed comparison and does not establish anomaly-detection quality.
 
 ## Labelled model quality comparison
 
-`scripts/benchmark-camera-quality.py --work /bench --policy fresh-policy.json
---prefix fresh` evaluates all seven profiles on a frozen JSON dataset manifest.
+`scripts/benchmark-camera-quality.py --work /bench --policy quality-policy.json
+--prefix fresh` evaluates the selected current profiles on a frozen JSON dataset manifest.
 Run it in the anomaly image, mounting the repository at its original absolute
 path read-only and the private work directory at `/bench` read-write. Keep only
 one benchmark running, with the same CPU quota and capture load for every model.
@@ -187,9 +186,9 @@ for positive frames from the same hand pass. Annotate frames visually before
 examining predictions. Training, calibration and test JPEG content must be
 disjoint; duplicate content across partitions causes an error.
 
-Each profile learns a private 1024-vector bank; INT8 calibration uses only
-training images. The operating threshold is the 99th percentile of scores on
-separate normal calibration frames, multiplied by the manifest's fixed
+Each profile learns a private 1024-vector bank from the training images. In
+`separate-p99` mode, the operating threshold is the 99th percentile of scores
+on separate normal calibration frames, multiplied by the manifest's fixed
 multiplier. Do not tune this multiplier against the anomaly test frames.
 Reports include frame recall, false-positive counts, event recall on annotated
 frames, AUROC, and JPEG-preparation-plus-feature-plus-search timings. A detected

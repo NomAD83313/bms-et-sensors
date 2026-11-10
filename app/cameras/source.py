@@ -1,5 +1,6 @@
 """FFmpeg input options shared by network and local Pi camera streams."""
-from urllib.parse import urlsplit
+import os
+from urllib.parse import urlsplit, urlunsplit
 
 _CAPTURE_CACHE = None
 _CAPTURE_CACHE_AT = 0
@@ -14,8 +15,42 @@ def input_args(url):
     raise ValueError('Use an RTSP camera URL or the loopback Pi camera /stream.ts endpoint')
 
 
+def preview_input_args(url, transport='tcp', strict=True):
+    """Return input options that favor the newest frame for live preview."""
+    parsed = urlsplit(url)
+    if parsed.scheme == 'rtsp' and parsed.hostname:
+        if transport not in ('tcp', 'udp'):
+            raise ValueError('Unsupported RTSP preview transport')
+        args = [
+            '-fflags', '+discardcorrupt+nobuffer',
+            '-flags', 'low_delay',
+        ]
+        if strict:
+            args += ['-err_detect', 'explode']
+        return args + [
+            '-analyzeduration', '0',
+            '-probesize', '32768',
+            '-max_delay', '0',
+            '-reorder_queue_size', '0',
+            '-rtsp_transport', transport,
+            '-timeout', '3000000',
+            '-i', url,
+        ]
+    return ['-fflags', '+discardcorrupt', '-err_detect', 'explode', *input_args(url)]
+
+
+def browser_stream_url(url):
+    """Return an optional RTSP substream URL without duplicating credentials."""
+    path = os.environ.get('CAMERA_PREVIEW_PATH', '').strip()
+    parsed = urlsplit(url)
+    if not path or parsed.scheme != 'rtsp' or not parsed.hostname:
+        return url
+    if not path.startswith('/') or '?' in path or '#' in path:
+        raise ValueError('CAMERA_PREVIEW_PATH must be an absolute URL path')
+    return urlunsplit(parsed._replace(path=path, query='', fragment=''))
+
+
 def capture_url():
-    import os
     return os.environ.get('CAMERA_CAPTURE_URL', '').rstrip('/')
 
 

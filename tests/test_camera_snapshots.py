@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from app.cameras.capture_settings import validate, validate_update
-from app.cameras.snapshot_recording import SnapshotBuffer, encode
+from app.cameras.snapshot_recording import SnapshotBuffer, encode, export_timeout
 from app.cameras import pi_source
 
 
@@ -60,6 +60,12 @@ class CaptureSettingsTests(unittest.TestCase):
 
 
 class SnapshotWindowTests(unittest.TestCase):
+    def test_export_timeout_scales_with_frame_count_and_is_bounded(self):
+        self.assertEqual(export_timeout(10), 180)
+        self.assertEqual(export_timeout(1500), 1800)
+        self.assertEqual(export_timeout(3000), 3600)
+        self.assertEqual(export_timeout(5000), 3600)
+
     def test_pre_post_frames_are_protected_and_event_is_extended(self):
         with tempfile.TemporaryDirectory() as directory:
             buffer = SnapshotBuffer(directory, validate({}), pre=2, post=2)

@@ -26,6 +26,26 @@ class ClipAccessTests(unittest.TestCase):
 
 
 class StatusTests(unittest.TestCase):
+    def test_loading_analysis_status_does_not_require_model_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard.anomaly_control.write_json(root / 'status.json', dict(
+                state='loading', message='Loading visual model', updated=dashboard.time.time()))
+            with patch.object(dashboard, 'RECORDINGS', root), \
+                    patch.object(dashboard.anomaly_control, 'DATA', root), \
+                    patch.object(dashboard.LIVE, 'geometry', return_value=(2304, 1296)):
+                server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+                try:
+                    with urllib.request.urlopen(
+                            f'http://127.0.0.1:{server.server_port}/api/anomaly', timeout=3) as response:
+                        result = json.load(response)
+                    self.assertEqual(result['state'], 'loading')
+                    self.assertEqual((result['effective_input_width'], result['effective_input_height']),
+                                     (768, 432))
+                finally:
+                    server.shutdown(); server.server_close(); thread.join(timeout=3)
+
     def test_system_health_distinguishes_paused_and_stale_detection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -53,6 +73,30 @@ class StatusTests(unittest.TestCase):
 
 
 class RecordingControlTests(unittest.TestCase):
+    def test_learning_route_accepts_only_supported_durations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(dashboard.control, 'CONTROL', root / 'control'), \
+                    patch.object(dashboard.anomaly_control, 'DATA', root / 'anomaly'):
+                server = ThreadingHTTPServer(('127.0.0.1', 0), dashboard.Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+                try:
+                    url = f'http://127.0.0.1:{server.server_port}/api/anomaly/learn'
+                    def request(seconds):
+                        return urllib.request.urlopen(urllib.request.Request(url,
+                            data=json.dumps(dict(multiplier=1.3, learning_seconds=seconds)).encode(),
+                            headers={'X-Camera-Control': '1', 'Content-Type': 'application/json'}), timeout=3)
+                    with request(240) as response:
+                        command = json.load(response)
+                    self.assertEqual(command['learning_seconds'], 240)
+                    saved = (root / 'anomaly/command.json').read_bytes()
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        request(90)
+                    self.assertEqual(error.exception.code, 400)
+                    self.assertEqual((root / 'anomaly/command.json').read_bytes(), saved)
+                finally:
+                    server.shutdown(); server.server_close(); thread.join(timeout=3)
+
     def test_model_route_validates_selection_and_stops_event_recording(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -179,7 +223,7 @@ class RecordingControlTests(unittest.TestCase):
             dashboard.control.follow_detection(True, 'continuous')
             self.assertFalse(dashboard.control.enabled())
 
-    def test_anomaly_routes_are_separate_from_recording_routes(self):
+    def test_anomaly_routes_and_removed_recording_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             anomaly = root / 'anomaly'
@@ -198,30 +242,20 @@ class RecordingControlTests(unittest.TestCase):
                         with urllib.request.urlopen(request, timeout=3) as response:
                             self.assertEqual(response.status, 202)
                             result = json.load(response)
-                            request_id = result.get('request_id', result.get('id'))
                         command = dashboard.anomaly_control.read_json(anomaly / 'command.json')
-                        self.assertEqual((command['action'], command['multiplier'], command['id']), (expected, 5.5, request_id))
+                        self.assertEqual((command['action'], command['multiplier'], command['id']),
+                                         (expected, 5.5, result['id']))
                         # Start waits for the worker; stop also works with no worker.
                         self.assertEqual(dashboard.control.enabled(), expected == 'configure')
-                    for action in ('start', 'stop'):
-                        request = urllib.request.Request(
-                            f'http://127.0.0.1:{server.server_port}/api/recording/{action}',
-                            method='POST', headers={'X-Camera-Control': '1'})
-                        with self.assertRaises(urllib.error.HTTPError) as error:
-                            urllib.request.urlopen(request, timeout=3)
-                        self.assertEqual(error.exception.code, 409)
-                    previous_command = (anomaly / 'command.json').read_bytes()
-                    with patch.dict(os.environ, {'CAMERA_RECORDING_MODE': 'continuous'}):
-                        for action, enabled in [('stop', False), ('start', True)]:
-                            request = urllib.request.Request(f'http://127.0.0.1:{server.server_port}/api/recording/{action}', method='POST', headers={'X-Camera-Control': '1'})
-                            with urllib.request.urlopen(request, timeout=3) as response:
-                                self.assertEqual(response.status, 200)
-                            self.assertEqual(dashboard.control.enabled(), enabled)
-                        self.assertEqual((anomaly / 'command.json').read_bytes(), previous_command)
-                    request = urllib.request.Request(f'http://127.0.0.1:{server.server_port}/api/recording/start', method='POST')
-                    with self.assertRaises(urllib.error.HTTPError) as error:
-                        urllib.request.urlopen(request, timeout=3)
-                    self.assertEqual(error.exception.code, 403)
+                    for mode in ('anomaly', 'continuous'):
+                        os.environ['CAMERA_RECORDING_MODE'] = mode
+                        for action in ('start', 'stop'):
+                            request = urllib.request.Request(
+                                f'http://127.0.0.1:{server.server_port}/api/recording/{action}',
+                                method='POST', headers={'X-Camera-Control': '1'})
+                            with self.assertRaises(urllib.error.HTTPError) as error:
+                                urllib.request.urlopen(request, timeout=3)
+                            self.assertEqual(error.exception.code, 404)
                 finally:
                     server.shutdown()
                     server.server_close()
@@ -246,7 +280,7 @@ class RecordingControlTests(unittest.TestCase):
 
 
 class PreviewFreshnessTests(unittest.TestCase):
-    def test_http_original_route_uses_analysis_frame_id_and_rejects_decoder_errors(self):
+    def test_analysis_route_returns_full_source_with_generation_token(self):
         preview = dashboard.LivePreview()
         preview.worker = Mock()
         preview.worker.is_alive.return_value = True
@@ -258,38 +292,12 @@ class PreviewFreshnessTests(unittest.TestCase):
             thread.start()
             try:
                 base = f'http://127.0.0.1:{server.server_port}/api/live.jpg'
-                with urllib.request.urlopen(base+'?fresh=1', timeout=3) as response:
-                    self.assertEqual(response.read(), b'preview')
-                    frame_id = response.headers['X-Camera-Frame-ID']
+                with urllib.request.urlopen(base+'?analysis=1', timeout=3) as response:
+                    self.assertEqual(response.read(), b'full-size-jpeg')
                     self.assertEqual(response.headers['X-Camera-Frame-Token'], preview.guard.token)
-                with urllib.request.urlopen(base+'?fresh=1&analysis=1', timeout=3) as response:
-                    self.assertEqual(response.read(), b'full-size-jpeg')
                     self.assertEqual(response.headers['X-Camera-Analysis-Source'], dashboard.ANALYSIS_SOURCE)
-                with urllib.request.urlopen(base+'?original='+frame_id, timeout=3) as response:
-                    self.assertEqual(response.read(), b'full-size-jpeg')
-                with self.assertLogs('camera-preview', level='WARNING'):
-                    preview.decoder_error('decode_error')
-                with self.assertRaises(urllib.error.HTTPError) as error:
-                    urllib.request.urlopen(base+'?original='+frame_id, timeout=3)
-                self.assertEqual(error.exception.code, 503)
-                self.assertEqual(error.exception.headers['X-Camera-Stream-Error'], '1')
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=3)
-
-    def test_original_frame_is_bound_to_requested_preview_and_invalidated_on_error(self):
-        preview = dashboard.LivePreview()
-        preview.worker = Mock()
-        preview.worker.is_alive.return_value = True
-        preview.frame, preview.original_frame = b'small-one', b'full-one'
-        preview.updated, preview.frame_token = dashboard.time.monotonic(), preview.guard.token
-        small, token, frame_id = preview.get(with_token=True, with_frame_id=True)
-        self.assertEqual((small, token), (b'small-one', preview.guard.token))
-        preview.frame, preview.original_frame = b'small-two', b'full-two'
-        self.assertEqual(preview.original(frame_id), b'full-one')
-        with self.assertLogs('camera-preview', level='WARNING'):
-            preview.decoder_error('decode_error')
-        self.assertIsNone(preview.original(frame_id))
-        self.assertEqual(len(preview.originals), 0)
 
     def test_snapshot_preview_is_resized_only_for_browser_and_analysis_requires_original(self):
         preview = dashboard.LivePreview()
@@ -304,19 +312,6 @@ class PreviewFreshnessTests(unittest.TestCase):
             resize.assert_called_once_with(b'full-native-snapshot')
         preview.original_frame = None
         self.assertIsNone(preview.get(full_resolution=True))
-
-    def test_original_cache_is_bounded_and_expires_without_replacing_with_current_frame(self):
-        preview = dashboard.LivePreview()
-        preview.worker = Mock()
-        preview.worker.is_alive.return_value = True
-        preview.frame = b'jpeg'
-        preview.updated, preview.frame_token = dashboard.time.monotonic(), preview.guard.token
-        ids = [preview.get(with_token=True, with_frame_id=True)[2] for _ in range(40)]
-        self.assertEqual(len(preview.originals), 32)
-        self.assertIsNone(preview.original(ids[0]))
-        self.assertEqual(preview.original(ids[-1]), b'jpeg')
-        with patch.object(dashboard.time, 'monotonic', return_value=preview.updated+16):
-            self.assertIsNone(preview.original(ids[-1]))
 
     def test_jpeg_pair_parser_rejects_partial_or_unaligned_output(self):
         import io
