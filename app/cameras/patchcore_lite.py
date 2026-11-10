@@ -110,6 +110,7 @@ class PatchCoreLite:
 
     def set_input_size(self, input_size):
         self.input_size = validate_input_size(input_size)
+        self.learning_revision = None
         self.memory = None
         self.threshold = None
         self.baseline_frames = 0
@@ -235,6 +236,50 @@ class PatchCoreLite:
             selected = (indices >= offset) & (indices < offset + len(frame))
             patches[selected] = frame[indices[selected] - offset]
             offset += len(frame)
+        self._fit_candidates(patches, generator)
+        scores = torch.tensor([self.score(sample)[0] for sample in validation])
+        self.threshold = max(float(torch.quantile(scores, .99)), 1e-6)
+        self.baseline_frames = len(samples)
+        return scores.tolist()
+
+    @torch.inference_mode()
+    def fit_sessions(self, groups, progress=None):
+        """Stream saved JPEGs with equal candidate budgets and held-out frames per session."""
+        if not 1 <= len(groups) <= 8 or any(not 20 <= len(group) <= 120 for group in groups):
+            raise ValueError('Learn one to eight sessions with 20 to 120 frames each')
+        generator = torch.Generator().manual_seed(42)
+        candidates = []
+        completed, total = 0, sum(map(len, groups))
+        for group_index, paths in enumerate(groups):
+            training = [path for index, path in enumerate(paths) if index % 5]
+            budget = 8000 // len(groups) + int(group_index < 8000 % len(groups))
+            for index, path in enumerate(training):
+                features = self.features(path.read_bytes())
+                count = min(len(features), budget // len(training) + int(index < budget % len(training)))
+                candidates.append(features[torch.randperm(len(features), generator=generator)[:count]])
+                completed += 1
+                if progress:
+                    progress(completed, total)
+        self._fit_candidates(torch.cat(candidates), generator)
+        del candidates
+        calibration = []
+        for paths in groups:
+            held_out = []
+            for index, path in enumerate(paths):
+                if index % 5:
+                    continue
+                held_out.append(self.score(self.features(path.read_bytes()))[0])
+                completed += 1
+                if progress:
+                    progress(completed, total)
+            scores = torch.tensor(held_out)
+            calibration.append(dict(calibration_frames=len(scores),
+                                    calibration_threshold=max(float(torch.quantile(scores, .99)), 1e-6)))
+        self.threshold = max(item['calibration_threshold'] for item in calibration)
+        self.baseline_frames = sum(map(len, groups))
+        return calibration
+
+    def _fit_candidates(self, patches, generator):
         projection = torch.randn(self.feature_dimensions, 32, generator=generator) / math.sqrt(32)
         compact = patches @ projection
         distances = torch.full((len(patches),), float('inf'))
@@ -246,10 +291,6 @@ class PatchCoreLite:
             distances[index] = -1
             index = int(distances.argmax())
         self.memory = patches[selected].contiguous()
-        scores = torch.tensor([self.score(sample)[0] for sample in validation])
-        self.threshold = max(float(torch.quantile(scores, .99)), 1e-6)
-        self.baseline_frames = len(samples)
-        return scores.tolist()
 
     @torch.inference_mode()
     def score(self, patches):
@@ -278,6 +319,7 @@ class PatchCoreLite:
         if self.source_size is None or self.effective_input_size is None:
             raise ValueError('Source geometry is required before saving a baseline')
         torch.save(dict(version=6, analysis_source=ANALYSIS_SOURCE,
+                        learning_revision=self.learning_revision,
                         encoder=self.encoder_id, input_size=self.input_size,
                         roi=self.roi, roi_preprocessing=ROI_PREPROCESSING,
                         source_size=self.source_size, effective_input_size=self.effective_input_size,
@@ -323,6 +365,7 @@ class PatchCoreLite:
                 or model['coreset_size'] != len(model['memory'])):
             raise ValueError('Invalid baseline coreset')
         self.memory = model['memory']
+        self.learning_revision = model.get('learning_revision')
         self.threshold = model['threshold']
         self.baseline_frames = model['baseline_frames']
         self.source_size, self.effective_input_size, _ = geometry

@@ -15,16 +15,16 @@ async function run() {
   const fetch = (url, options) => {
     if (!options) return new Promise(() => {});
     requests.push({url, body: JSON.parse(options.body)});
-    return Promise.resolve({ok: true});
+    return Promise.resolve({ok: true, json: async () => ({id: 'learn-1'})});
   };
   const source = fs.readFileSync('app/cameras/web/app.js', 'utf8');
   const api = new Function('document', 'fetch', 'Image', 'setInterval', 'setTimeout', 'performance', 'window',
-    source + '\nreturn {syncDetectionControls, anomalyControl};')(
+    source + '\nreturn {syncDetectionControls, anomalyControl, update(data) { latestAnomalyData = data; latestAnomalyState = data.state; latestAnomalyUnavailable = false; syncAnalysisControls(data, false); }};')(
       document, fetch, class {}, () => {}, () => {}, {now: () => 0}, {confirm: () => false});
 
   const idle = {state: 'paused', baseline_ready: true, monitoring_enabled: false,
     recording_mode: 'continuous', learning_seconds: 180};
-  api.syncDetectionControls(idle, false);
+  api.update(idle);
   const select = element('anomaly-learning-seconds');
   assert(select.value === '180', 'Restore the worker learning duration');
   assert(element('anomaly-learn').textContent.includes('3 min'), 'Show the selected duration on the action');

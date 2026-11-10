@@ -2,8 +2,11 @@
 import json
 import logging
 import os
+import pickle
+import shutil
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.request
 from urllib.parse import quote
@@ -19,9 +22,11 @@ from patchcore_lite import PatchCoreLite, overlay
 try:
     from .model_profiles import ANALYSIS_SOURCE
     from .roi import ROIGeometryChanged, validate_roi
+    from .learning_sessions import LearningSessions, configuration, MAX_SESSIONS
 except ImportError:
     from model_profiles import ANALYSIS_SOURCE
     from roi import ROIGeometryChanged, validate_roi
+    from learning_sessions import LearningSessions, configuration, MAX_SESSIONS
 
 LOG = logging.getLogger('camera-anomaly')
 
@@ -78,11 +83,19 @@ class AnomalyWorker:
             self.model.set_roi(self.selected_roi)
 
         self.model_path = DATA / 'baseline.pt'
+        self.sessions = LearningSessions(DATA)
+        self.sessions.recover()
+        self.learning_error = None
+        catalog = self.sessions.catalog()
+        current = configuration(self.model)
+        if catalog['sessions'] and any(current[key] != catalog['configuration'][key]
+                for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k')):
+            self.baseline_invalidated = configuration_reset = True
         if self.baseline_invalidated:
-            self.invalidate_baseline()
-        elif self.model_path.exists():
+            self.invalidate_baseline(clear_sessions=configuration_reset)
+        elif self.model_path.exists() or self.model_path.with_name('baseline-previous.pt').exists():
             try:
-                self.model.load(self.model_path)
+                self.load_baseline()
             except ValueError:
                 self.invalidate_baseline()
                 configuration_reset = True
@@ -105,9 +118,42 @@ class AnomalyWorker:
             self.clear_video_trigger()
             self.save_session()
 
-    def invalidate_baseline(self):
+    def invalidate_baseline(self, clear_sessions=False):
         self.baseline_invalidated = True
+        self.baseline_source = None
+        self.model.memory = None
+        self.model.threshold = None
+        self.model.baseline_frames = 0
         self.model_path.unlink(missing_ok=True)
+        self.model_path.with_name('baseline-previous.pt').unlink(missing_ok=True)
+        if clear_sessions:
+            self.learning_error = None
+            count = self.sessions.clear()
+            if count:
+                LOG.info('Removed %d incompatible normal sessions', count)
+
+    def load_baseline(self):
+        backup = self.model_path.with_name('baseline-previous.pt')
+        for path in (self.model_path, backup):
+            if not path.is_file():
+                continue
+            try:
+                self.model.set_input_size(self.model.input_size)
+                self.model.load(path)
+                revision = getattr(self.model, 'learning_revision', None)
+                catalog = self.sessions.catalog()
+                if (revision or catalog['sessions']) and revision != catalog['revision']:
+                    raise ValueError('Interrupted learning publication')
+                if path == backup:
+                    backup.replace(self.model_path)
+                else:
+                    backup.unlink(missing_ok=True)
+                self.baseline_source = getattr(self.model, 'source_size', None)
+                return
+            except (OSError, ValueError, RuntimeError, EOFError, pickle.UnpicklingError):
+                continue
+        self.model.set_input_size(self.model.input_size)
+        raise ValueError('No compatible normal baseline is available')
 
     def clear_video_trigger(self):
         write_json(DATA / 'video-trigger.json', {})
@@ -144,6 +190,11 @@ class AnomalyWorker:
         if not command.get('id') or command['id'] == self.last_request:
             return
         action = command.get('action')
+        if action in ('learn', 'add-session', 'replace-session', 'remove-session',
+                      'rename-session', 'rebuild-sessions'):
+            self.apply_session_command(command)
+            return
+        was_learning = self.learning
         resized = (action == 'resize'
                    and validate_input_size(command.get('input_size')) != self.model.input_size)
         model_changed = (action == 'model'
@@ -154,35 +205,84 @@ class AnomalyWorker:
         if action not in ('resize', 'model', 'roi') or resized or model_changed or roi_changed:
             self.learning, self.monitoring = command_mode(
                 action, self.model.memory is not None, self.learning, self.monitoring)
-        if action == 'learn' and 'learning_seconds' in command:
-            self.learning_seconds = validate_learning_seconds(command['learning_seconds'])
-            self.sample_count = self.learning_seconds // 2
         if action == 'confirmation':
             self.confirmation_frames = validate_confirmation_frames(
                 command.get('confirmation_frames'))
         elif action == 'resize' and resized:
             self.model.set_input_size(command['input_size'])
-            self.invalidate_baseline()
+            self.invalidate_baseline(clear_sessions=True)
         elif action == 'model' and model_changed:
             self.model.set_model(command['model_key'])
-            self.invalidate_baseline()
+            self.invalidate_baseline(clear_sessions=True)
         elif action == 'roi' and roi_changed:
             self.selected_roi = validate_roi(command['roi'])
             self.model.set_roi(self.selected_roi)
-            self.invalidate_baseline()
+            self.invalidate_baseline(clear_sessions=True)
+        elif action == 'invalidate':
+            self.model.set_input_size(self.model.input_size)
+            self.invalidate_baseline(clear_sessions=True)
         else:
             self.multiplier = validate_multiplier(command.get('multiplier', 1.25))
-            if action == 'learn' and self.selected_roi is not None:
-                # A deliberate new learning session accepts the current source geometry.
-                self.model.set_input_size(self.model.input_size)
-                self.invalidate_baseline()
         self.last_request = command['id']
         self.reset_detection_candidate()
         if (action not in ('configure', 'resize', 'confirmation', 'model', 'roi')
                 or resized or model_changed or roi_changed):
             self.samples = []
+            self.sessions.abort()
             self.clear_video_trigger()
+        if action == 'pause' and was_learning and self.model_path.exists():
+            try:
+                self.load_baseline()
+                self.baseline_invalidated = False
+            except ValueError:
+                self.baseline_invalidated = True
         self.save_session()
+
+    def apply_session_command(self, command):
+        action = command['action']
+        self.last_request = command['id']
+        self.learning_error = None
+        try:
+            if self.learning:
+                if action != 'learn':
+                    raise ValueError('Pause the current learning session first')
+            self.multiplier = validate_multiplier(command.get('multiplier', self.multiplier))
+            if action == 'rename-session':
+                self.sessions.rename(command['session_id'], command.get('session_name', ''),
+                                     command.get('session_note', ''))
+                return
+            if action != 'learn':
+                catalog = self.sessions.catalog()
+                current = configuration(self.model)
+                if not catalog['sessions'] or any(
+                        current[key] != catalog['configuration'][key]
+                        for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k')):
+                    raise ValueError('Create a new baseline for the current model and area first')
+            if action in ('learn', 'add-session', 'replace-session'):
+                mode = {'learn': 'new', 'add-session': 'add', 'replace-session': 'replace'}[action]
+                self.sessions.begin(mode, command.get('session_name', ''),
+                                    command.get('session_note', ''), command.get('session_id'))
+                if 'learning_seconds' in command:
+                    self.learning_seconds = validate_learning_seconds(command['learning_seconds'])
+                    self.sample_count = self.learning_seconds // 2
+                if action == 'learn' and self.selected_roi is not None:
+                    self.model.set_input_size(self.model.input_size)
+                self.learning, self.monitoring = True, False
+                self.samples = []
+            else:
+                self.learning = self.monitoring = False
+                self.sessions.abort()
+                items = self.sessions.proposed(command['session_id']) if action == 'remove-session' else self.sessions.catalog()['sessions']
+                self.clear_video_trigger()
+                control.follow_detection(False, self.recording_mode)
+                self.rebuild_sessions(self.state, items, resume=False)
+        except (ValueError, OSError) as error:
+            self.learning_error = str(error) if isinstance(error, ValueError) else 'Session storage unavailable; check free disk space'
+        finally:
+            if action != 'rename-session':
+                self.reset_detection_candidate()
+                self.clear_video_trigger()
+            self.save_session()
 
     def status_snapshot(self):
         width, height = input_dimensions(self.model.input_size)
@@ -214,6 +314,8 @@ class AnomalyWorker:
             analysis_interval_sec=max(2, self.interval) if self.learning else self.interval,
             confirmation_frames=self.confirmation_frames,
             event_count=self.event_count,
+            learning_error=self.learning_error,
+            learning_sessions=self.sessions.public(), session_limit=MAX_SESSIONS,
             state='paused' if self.model.memory is not None else 'untrained',
             message=('Analysis paused' if self.model.memory is not None
                      else 'Learn a normal view to begin'))
@@ -259,7 +361,12 @@ class AnomalyWorker:
             decoded_height=preparation['decoded_height'])
 
     def finish_learning(self, state):
-        state.update(state='training', message='Building normal patch memory')
+        self.rebuild_sessions(state, self.sessions.proposed(), resume=True)
+
+    def rebuild_sessions(self, state, items, resume):
+        state.update(state='training', training_collected=0,
+                     training_target=sum(item['frames'] for item in items),
+                     message='Rebuilding saved normal sessions and calibrating the threshold')
         write_json(DATA / 'status.json', state)
         done = threading.Event()
 
@@ -269,24 +376,71 @@ class AnomalyWorker:
 
         heartbeat = threading.Thread(target=training_heartbeat, daemon=True)
         heartbeat.start()
+        temporary = self.model_path.with_name('baseline-next.pt')
+        backup = self.model_path.with_name('baseline-previous.pt')
+        published = False
         try:
-            self.model.fit(self.samples)
+            revision = uuid.uuid4().hex
+            if items:
+                def progress(completed, total):
+                    state.update(training_collected=completed, training_target=total)
+                calibration = self.model.fit_sessions(self.sessions.groups(items), progress=progress)
+                for item, metrics in zip(items, calibration):
+                    item.update(metrics)
+                self.model.learning_revision = revision
+                self.model.save(temporary)
+                if self.model_path.exists():
+                    shutil.copyfile(self.model_path, backup)
+                temporary.replace(self.model_path)
+                published = True
+            else:
+                self.model.set_input_size(self.model.input_size)
+                if self.model_path.exists():
+                    shutil.copyfile(self.model_path, backup)
+                self.model_path.unlink(missing_ok=True)
+                published = True
+            self.sessions.publish(items, revision)
+        except Exception:
+            if published:
+                if backup.exists():
+                    backup.replace(self.model_path)
+                else:
+                    self.model_path.unlink(missing_ok=True)
+            self.learning = self.monitoring = False
+            self.samples = []
+            self.sessions.abort()
+            self.learning_error = 'Learning rebuild failed; previous sessions are retained. Check storage and retry.'
+            self.model.set_input_size(self.model.input_size)
+            try:
+                self.load_baseline()
+                self.baseline_invalidated = False
+            except (OSError, ValueError):
+                self.baseline_invalidated = True
+            self.save_session()
+            raise
         finally:
             done.set()
             heartbeat.join()
-        self.model.save(self.model_path)
+            temporary.unlink(missing_ok=True)
+            backup.unlink(missing_ok=True)
         self.learning = False
-        self.monitoring = True
+        queued = read_json(DATA / 'command.json', {})
+        if queued.get('id') != self.last_request and queued.get('action') == 'pause':
+            resume = False
+        self.monitoring = bool(items) and resume
+        self.baseline_source = getattr(self.model, 'source_size', None) if items else None
         self.samples = []
         self.confirmation = Confirmation(required=self.confirmation_frames)
-        self.baseline_invalidated = False
+        self.baseline_invalidated = not bool(items)
         self.save_session()
-        control.follow_detection(True, self.recording_mode)
+        control.follow_detection(self.monitoring, self.recording_mode)
         state.update(
-            state='normal', baseline_ready=True,
+            state='normal' if self.monitoring else 'paused' if items else 'untrained', baseline_ready=bool(items),
             baseline_frames=self.model.baseline_frames,
-            monitoring_enabled=True, retraining_required=False,
-            message='Normal view learned; monitoring started')
+            monitoring_enabled=self.monitoring, retraining_required=self.baseline_invalidated,
+            learning_sessions=self.sessions.public(),
+            message='Normal sessions rebuilt; monitoring started' if self.monitoring else
+                    'Normal sessions rebuilt; detection paused' if items else 'No normal sessions; learn a normal view')
         LOG.info('Baseline ready; frames=%s', self.model.baseline_frames)
 
     def save_event(self, jpeg, distances, threshold, score):
@@ -334,18 +488,33 @@ class AnomalyWorker:
         jpeg, token, fetch_ms = self.fetch_analysis_frame()
         state['fetch_ms'] = fetch_ms
         feature_started = time.monotonic()
+        previous_source = getattr(self, 'baseline_source', None)
         features = self.model.features(jpeg)
+        geometry_changed = (self.monitoring and previous_source is not None
+                            and previous_source != getattr(self.model, 'source_size', None))
         self.update_geometry(state)
         state['feature_ms'] = round((time.monotonic() - feature_started) * 1000)
         self.record_preparation_metrics(state)
         result = None
-        if not self.learning:
+        if not self.learning and not geometry_changed:
             distance_started = time.monotonic()
             result = self.model.score(features)
             state['distance_ms'] = round((time.monotonic() - distance_started) * 1000)
         self.validate_frame_token(token)
+        if geometry_changed:
+            raise ROIGeometryChanged()
         if self.learning:
-            self.samples.append(features)
+            try:
+                self.sessions.append(jpeg, configuration(self.model))
+            except ValueError as error:
+                raise ROIGeometryChanged() from error
+            except OSError:
+                self.learning = False
+                self.samples = []
+                self.sessions.abort()
+                self.learning_error = 'Learning stopped: storage limit or free-space check failed. Saved sessions are retained.'
+                raise
+            self.samples.append(None)
             state.update(state='learning', collected=len(self.samples),
                          message='Learning current view as normal')
             if len(self.samples) >= self.sample_count:
@@ -358,7 +527,8 @@ class AnomalyWorker:
         self.learning = False
         self.monitoring = False
         self.samples = []
-        self.invalidate_baseline()
+        self.sessions.abort()
+        self.invalidate_baseline(clear_sessions=True)
         self.reset_detection_candidate()
         self.clear_video_trigger()
         self.save_session()

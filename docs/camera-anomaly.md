@@ -8,15 +8,64 @@ In anomaly mode, **Start detection & recording** starts analysis and the video
 buffer together. **Pause detection & recording** stops both. Continuous recording
 keeps its separate recording controls; retention and live preview remain independent.
 
+## Saved normal sessions
+
+Both cameras support up to eight independently named normal sessions. Names are
+optional and default to `Session 1`, `Session 2`, etc.; an optional comment can
+describe any reason for a normal state, including a new permitted object. Sessions
+are not associated with a time of day. Thumbnails outline the saved analysis region
+and dim the surrounding image; full-frame sessions are labeled **FULL FRAME**.
+They use the session's stored ROI, independently of current live selection.
+Each card shows a thumbnail, capture time,
+frame count and its held-out calibration threshold.
+
+- **Learn new baseline** collects 30–120 frames at the selected 1–4 minute duration
+  and replaces the previous saved sessions only after a successful rebuild.
+- **Add normal session** retains previous sessions, collects another normal state,
+  rebuilds the common bank and starts detection when complete.
+- **Replace** collects a replacement for one selected session and retains the rest.
+- **Save name / comment** changes metadata without retraining or pausing detection.
+- **Delete** rebuilds the remaining sessions and leaves detection paused. Deleting
+  the last session clears the baseline. **Rebuild saved sessions** retries training
+  without capturing another session and also leaves detection paused.
+
+Capture and rebuilding report separate progress. Rebuilding reprocesses all saved
+JPEGs and may take longer as sessions accumulate; inference continues to use one
+bounded bank, not one model execution per session. Every fifth frame in each
+session is excluded from the memory bank. Calibration uses the maximum of the
+per-session 99th-percentile normal scores. These adjacent held-out frames are still
+correlated: evaluate independent normal footage and real anomalies after adding
+a new state. More accepted appearances can also make similar anomalies less visible.
+
+Sessions must use the same model, input preset, ROI, source dimensions and
+preprocessing. Changing ROI, input preset, model or source dimensions automatically
+deletes the incompatible baseline and its normal sessions, including their JPEGs.
+Startup configuration mismatches also clear incompatible sessions. New normal-view
+learning is then required. Pausing, a temporary camera outage, metadata edits,
+threshold changes and confirmation settings retain the saved sessions. Failed
+rebuilds retain compatible sessions for retry. A pre-session baseline
+continues to work, but has no source training images to extend; create the first
+new baseline to enable accumulation. There is no automatic learning of live frames.
+
+Original JPEGs and the catalog live under the existing runtime anomaly mount in
+`learning/`; they are never committed. Each camera has its own catalog. Storage is
+limited to 4 GiB of published and currently collected JPEGs, with at least 64 MiB
+free-space reserve. Interrupted in-progress captures do not replace saved sessions.
+Completed sessions and baseline publication use a revision check and a temporary
+baseline backup so a power interruption cannot silently pair an unrelated bank
+with the saved sessions. A failed rebuild leaves detection paused and the previous
+sessions available for retry. History deletion does not delete learning sessions.
+
 ## Workflow
 
 1. Point the camera at a fixed scene with normal conditions. Choose a model,
    maximum input size and optionally an analysis area (ROI). Apply any changes
    before learning.
-2. Select a **Learning time** from 1–4 minutes, then select **Learn normal view**.
+2. Select a **Learning time** from 1–4 minutes, then select **Learn new baseline**.
    Keep the view normal while 30–120 frames are collected, one every two seconds.
    Successful learning replaces the
-   previous baseline and starts detection. In anomaly mode, the recording buffer
+   previous baseline and saved normal sessions and starts detection. Use **Add normal session**
+   to include another normal state while retaining the existing sessions. In anomaly mode, the recording buffer
    is stopped during learning and starts after learning succeeds. Pause cancels collection.
 3. Introduce an obvious temporary scene change and observe the score and badge.
    The Confirmation menu selects 1–5 consecutive above-threshold samples to
@@ -81,8 +130,8 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
 - Baselines use one strict schema that records the encoder, source geometry, ROI,
   preprocessing, input size, score aggregation and coreset size. Any mismatch pauses
   monitoring and requires a new normal-view learning run.
-- Every fifth baseline frame is held out entirely for calibration. The base
-  threshold is the 99th percentile of those held-out frame scores. The UI margin
+- Every fifth frame in each normal session is held out entirely for calibration.
+  The base threshold is the largest per-session 99th percentile of held-out scores. The UI margin
   scales it. Adjacent window frames are correlated; this is an initial calibration,
   not a measured false-alarm probability.
 - A separate CPU worker reuses the existing preview decoder over local HTTP.
@@ -115,7 +164,7 @@ belong to the optional `cameras` and `pi-camera` profiles.
 ## Runtime files and operations
 
 All learned data is local under `runtime/cameras/anomaly/`, ignored by Git:
-`baseline.pt`, `status.json`, `session.json`, `command.json`, and `events/`.
+`baseline.pt`, `status.json`, `session.json`, `command.json`, `events/`, and `learning/`.
 Pi uses the same structure under `runtime/pi-camera/anomaly/`. Neither directory
 belongs in Git.
 The pretrained backbone is in the image; normal-view memory is runtime state.
@@ -388,10 +437,11 @@ the full source JPEG directly. Full-frame inputs larger than the source image st
 upscale it without adding detail; an enabled ROI never does. Event snapshots and overlays use the matched
 full-size source frame, independently of this analysis-input limit.
 Higher presets increase CPU, memory and latency.
-Pairwise patch distances are computed in bounded batches. Training selects its
-8000 candidates without concatenating all full-resolution training frames; the
-60 collected feature frames can still consume substantial memory at the largest
-presets. Learning never uses fewer frames automatically.
+Pairwise patch distances are computed in bounded batches. Rebuilding saved sessions
+processes JPEGs one at a time and selects at most 8000 candidate vectors, sharing
+the candidate budget equally between sessions. Full-resolution feature frames are
+not accumulated in RAM. The final coreset remains bounded by the configured size.
+Learning never uses fewer frames automatically.
 
 Baselines use strict format version 6. A baseline from another model, input size,
 source geometry, ROI, preprocessing mode, Top-K setting or JPEG Draft setting cannot

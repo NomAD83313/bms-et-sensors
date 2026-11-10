@@ -20,14 +20,16 @@ except ImportError:
 try:
     from . import control, anomaly_control, history, source
     from .preview_quality import DecodeGuard, decoder_error_kind
-    from .roi import validate_roi, roi_input_dimensions
+    from .roi import validate_roi, roi_input_dimensions, roi_bounds
+    from .learning_sessions import LearningSessions, MAX_SESSIONS
 except ImportError:
     import control
     import anomaly_control
     import history
     import source
     from preview_quality import DecodeGuard, decoder_error_kind
-    from roi import validate_roi, roi_input_dimensions
+    from roi import validate_roi, roi_input_dimensions, roi_bounds
+    from learning_sessions import LearningSessions, MAX_SESSIONS
 
 ROOT = Path(__file__).resolve().parent
 RECORDINGS = Path(os.environ.get('RECORDING_DIR', ROOT / 'runtime/recordings')).resolve()
@@ -316,6 +318,8 @@ POST_PATHS = frozenset((
     '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause',
     '/api/anomaly/configure', '/api/anomaly/resize',
     '/api/anomaly/confirmation', '/api/anomaly/model', '/api/anomaly/roi',
+    '/api/anomaly/add-session', '/api/anomaly/replace-session',
+    '/api/anomaly/remove-session', '/api/anomaly/rename-session', '/api/anomaly/rebuild-sessions',
     '/api/delete/event', '/api/delete/recording', '/api/delete/all-events',
     '/api/delete/all-recordings', '/api/delete/history',
 ))
@@ -360,10 +364,12 @@ class Handler(BaseHTTPRequestHandler):
             from .capture_settings import validate_update
         except ImportError:
             from capture_settings import validate_update
-        validate_update(source.capture_settings(), body)
+        previous = source.capture_settings()
+        validate_update(previous, body)
         settings = source.configure_capture(body)
         session = anomaly_control.read_json(anomaly_control.DATA / 'session.json', {})
-        anomaly_control.request('pause', session.get('multiplier', 1.25))
+        geometry_changed = any(previous.get(key) != settings.get(key) for key in ('width', 'height'))
+        anomaly_control.request('invalidate' if geometry_changed else 'pause', session.get('multiplier', 1.25))
         if os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly':
             control.set_enabled(False)
         return self.send(json.dumps(dict(settings=settings, detection_paused=True)).encode(),
@@ -376,8 +382,20 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(json.dumps(result).encode(), 'application/json')
 
     def control_anomaly(self, path):
-        body = self.read_json_body(1024)
+        body = self.read_json_body(4096)
         action = path.rsplit('/', 1)[-1]
+        session_actions = ('learn', 'add-session', 'replace-session', 'remove-session',
+                           'rename-session', 'rebuild-sessions')
+        if action in session_actions:
+            state = anomaly_control.status()
+            if state.get('state') in ('learning', 'training'):
+                return self.send(b'Pause the current learning operation first', 'text/plain', 409)
+            store = LearningSessions(anomaly_control.DATA)
+            if action not in ('learn', 'rebuild-sessions'):
+                store.check(action.removesuffix('-session'), body.get('session_id'))
+            if action in ('add-session', 'replace-session', 'rebuild-sessions'):
+                if not self.session_configuration_matches(state, store.catalog()):
+                    return self.send(b'Create a new baseline for the current settings first', 'text/plain', 409)
         if action in ('roi', 'resize'):
             if action == 'roi' and 'roi' not in body:
                 raise ValueError('Select an area or explicitly request the full frame')
@@ -394,9 +412,11 @@ class Handler(BaseHTTPRequestHandler):
             action, body.get('multiplier', 1.25), input_size=body.get('input_size'),
             confirmation_frames=body.get('confirmation_frames'),
             model_key=body.get('model_key'), roi=body.get('roi'),
-            learning_seconds=body.get('learning_seconds'))
+            learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
+            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''))
         if (os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly'
-                and action in ('pause', 'learn', 'resize', 'model', 'roi')):
+                and action in ('pause', 'learn', 'resize', 'model', 'roi', 'add-session',
+                               'replace-session', 'remove-session', 'rebuild-sessions')):
             # Stopping the buffer must also work while the worker is offline.
             control.set_enabled(False)
         return self.send(json.dumps(command).encode(), 'application/json', 202)
@@ -431,6 +451,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def anomaly_status(self):
         result = anomaly_control.status()
+        store = LearningSessions(anomaly_control.DATA)
+        result.update(learning_sessions=store.public(), session_limit=MAX_SESSIONS,
+                      sessions_compatible=self.session_configuration_matches(result, store.catalog()))
         videos = []
         for metadata in RECORDINGS.glob('event-*.json'):
             video = anomaly_control.read_json(metadata, {})
@@ -464,6 +487,46 @@ class Handler(BaseHTTPRequestHandler):
                               heatmap_width=None, heatmap_height=None,
                               roi_geometry_valid=False)
         return self.send(json.dumps(result).encode(), 'application/json')
+
+    @staticmethod
+    def session_configuration_matches(state, catalog):
+        config = catalog.get('configuration')
+        if not catalog['sessions'] or not config:
+            return False
+        geometry = LIVE.geometry()
+        if geometry is None or list(geometry) != config['source_size']:
+            return False
+        return (state.get('model_key') == config['model_key']
+                and state.get('input_size') == config['input_size']
+                and state.get('roi') == config['roi'])
+
+    def learning_thumbnail(self, identifier):
+        from PIL import Image, ImageDraw
+        store = LearningSessions(anomaly_control.DATA)
+        path = store.thumbnail(identifier)
+        roi = validate_roi(store.catalog()['configuration']['roi'])
+        with Image.open(path) as original:
+            original.draft('RGB', (320, 240))
+            image = original.convert('RGB')
+        image.thumbnail((320, 240))
+        left, top, right, bottom = roi_bounds(image.width, image.height, roi)
+        if roi is not None:
+            shade = Image.new('RGBA', image.size, (0, 0, 0, 100))
+            shade.paste((0, 0, 0, 0), (left, top, right, bottom))
+            image = Image.alpha_composite(image.convert('RGBA'), shade).convert('RGB')
+        draw = ImageDraw.Draw(image)
+        color = (199, 239, 145)
+        draw.rectangle((left, top, right - 1, bottom - 1), outline=color, width=2)
+        label = 'ANALYSIS AREA' if roi is not None else 'FULL FRAME'
+        text = draw.textbbox((0, 0), label)
+        label_width, label_height = text[2] + 8, text[3] + 6
+        x = max(0, min(left + 4, image.width - label_width - 2))
+        y = max(0, min(top + 4, image.height - label_height - 2))
+        draw.rectangle((x, y, x + label_width, y + label_height), fill=(20, 35, 29))
+        draw.text((x + 4, y + 3), label, fill=color)
+        result = io.BytesIO()
+        image.save(result, format='JPEG', quality=80)
+        return self.send(result.getvalue(), 'image/jpeg')
 
     def live_frame(self):
         query = parse_qs(urlsplit(self.path).query)
@@ -529,6 +592,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(json.dumps(result).encode(), 'application/json')
         if path == '/api/anomaly':
             return self.anomaly_status()
+        if path.startswith('/api/anomaly/sessions/'):
+            return self.learning_thumbnail(path.removeprefix('/api/anomaly/sessions/'))
         if path.startswith('/api/anomaly/events/'):
             event = anomaly_control.event_path(path.removeprefix('/api/anomaly/events/'))
             return self.send(event.read_bytes(), 'image/jpeg')

@@ -88,9 +88,14 @@ class WorkerFrameQualityTests(unittest.TestCase):
                 def features(self, source):
                     received.append(source)
                     return 'features'
-                def fit(self, samples):
-                    fitted.extend(samples)
-                    self.memory, self.baseline_frames = True, len(samples)
+                def fit_sessions(self, groups, progress=None):
+                    for paths in groups:
+                        for path in paths:
+                            if path.read_bytes() != jpeg:
+                                raise AssertionError('Learning must retain the full source JPEG')
+                            fitted.append('features')
+                    self.memory, self.baseline_frames = True, sum(map(len, groups))
+                    return [dict(calibration_frames=4, calibration_threshold=1)]
                 def save(self, path): path.write_bytes(b'new-original-baseline')
 
             module = types.ModuleType('patchcore_lite')

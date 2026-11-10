@@ -145,10 +145,12 @@ class RecordingControlTests(unittest.TestCase):
                     self.assertFalse(dashboard.control.enabled())
                     self.assertEqual(dashboard.anomaly_control.read_json(root/'anomaly/command.json')['action'],'pause')
                     video = dict(capture_mode='video', width=1920, height=1080, fps=15, shutter_us=0)
+                    dashboard.source.configure_capture.return_value = validate(video)
                     request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(video).encode())
                     with urllib.request.urlopen(request,timeout=3) as response:
                         self.assertEqual(response.status,200)
                     dashboard.source.configure_capture.assert_called_with(video)
+                    self.assertEqual(dashboard.anomaly_control.read_json(root/'anomaly/command.json')['action'], 'invalidate')
                     invalid = dict(video, width=3280, height=2464, fps=30)
                     request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(invalid).encode())
                     with self.assertRaises(urllib.error.HTTPError) as error:

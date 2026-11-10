@@ -14,6 +14,36 @@ except ImportError:
 
 @unittest.skipIf(torch is None, 'Requires the optional camera-anomaly image')
 class PatchMemoryTests(unittest.TestCase):
+    def test_saved_sessions_stream_balanced_candidates_and_hold_out_whole_frames(self):
+        from unittest.mock import Mock
+        model = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx', coreset_size=1024)
+        width, height = input_dimensions(model.input_size)
+        model.effective_input_size = (width, height)
+        count = ((width + 15) // 16) * ((height + 15) // 16)
+        def features(jpeg):
+            return torch.full((count, model.feature_dimensions), float(jpeg.decode()))
+        model.features = Mock(side_effect=features)
+        with tempfile.TemporaryDirectory() as directory:
+            groups = []
+            for group_index, frames in enumerate((20, 40)):
+                paths = []
+                for index in range(frames):
+                    path = Path(directory) / f'{group_index}-{index}.jpg'
+                    path.write_text(str(group_index * 100 + index))
+                    paths.append(path)
+                groups.append(paths)
+            with patch.object(model, '_fit_candidates', wraps=model._fit_candidates) as fit:
+                calibration = model.fit_sessions(groups)
+            candidates = fit.call_args.args[0]
+            self.assertEqual(len(candidates), 8000)
+            self.assertEqual(int((candidates[:, 0] < 100).sum()), 4000)
+            self.assertFalse(bool((candidates[:, 0].remainder(5) == 0).any()), 'Calibration frames must not enter memory')
+            self.assertEqual([item['calibration_frames'] for item in calibration], [4, 8])
+            self.assertEqual(model.threshold, max(item['calibration_threshold'] for item in calibration))
+            self.assertEqual(len(model.memory), 1024)
+            self.assertEqual(model.baseline_frames, 60)
+            self.assertEqual(model.features.call_count, 60)
+
     @staticmethod
     def _roi_jpeg(change_outside=False, size=(320, 240)):
         import io
@@ -486,6 +516,7 @@ class PatchMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.pt'
             reference.threshold, reference.baseline_frames = 1, 60
+            reference.inspect_geometry(self._roi_jpeg())
             reference.save(path)
             fast.load(path)
             actual_score, actual_heatmap = fast.score(patches)

@@ -80,24 +80,37 @@ def validate_learning_seconds(value):
 
 
 def command_mode(action, ready, learning, monitoring):
-    if action == 'learn':
+    if action in ('learn', 'add-session', 'replace-session'):
         return True, False
     if action == 'monitor':
         return False, ready
-    if action in ('pause', 'resize', 'model', 'roi'):
+    if action in ('pause', 'resize', 'model', 'roi', 'invalidate'):
         return False, False
     if action in ('configure', 'confirmation'):
+        return learning, monitoring
+    if action in ('remove-session', 'rebuild-sessions'):
+        return False, False
+    if action == 'rename-session':
         return learning, monitoring
     raise ValueError('Unknown analysis action')
 
 
 def request(action, multiplier=1.25, input_size=None, confirmation_frames=None, model_key=None,
-            roi=None, learning_seconds=None):
+            roi=None, learning_seconds=None, session_id=None, session_name='', session_note=''):
     command_mode(action, False, False, False)
     multiplier = validate_multiplier(multiplier)
     command = dict(id=uuid.uuid4().hex, action=action, multiplier=multiplier)
-    if action == 'learn' and learning_seconds is not None:
+    if action in ('learn', 'add-session', 'replace-session') and learning_seconds is not None:
         command['learning_seconds'] = validate_learning_seconds(learning_seconds)
+    if action in ('learn', 'add-session', 'replace-session', 'remove-session', 'rename-session'):
+        try:
+            from .learning_sessions import session_id as validate_id, session_text
+        except ImportError:
+            from learning_sessions import session_id as validate_id, session_text
+        if action in ('replace-session', 'remove-session', 'rename-session'):
+            command['session_id'] = validate_id(session_id)
+        command.update(session_name=session_text(session_name, 80),
+                       session_note=session_text(session_note, 240))
     if action == 'resize':
         command['input_size'] = validate_input_size(input_size)
     if action == 'confirmation':

@@ -108,6 +108,9 @@ $('stop-recording').onclick = () => recordingControl('stop');
 
 let anomalyRequest = false, anomalyEventsKey = '', latestAnomalyState = null;
 let learningDurationLoaded = false;
+let sessionPending = null, sessionFailure = '', sessionRenderKey = '';
+let savedLearningSessions = [];
+const sessionDrafts = new Map();
 let appliedConfirmation = null, pendingConfirmation = null, confirmationFailure = '';
 let inputSizeDirty = false, appliedInputSize = null, pendingInputSize = null, inputSizeFailure = '';
 let appliedModel = null, pendingModel = null, modelDirty = false, modelFailure = '';
@@ -200,6 +203,8 @@ function syncROI(data, unavailable) {
   drawROI();
 }
 function syncAnalysisControls(data = latestAnomalyData, unavailable = latestAnomalyUnavailable) {
+  syncLearningSessions(data, unavailable);
+  unavailable = unavailable || sessionPending !== null;
   syncROI(data, unavailable); syncModel(data, unavailable); syncConfirmation(data, unavailable);
   syncInputSize(data, unavailable); syncThreshold(data, unavailable); syncDetectionControls(data, unavailable);
   if (captureApplied) syncCaptureOptions();
@@ -371,9 +376,108 @@ function syncDetectionControls(data, unavailable) {
   const learningDisabled = capturePending || unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty;
   learningSelect.disabled = learningDisabled;
   $('anomaly-learn').disabled = learningDisabled;
-  $('anomaly-learn').textContent = `Learn normal view · ${Number(learningSelect.value) / 60 || 2} min`;
+  $('anomaly-learn').textContent = `Learn new baseline · ${Number(learningSelect.value) / 60 || 2} min`;
   $('anomaly-monitor').disabled = capturePending || unavailable || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty || !data.baseline_ready || learning || monitoring;
   $('anomaly-pause').disabled = pendingROI !== null || pendingConfirmation !== null || (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
+}
+
+function syncLearningSessions(data, unavailable) {
+  if (Array.isArray(data.learning_sessions)) savedLearningSessions = data.learning_sessions;
+  for (const [identifier, draft] of sessionDrafts) {
+    const saved = savedLearningSessions.find(session => session.id === identifier);
+    if (!saved || (saved.name === draft.name && (saved.note || '') === draft.note)) sessionDrafts.delete(identifier);
+  }
+  if (sessionPending?.id && data.last_request === sessionPending.id) {
+    if (sessionPending.action === 'rename-session' && !data.learning_error) sessionDrafts.delete(sessionPending.sessionId);
+    sessionPending = null;
+  }
+  const busy = unavailable || sessionPending !== null || capturePending || roiConfiguring()
+    || ['learning', 'training'].includes(data.state) || pendingModel !== null || pendingInputSize !== null
+    || pendingConfirmation !== null || pendingMultiplier !== null || inputSizeDirty || modelDirty;
+  const compatible = data.sessions_compatible === true;
+  if ($('session-add')) $('session-add').disabled = busy || !compatible || savedLearningSessions.length >= (data.session_limit || 8);
+  if ($('session-rebuild')) $('session-rebuild').disabled = busy || !compatible;
+  for (const id of ['session-name', 'session-note']) if ($(id)) $(id).disabled = busy;
+  if ($('session-status')) $('session-status').textContent = sessionFailure || data.learning_error
+    || (sessionPending ? 'Waiting for the analysis service to confirm the session operation…'
+      : `${savedLearningSessions.length} / ${data.session_limit || 8} normal sessions. `
+        + (!savedLearningSessions.length ? 'Learn a new baseline to save the first session.'
+          : compatible ? 'Add another confirmed normal state, or replace an existing session.'
+          : 'Analysis settings changed. Old normal sessions will be cleared; learn a new baseline.'));
+  const container = $('learning-sessions');
+  if (!container?.replaceChildren || !document.createElement) return;
+  const key = JSON.stringify([savedLearningSessions, busy, compatible]);
+  if (sessionRenderKey === key) return;
+  sessionRenderKey = key;
+  container.replaceChildren();
+  for (const session of savedLearningSessions) {
+    const draft = sessionDrafts.get(session.id);
+    const card = document.createElement('article'); card.className = 'learning-session';
+    const image = document.createElement('img'); image.loading = 'lazy';
+    image.src = 'api/anomaly/sessions/' + encodeURIComponent(session.id); image.alt = session.name;
+    const details = document.createElement('div');
+    const title = document.createElement('input'); title.value = draft?.name ?? session.name; title.maxLength = 80;
+    title.placeholder = 'Session name';
+    title.setAttribute('aria-label', 'Session name'); title.disabled = busy;
+    const note = document.createElement('input'); note.value = draft?.note ?? session.note ?? ''; note.maxLength = 240;
+    note.placeholder = 'Optional comment'; note.setAttribute('aria-label', 'Session comment'); note.disabled = busy;
+    const info = document.createElement('p');
+    info.textContent = `${datetime(session.created)} · ${session.frames} frames`
+      + (session.calibration_threshold != null ? ` · calibration ${session.calibration_threshold.toFixed(3)}` : '');
+    const buttons = document.createElement('div'); buttons.className = 'session-actions';
+    let saveButton;
+    const updateDraft = () => {
+      sessionDrafts.set(session.id, {name: title.value, note: note.value});
+      saveButton.disabled = busy || (title.value === session.name && note.value === (session.note || ''));
+    };
+    for (const [label, action] of [['Save changes', 'rename-session'], ['Replace session', 'replace-session'], ['Delete session', 'remove-session']]) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.className = 'secondary-button'; button.disabled = busy || (!compatible && action !== 'rename-session');
+      if (action === 'rename-session') {
+        saveButton = button;
+        button.disabled = busy || !draft;
+      }
+      if (action === 'remove-session') button.className += ' delete-button';
+      button.onclick = () => sessionCommand(action, session.id, title.value, note.value);
+      buttons.append(button);
+    }
+    title.addEventListener('input', updateDraft); note.addEventListener('input', updateDraft);
+    details.append(title, note, info, buttons); card.append(image, details); container.append(card);
+  }
+}
+
+async function sessionCommand(action, identifier = null, name = null, note = null) {
+  if (sessionPending !== null || latestAnomalyUnavailable || capturePending || roiConfiguring()
+      || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null
+      || pendingMultiplier !== null || modelDirty || inputSizeDirty
+      || ['learning', 'training'].includes(latestAnomalyState)) return;
+  const collecting = ['learn', 'add-session', 'replace-session'].includes(action);
+  const confirmation = action === 'learn' && savedLearningSessions.length
+    ? 'Replace all saved normal sessions with a new baseline after learning completes?'
+    : action === 'remove-session' ? 'Delete this normal session and rebuild the remaining baseline? Detection will pause.'
+    : action === 'replace-session' ? 'Collect a replacement for this session? Other saved sessions will be retained.' : null;
+  if (confirmation && !window.confirm(confirmation)) return;
+  const body = {multiplier: appliedMultiplier ?? 1.25};
+  if (identifier) body.session_id = identifier;
+  if (collecting || action === 'rename-session') {
+    body.session_name = name ?? $('session-name')?.value ?? '';
+    body.session_note = note ?? $('session-note')?.value ?? '';
+  }
+  if (collecting) {
+    body.learning_seconds = Number($('anomaly-learning-seconds').value);
+    if (![60, 120, 180, 240].includes(body.learning_seconds)) return;
+  }
+  sessionPending = {id: null, action, sessionId: identifier}; sessionFailure = ''; syncAnalysisControls();
+  try {
+    const response = await fetch('api/anomaly/' + action, {method: 'POST',
+      headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    if (!response.ok) throw Error();
+    sessionPending.id = (await response.json()).id;
+    setTimeout(refreshAnomaly, 500);
+  } catch {
+    sessionPending = null; sessionFailure = 'Session request failed. Check settings, available slots and service status, then retry.';
+    syncAnalysisControls();
+  }
 }
 async function refreshAnomaly() {
   if (document.hidden || anomalyRequest) return;
@@ -389,9 +493,11 @@ async function refreshAnomaly() {
     const quality = data.preview_quality;
     $('stream-quality').textContent = quality
       ? `Stream quality: ${quality.state} · decoder errors: ${quality.decoder_errors} · excluded preview frames: ${quality.discarded_frames}` : '';
-    $('anomaly-progress').hidden = data.state !== 'learning';
-    $('anomaly-progress').max = data.target || 60; $('anomaly-progress').value = data.collected || 0;
+    $('anomaly-progress').hidden = !['learning', 'training'].includes(data.state);
+    $('anomaly-progress').max = (data.state === 'training' ? data.training_target : data.target) || 60;
+    $('anomaly-progress').value = (data.state === 'training' ? data.training_collected : data.collected) || 0;
     if (data.state === 'learning') $('anomaly-message').textContent += ` · ${data.collected}/${data.target} frames`;
+    if (data.state === 'training') $('anomaly-message').textContent += ` · ${data.training_collected || 0}/${data.training_target || 0} saved frames`;
     $('anomaly-score').textContent = data.score != null ? `Score ${data.score.toFixed(2)} / threshold ${data.threshold.toFixed(2)} (learned ${(data.threshold / data.multiplier).toFixed(3)} × ${data.multiplier}) · ${data.ratio.toFixed(2)}×` : 'Score: —';
     $('anomaly-speed').textContent = data.inference_ms != null ? `Analysis ${(1 / (data.analysis_interval_sec || 2)).toFixed(1)} FPS · confirm ${data.confirmation_frames || 3} frames · cycle ${data.inference_ms} ms` : 'Analysis: —';
     const unavailable = ['offline', 'loading'].includes(data.state);
@@ -431,7 +537,8 @@ async function refreshAnomaly() {
   } finally { anomalyRequest = false; }
 }
 async function anomalyControl(action) {
-  if (pendingROI !== null || (roiEditing && action !== 'pause') || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null) return;
+  if (sessionPending !== null || pendingROI !== null || (roiEditing && action !== 'pause') || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null) return;
+  if (action === 'learn') return sessionCommand('learn');
   const configuring = action === 'configure';
   let generation = thresholdGeneration;
   const multiplier = configuring ? parseMultiplier($('anomaly-multiplier').value) : (appliedMultiplier ?? 1.25);
@@ -448,11 +555,6 @@ async function anomalyControl(action) {
   }
   try {
     const body = {multiplier};
-    if (action === 'learn') {
-      const seconds = Number($('anomaly-learning-seconds').value);
-      if (![60, 120, 180, 240].includes(seconds)) throw Error();
-      body.learning_seconds = seconds;
-    }
     const response = await fetch('api/anomaly/' + action, {method: 'POST', headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     if (!response.ok) throw Error();
     if (!configuring) $('anomaly-message').textContent = 'Request sent. Waiting for analysis…';
@@ -591,9 +693,11 @@ $('anomaly-multiplier').addEventListener('keydown', event => {
 $('anomaly-apply').onclick = () => anomalyControl('configure');
 $('anomaly-learning-seconds').addEventListener('change', () => {
   learningDurationLoaded = true;
-  $('anomaly-learn').textContent = `Learn normal view · ${Number($('anomaly-learning-seconds').value) / 60} min`;
+  $('anomaly-learn').textContent = `Learn new baseline · ${Number($('anomaly-learning-seconds').value) / 60} min`;
 });
 $('anomaly-learn').onclick = () => anomalyControl('learn');
+if ($('session-add')) $('session-add').onclick = () => sessionCommand('add-session');
+if ($('session-rebuild')) $('session-rebuild').onclick = () => sessionCommand('rebuild-sessions');
 $('anomaly-monitor').onclick = () => anomalyControl('monitor');
 $('anomaly-pause').onclick = () => anomalyControl('pause');
 refreshAnomaly(); setInterval(refreshAnomaly, 250);
