@@ -16,12 +16,12 @@ from torchvision.transforms import functional as TF
 from PIL import Image
 
 try:
-    from .anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE
+    from .anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
     from .feature_encoder import FeatureEncoder
     from .model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, ANALYSIS_SOURCE
     from .roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 except ImportError:
-    from anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE
+    from anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
     from feature_encoder import FeatureEncoder
     from model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, ANALYSIS_SOURCE
     from roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
@@ -30,7 +30,8 @@ except ImportError:
 class PatchCoreLite:
     def __init__(self, input_size=DEFAULT_INPUT_SIZE, threads=None, feature_engine=None,
                  distance_engine=None, model_key=DEFAULT_MODEL, jpeg_draft=None, top_k=None,
-                 coreset_size=None):
+                 coreset_size=None, color_mode='rgb'):
+        self.color_mode = validate_color_mode(color_mode)
         requested_threads = os.environ.get('CAMERA_ANOMALY_THREADS', '1') if threads is None else threads
         self.inference_threads = int(requested_threads)
         if isinstance(requested_threads, bool) or self.inference_threads not in (1, 2, 3, 4) or float(requested_threads) != self.inference_threads:
@@ -129,6 +130,12 @@ class PatchCoreLite:
         self.roi = roi
         self.set_input_size(self.input_size)
 
+    def set_color_mode(self, color_mode):
+        color_mode = validate_color_mode(color_mode)
+        if color_mode != self.color_mode:
+            self.color_mode = color_mode
+            self.set_input_size(self.input_size)
+
     def inspect_geometry(self, jpeg):
         """Inspect a JPEG header and reject a mixed-geometry ROI learning bank."""
         with Image.open(io.BytesIO(jpeg)) as image:
@@ -161,6 +168,8 @@ class PatchCoreLite:
         decode_started = time.perf_counter()
         image = Image.open(io.BytesIO(jpeg))
         source_width, source_height = image.size
+        decode_mode = 'L' if self.color_mode == 'grayscale' else 'RGB'
+        draft_size = image.size
         if self.jpeg_draft:
             width, height = self.effective_input_size
             if self.roi is None:
@@ -168,9 +177,11 @@ class PatchCoreLite:
             else:
                 draft_size = (math.ceil(width / self.roi['width']),
                               math.ceil(height / self.roi['height']))
-            image.draft('RGB', draft_size)
+        if self.jpeg_draft or self.color_mode == 'grayscale':
+            image.draft(decode_mode, draft_size)
         decoded_width, decoded_height = image.size
-        image = image.convert('RGB')
+        decoded_mode = image.mode
+        image = image.convert(decode_mode)
         decode_ms = (time.perf_counter() - decode_started) * 1000
         transform_started = time.perf_counter()
         if self.roi is not None:
@@ -184,13 +195,17 @@ class PatchCoreLite:
         transform_ms = (time.perf_counter() - transform_started) * 1000
         tensor_started = time.perf_counter()
         profile = MODELS[self.model_key]
-        tensor = TF.normalize(TF.to_tensor(image), profile.get('mean', (.485, .456, .406)),
+        tensor = TF.to_tensor(image)
+        if self.color_mode == 'grayscale':
+            tensor = tensor.expand(3, -1, -1)
+        tensor = TF.normalize(tensor, profile.get('mean', (.485, .456, .406)),
                               profile.get('std', (.229, .224, .225))).unsqueeze(0)
         tensor_ms = (time.perf_counter() - tensor_started) * 1000
         self.preparation_metrics = dict(
             geometry_ms=geometry_ms, decode_ms=decode_ms, transform_ms=transform_ms,
             tensor_ms=tensor_ms, total_ms=(time.perf_counter() - total_started) * 1000,
-            decoded_width=decoded_width, decoded_height=decoded_height)
+            decoded_width=decoded_width, decoded_height=decoded_height,
+            decoded_mode=decoded_mode)
         return tensor
 
     @torch.inference_mode()
@@ -320,6 +335,7 @@ class PatchCoreLite:
             raise ValueError('Source geometry is required before saving a baseline')
         torch.save(dict(version=6, analysis_source=ANALYSIS_SOURCE,
                         learning_revision=self.learning_revision,
+                        color_mode=self.color_mode,
                         encoder=self.encoder_id, input_size=self.input_size,
                         roi=self.roi, roi_preprocessing=ROI_PREPROCESSING,
                         source_size=self.source_size, effective_input_size=self.effective_input_size,
@@ -341,6 +357,8 @@ class PatchCoreLite:
             raise ValueError('Unsupported visual baseline')
         if model.get('input_size') != self.input_size:
             raise ValueError('Baseline input size changed; learn a normal view again')
+        if validate_color_mode(model.get('color_mode', 'rgb')) != self.color_mode:
+            raise ValueError('Analysis color mode changed; learn a normal view again')
         saved_draft = model['jpeg_draft']
         if not isinstance(saved_draft, bool) or saved_draft != self.jpeg_draft:
             raise ValueError('JPEG preprocessing changed; learn the normal view again')

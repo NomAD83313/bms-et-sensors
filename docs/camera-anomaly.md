@@ -10,6 +10,21 @@ keeps its separate recording controls; retention and live preview remain indepen
 
 ## Saved normal sessions
 
+The **Analysis image** radio buttons select **Color** (default RGB) or **Grayscale**
+independently for each camera. This affects learning and detection only: live preview,
+stored session JPEGs, event snapshots, heatmaps and video retain their original color.
+Grayscale JPEG decoding requests luminance directly, then crops and resizes one
+channel. That channel is expanded to three before the encoder's existing ImageNet
+normalization, preserving compatibility with the current RGB ONNX input. The CNN
+and nearest-neighbor workloads remain unchanged; compare preparation and total
+cycle time to measure the benefit. Color-only anomalies may become less visible.
+
+Changing the analysis color mode pauses detection and event recording, removes the
+incompatible baseline and normal sessions, and requires new learning. Selecting the
+already active mode is a no-op. The selection persists across worker restarts and
+is validated in saved baselines and session configuration. Existing baselines and
+session catalogs without this setting are interpreted as RGB.
+
 Both cameras support up to eight independently named normal sessions. Names are
 optional and default to `Session 1`, `Session 2`, etc.; an optional comment can
 describe any reason for a normal state, including a new permitted object. Sessions
@@ -38,7 +53,7 @@ correlated: evaluate independent normal footage and real anomalies after adding
 a new state. More accepted appearances can also make similar anomalies less visible.
 
 Sessions must use the same model, input preset, ROI, source dimensions and
-preprocessing. Changing ROI, input preset, model or source dimensions automatically
+preprocessing. Changing ROI, input preset, model, analysis color mode or source dimensions automatically
 deletes the incompatible baseline and its normal sessions, including their JPEGs.
 Startup configuration mismatches also clear incompatible sessions. New normal-view
 learning is then required. Pausing, a temporary camera outage, metadata edits,

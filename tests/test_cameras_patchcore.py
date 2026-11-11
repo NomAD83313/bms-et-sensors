@@ -14,6 +14,49 @@ except ImportError:
 
 @unittest.skipIf(torch is None, 'Requires the optional camera-anomaly image')
 class PatchMemoryTests(unittest.TestCase):
+    def test_grayscale_decodes_luminance_and_separates_baselines(self):
+        jpeg = self._roi_jpeg()
+        roi = dict(x=.25, y=.25, width=.5, height=.5)
+        color = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx')
+        gray = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx', color_mode='grayscale')
+        for model in (color, gray): model.set_roi(roi)
+        color_tensor, gray_tensor = color._image(jpeg), gray._image(jpeg)
+        self.assertEqual(gray_tensor.shape, color_tensor.shape)
+        self.assertEqual(tuple(gray_tensor.shape), (1, 3, 120, 160))
+        self.assertEqual(gray.preparation_metrics['decoded_mode'], 'L')
+        mean = torch.tensor((.485, .456, .406))[None, :, None, None]
+        std = torch.tensor((.229, .224, .225))[None, :, None, None]
+        luminance = gray_tensor * std + mean
+        torch.testing.assert_close(luminance[:, 0], luminance[:, 1], rtol=0, atol=1e-6)
+        torch.testing.assert_close(luminance[:, 0], luminance[:, 2], rtol=0, atol=1e-6)
+        self.assertGreater(float((gray_tensor - color_tensor).abs().mean()), .01)
+        features = gray.features(jpeg)
+        gray.memory = features[:64].contiguous()
+        gray.threshold, gray.baseline_frames = 1, 20
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'baseline.pt'
+            gray.save(path)
+            restored = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx', color_mode='grayscale')
+            restored.set_roi(roi); restored.load(path)
+            torch.testing.assert_close(restored.features(jpeg), features)
+            with self.assertRaises(ValueError): color.load(path)
+            gray.set_color_mode('grayscale')
+            self.assertIsNotNone(gray.memory)
+            gray.set_color_mode('rgb')
+            self.assertIsNone(gray.memory)
+            self.assertEqual(gray.roi, roi)
+            color.inspect_geometry(jpeg)
+            color.memory, color.threshold, color.baseline_frames = features[:64], 1, 20
+            color.save(path)
+            saved = torch.load(path, weights_only=True)
+            saved.pop('color_mode')
+            torch.save(saved, path)
+            color.load(path)
+            with self.assertRaises(ValueError): restored.load(path)
+        for invalid in (None, True, 'gray'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                gray.set_color_mode(invalid)
+
     def test_saved_sessions_stream_balanced_candidates_and_hold_out_whole_frames(self):
         from unittest.mock import Mock
         model = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx', coreset_size=1024)

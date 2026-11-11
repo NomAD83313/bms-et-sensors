@@ -6,10 +6,10 @@ import time
 import uuid
 
 try:
-    from .model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions
+    from .model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, validate_color_mode
     from .roi import validate_roi
 except ImportError:
-    from model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions
+    from model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, validate_color_mode
     from roi import validate_roi
 
 INPUT_SIZES = ('768x432', '1024x576', '1280x720', '1536x864', '1920x1080')
@@ -84,7 +84,7 @@ def command_mode(action, ready, learning, monitoring):
         return True, False
     if action == 'monitor':
         return False, ready
-    if action in ('pause', 'resize', 'model', 'roi', 'invalidate'):
+    if action in ('pause', 'resize', 'model', 'roi', 'invalidate', 'color'):
         return False, False
     if action in ('configure', 'confirmation'):
         return learning, monitoring
@@ -96,7 +96,8 @@ def command_mode(action, ready, learning, monitoring):
 
 
 def request(action, multiplier=1.25, input_size=None, confirmation_frames=None, model_key=None,
-            roi=None, learning_seconds=None, session_id=None, session_name='', session_note=''):
+            roi=None, learning_seconds=None, session_id=None, session_name='', session_note='',
+            color_mode=None):
     command_mode(action, False, False, False)
     multiplier = validate_multiplier(multiplier)
     command = dict(id=uuid.uuid4().hex, action=action, multiplier=multiplier)
@@ -119,6 +120,8 @@ def request(action, multiplier=1.25, input_size=None, confirmation_frames=None, 
         command['model_key'] = validate_model(model_key)
     if action == 'roi':
         command['roi'] = validate_roi(roi)
+    if action == 'color':
+        command['color_mode'] = validate_color_mode(color_mode)
     write_json(DATA / 'command.json', command)
     return command
 

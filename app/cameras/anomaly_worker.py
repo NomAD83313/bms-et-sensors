@@ -16,7 +16,7 @@ from anomaly_control import (
     DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, MODELS,
     command_mode, heatmap_dimensions, input_dimensions, read_json,
     validate_confirmation_frames, validate_input_size, validate_model,
-    validate_learning_seconds, validate_multiplier, write_json,
+    validate_learning_seconds, validate_multiplier, validate_color_mode, write_json,
 )
 from patchcore_lite import PatchCoreLite, overlay
 try:
@@ -73,6 +73,11 @@ class AnomalyWorker:
         except ValueError:
             self.selected_roi = None
             self.baseline_invalidated = configuration_reset = True
+        try:
+            selected_color = validate_color_mode(previous.get('color_mode', 'rgb'))
+        except ValueError:
+            selected_color = 'rgb'
+            self.baseline_invalidated = configuration_reset = True
 
         self.model = PatchCoreLite()
         if selected_input_size != getattr(self.model, 'input_size', DEFAULT_INPUT_SIZE):
@@ -81,6 +86,8 @@ class AnomalyWorker:
             self.model.set_model(selected_model)
         if self.selected_roi is not None:
             self.model.set_roi(self.selected_roi)
+        if selected_color != getattr(self.model, 'color_mode', 'rgb'):
+            self.model.set_color_mode(selected_color)
 
         self.model_path = DATA / 'baseline.pt'
         self.sessions = LearningSessions(DATA)
@@ -89,7 +96,7 @@ class AnomalyWorker:
         catalog = self.sessions.catalog()
         current = configuration(self.model)
         if catalog['sessions'] and any(current[key] != catalog['configuration'][key]
-                for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k')):
+                for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k', 'color_mode')):
             self.baseline_invalidated = configuration_reset = True
         if self.baseline_invalidated:
             self.invalidate_baseline(clear_sessions=configuration_reset)
@@ -168,6 +175,7 @@ class AnomalyWorker:
             last_request=self.last_request, monitoring=self.monitoring,
             multiplier=self.multiplier, input_size=self.model.input_size,
             model_key=getattr(self.model, 'model_key', DEFAULT_MODEL),
+            color_mode=getattr(self.model, 'color_mode', 'rgb'),
             roi=self.selected_roi, learning_seconds=self.learning_seconds,
             baseline_invalidated=self.baseline_invalidated,
             confirmation_frames=self.confirmation_frames,
@@ -202,7 +210,9 @@ class AnomalyWorker:
                          != getattr(self.model, 'model_key', DEFAULT_MODEL))
         roi_changed = (action == 'roi'
                        and validate_roi(command.get('roi')) != self.selected_roi)
-        if action not in ('resize', 'model', 'roi') or resized or model_changed or roi_changed:
+        color_changed = (action == 'color' and validate_color_mode(command.get('color_mode'))
+                         != getattr(self.model, 'color_mode', 'rgb'))
+        if action not in ('resize', 'model', 'roi', 'color') or resized or model_changed or roi_changed or color_changed:
             self.learning, self.monitoring = command_mode(
                 action, self.model.memory is not None, self.learning, self.monitoring)
         if action == 'confirmation':
@@ -221,12 +231,15 @@ class AnomalyWorker:
         elif action == 'invalidate':
             self.model.set_input_size(self.model.input_size)
             self.invalidate_baseline(clear_sessions=True)
+        elif action == 'color' and color_changed:
+            self.model.set_color_mode(command['color_mode'])
+            self.invalidate_baseline(clear_sessions=True)
         else:
             self.multiplier = validate_multiplier(command.get('multiplier', 1.25))
         self.last_request = command['id']
         self.reset_detection_candidate()
-        if (action not in ('configure', 'resize', 'confirmation', 'model', 'roi')
-                or resized or model_changed or roi_changed):
+        if (action not in ('configure', 'resize', 'confirmation', 'model', 'roi', 'color')
+                or resized or model_changed or roi_changed or color_changed):
             self.samples = []
             self.sessions.abort()
             self.clear_video_trigger()
@@ -256,7 +269,7 @@ class AnomalyWorker:
                 current = configuration(self.model)
                 if not catalog['sessions'] or any(
                         current[key] != catalog['configuration'][key]
-                        for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k')):
+                        for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k', 'color_mode')):
                     raise ValueError('Create a new baseline for the current model and area first')
             if action in ('learn', 'add-session', 'replace-session'):
                 mode = {'learn': 'new', 'add-session': 'add', 'replace-session': 'replace'}[action]
@@ -295,6 +308,7 @@ class AnomalyWorker:
         state = dict(
             updated=time.time(), model='PatchCore-style / ' + MODELS[model_key]['label'],
             model_key=model_key, model_label=MODELS[model_key]['label'],
+            color_mode=getattr(self.model, 'color_mode', 'rgb'),
             baseline_ready=self.model.memory is not None,
             baseline_frames=self.model.baseline_frames,
             monitoring_enabled=self.monitoring, input_size=self.model.input_size,
@@ -357,6 +371,7 @@ class AnomalyWorker:
             tensor_ms=round(preparation['tensor_ms']),
             encoder_ms=max(0, state['feature_ms'] - round(preparation['total_ms'])),
             jpeg_draft=getattr(self.model, 'jpeg_draft', False),
+            decoded_mode=preparation.get('decoded_mode', 'RGB'),
             decoded_width=preparation['decoded_width'],
             decoded_height=preparation['decoded_height'])
 

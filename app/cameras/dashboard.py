@@ -317,7 +317,7 @@ POST_PATHS = frozenset((
     '/api/capture',
     '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause',
     '/api/anomaly/configure', '/api/anomaly/resize',
-    '/api/anomaly/confirmation', '/api/anomaly/model', '/api/anomaly/roi',
+    '/api/anomaly/confirmation', '/api/anomaly/model', '/api/anomaly/roi', '/api/anomaly/color',
     '/api/anomaly/add-session', '/api/anomaly/replace-session',
     '/api/anomaly/remove-session', '/api/anomaly/rename-session', '/api/anomaly/rebuild-sessions',
     '/api/delete/event', '/api/delete/recording', '/api/delete/all-events',
@@ -413,9 +413,10 @@ class Handler(BaseHTTPRequestHandler):
             confirmation_frames=body.get('confirmation_frames'),
             model_key=body.get('model_key'), roi=body.get('roi'),
             learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
-            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''))
+            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''),
+            color_mode=body.get('color_mode'))
         if (os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly'
-                and action in ('pause', 'learn', 'resize', 'model', 'roi', 'add-session',
+                and action in ('pause', 'learn', 'resize', 'model', 'roi', 'color', 'add-session',
                                'replace-session', 'remove-session', 'rebuild-sessions')):
             # Stopping the buffer must also work while the worker is offline.
             control.set_enabled(False)
@@ -498,7 +499,8 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return (state.get('model_key') == config['model_key']
                 and state.get('input_size') == config['input_size']
-                and state.get('roi') == config['roi'])
+                and state.get('roi') == config['roi']
+                and state.get('color_mode', 'rgb') == config['color_mode'])
 
     def learning_thumbnail(self, identifier):
         from PIL import Image, ImageDraw

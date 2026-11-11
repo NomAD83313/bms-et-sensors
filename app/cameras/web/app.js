@@ -112,13 +112,14 @@ let sessionPending = null, sessionFailure = '', sessionRenderKey = '';
 let savedLearningSessions = [];
 const sessionDrafts = new Map();
 let appliedConfirmation = null, pendingConfirmation = null, confirmationFailure = '';
+let appliedColor = 'rgb', pendingColor = null, colorFailure = '';
 let inputSizeDirty = false, appliedInputSize = null, pendingInputSize = null, inputSizeFailure = '';
 let appliedModel = null, pendingModel = null, modelDirty = false, modelFailure = '';
 let appliedHeatmap = null;
 let appliedROI = null, draftROI = null, pendingROI = null, roiEditing = false, roiFailure = '';
 let roiSource = null, roiPointer = null, roiDragStart = null, appliedEffectiveInput = null;
 let latestAnomalyData = {}, latestAnomalyUnavailable = true;
-const roiConfiguring = () => roiEditing || pendingROI !== null;
+const analysisConfiguring = () => roiEditing || pendingROI !== null || pendingColor !== null;
 function canonicalROI(roi) {
   return roi && roi.x === 0 && roi.y === 0 && roi.width === 1 && roi.height === 1 ? null : roi;
 }
@@ -186,7 +187,7 @@ function syncROI(data, unavailable) {
     }
   }
   const busy = capturePending || unavailable || ['learning', 'training'].includes(data.state)
-    || pendingROI !== null || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
+    || pendingROI !== null || pendingColor !== null || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
   const geometryReady = roiSourceRect() !== null;
   if ($('roi-select')) $('roi-select').disabled = busy || !geometryReady || roiEditing || modelDirty || inputSizeDirty;
   if ($('roi-apply')) $('roi-apply').disabled = busy || !roiEditing || draftROI === null || sameROI(draftROI, appliedROI) || roiPointer !== null;
@@ -203,6 +204,7 @@ function syncROI(data, unavailable) {
   drawROI();
 }
 function syncAnalysisControls(data = latestAnomalyData, unavailable = latestAnomalyUnavailable) {
+  syncColorMode(data, unavailable);
   syncLearningSessions(data, unavailable);
   unavailable = unavailable || sessionPending !== null;
   syncROI(data, unavailable); syncModel(data, unavailable); syncConfirmation(data, unavailable);
@@ -304,7 +306,7 @@ function syncModel(data, unavailable) {
     if (!modelDirty && pendingModel === null) $('anomaly-model').value = appliedModel;
   }
   const learning = ['learning', 'training'].includes(data.state);
-  const busy = capturePending || unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
+  const busy = capturePending || unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
   $('anomaly-model').disabled = busy || inputSizeDirty;
   $('anomaly-model-apply').disabled = busy || !modelDirty;
   $('model-status').textContent = modelFailure || (pendingModel
@@ -314,7 +316,7 @@ function syncModel(data, unavailable) {
     : appliedModel ? `Applied model: ${$('anomaly-model').options?.[ $('anomaly-model').selectedIndex ]?.text || data.model_label || appliedModel}.` : 'Checking analysis model…');
 }
 async function applyModel() {
-  if (!modelDirty || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || ['learning', 'training'].includes(latestAnomalyState)) return;
+  if (!modelDirty || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || ['learning', 'training'].includes(latestAnomalyState)) return;
   const value = $('anomaly-model').value;
   pendingModel = {value, id: null}; modelFailure = '';
   syncModel({}, false); syncDetectionControls({}, false);
@@ -358,8 +360,8 @@ function syncThreshold(data, unavailable) {
     }
     if (!thresholdDirty && document.activeElement !== input) input.value = String(appliedMultiplier);
   }
-  $('anomaly-apply').disabled = unavailable || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || !thresholdDirty;
-  input.disabled = roiConfiguring();
+  $('anomaly-apply').disabled = unavailable || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || !thresholdDirty;
+  input.disabled = analysisConfiguring();
   $('threshold-status').textContent = thresholdFailure || (pendingMultiplier !== null ? 'Applying threshold…' : thresholdDirty ? `Applied multiplier: ${appliedMultiplier ?? '—'}. Edited value is not applied yet.` : `Applied multiplier: ${appliedMultiplier ?? '—'}.`);
 }
 function syncDetectionControls(data, unavailable) {
@@ -373,12 +375,12 @@ function syncDetectionControls(data, unavailable) {
     learningSelect.value = String(data.learning_seconds);
     learningDurationLoaded = true;
   }
-  const learningDisabled = capturePending || unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty;
+  const learningDisabled = capturePending || unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty;
   learningSelect.disabled = learningDisabled;
   $('anomaly-learn').disabled = learningDisabled;
   $('anomaly-learn').textContent = `Learn new baseline · ${Number(learningSelect.value) / 60 || 2} min`;
-  $('anomaly-monitor').disabled = capturePending || unavailable || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty || !data.baseline_ready || learning || monitoring;
-  $('anomaly-pause').disabled = pendingROI !== null || pendingConfirmation !== null || (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
+  $('anomaly-monitor').disabled = capturePending || unavailable || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || inputSizeDirty || modelDirty || !data.baseline_ready || learning || monitoring;
+  $('anomaly-pause').disabled = pendingROI !== null || pendingColor !== null || pendingConfirmation !== null || (unavailable && !coupled) || !(learning || monitoring || (coupled && data.recording_enabled));
 }
 
 function syncLearningSessions(data, unavailable) {
@@ -391,7 +393,7 @@ function syncLearningSessions(data, unavailable) {
     if (sessionPending.action === 'rename-session' && !data.learning_error) sessionDrafts.delete(sessionPending.sessionId);
     sessionPending = null;
   }
-  const busy = unavailable || sessionPending !== null || capturePending || roiConfiguring()
+  const busy = unavailable || sessionPending !== null || capturePending || analysisConfiguring()
     || ['learning', 'training'].includes(data.state) || pendingModel !== null || pendingInputSize !== null
     || pendingConfirmation !== null || pendingMultiplier !== null || inputSizeDirty || modelDirty;
   const compatible = data.sessions_compatible === true;
@@ -447,7 +449,7 @@ function syncLearningSessions(data, unavailable) {
 }
 
 async function sessionCommand(action, identifier = null, name = null, note = null) {
-  if (sessionPending !== null || latestAnomalyUnavailable || capturePending || roiConfiguring()
+  if (sessionPending !== null || latestAnomalyUnavailable || capturePending || analysisConfiguring()
       || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null
       || pendingMultiplier !== null || modelDirty || inputSizeDirty
       || ['learning', 'training'].includes(latestAnomalyState)) return;
@@ -537,7 +539,7 @@ async function refreshAnomaly() {
   } finally { anomalyRequest = false; }
 }
 async function anomalyControl(action) {
-  if (sessionPending !== null || pendingROI !== null || (roiEditing && action !== 'pause') || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null) return;
+  if (sessionPending !== null || pendingROI !== null || pendingColor !== null || (roiEditing && action !== 'pause') || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null) return;
   if (action === 'learn') return sessionCommand('learn');
   const configuring = action === 'configure';
   let generation = thresholdGeneration;
@@ -571,6 +573,54 @@ async function anomalyControl(action) {
     refreshAnomaly();
   }
 }
+function syncColorMode(data, unavailable) {
+  if (['rgb', 'grayscale'].includes(data.color_mode)) {
+    appliedColor = data.color_mode;
+    if (pendingColor?.id === data.last_request && pendingColor?.value === appliedColor) {
+      pendingColor = null; colorFailure = '';
+    }
+  }
+  const busy = unavailable || capturePending || sessionPending !== null || analysisConfiguring()
+    || ['learning', 'training'].includes(data.state) || pendingModel !== null || pendingInputSize !== null
+    || pendingConfirmation !== null || pendingMultiplier !== null || modelDirty || inputSizeDirty;
+  const selected = pendingColor?.value ?? appliedColor;
+  for (const mode of ['rgb', 'grayscale']) {
+    const radio = $('anomaly-color-' + mode);
+    if (radio) { radio.checked = mode === selected; radio.disabled = busy; }
+  }
+  if ($('color-status')) $('color-status').textContent = colorFailure || (pendingColor
+    ? 'Applying analysis color mode. Saved normal sessions will be cleared; new learning is required…'
+    : `Analysis image: ${appliedColor === 'grayscale' ? 'Grayscale' : 'Color (RGB)'}.`
+      + (data.retraining_required ? ' Learn a new baseline before detection.' : ''));
+}
+async function applyColorMode(mode) {
+  if (!['rgb', 'grayscale'].includes(mode) || mode === appliedColor || latestAnomalyUnavailable
+      || capturePending || sessionPending !== null || analysisConfiguring()
+      || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null
+      || pendingMultiplier !== null || modelDirty || inputSizeDirty
+      || ['learning', 'training'].includes(latestAnomalyState)) return;
+  pendingColor = {value: mode, id: null}; colorFailure = ''; syncAnalysisControls();
+  try {
+    const response = await fetch('api/anomaly/color', {method: 'POST',
+      headers: {'X-Camera-Control': '1', 'Content-Type': 'application/json'},
+      body: JSON.stringify({color_mode: mode, multiplier: appliedMultiplier ?? 1.25})});
+    if (!response.ok) throw Error();
+    const command = await response.json(); pendingColor.id = command.id;
+    setTimeout(refreshAnomaly, 500);
+    setTimeout(() => {
+      if (pendingColor?.id === command.id) {
+        colorFailure = 'Waiting for the analysis service to confirm the color mode. Other settings remain locked.';
+        syncAnalysisControls();
+      }
+    }, 15000);
+  } catch {
+    pendingColor = null; colorFailure = 'Could not change analysis color mode. Please retry.';
+    syncAnalysisControls();
+  }
+}
+for (const mode of ['rgb', 'grayscale']) {
+  $('anomaly-color-' + mode)?.addEventListener('change', () => applyColorMode(mode));
+}
 function syncConfirmation(data, unavailable) {
   const select = $('anomaly-confirmation');
   if (data.confirmation_frames != null) {
@@ -581,13 +631,13 @@ function syncConfirmation(data, unavailable) {
     if (pendingConfirmation === null) select.value = String(appliedConfirmation);
   }
   select.disabled = unavailable || ['learning', 'training'].includes(data.state)
-    || roiConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null;
+    || analysisConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null;
   $('confirmation-status').textContent = confirmationFailure || (pendingConfirmation !== null
     ? 'Applying confirmation setting…'
     : appliedConfirmation !== null ? `Applied: ${appliedConfirmation} consecutive analyzed frame${appliedConfirmation === 1 ? '' : 's'}. No new learning required.` : 'Checking confirmation setting…');
 }
 async function applyConfirmation() {
-  if (roiConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null) return;
+  if (analysisConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null) return;
   const value = Number($('anomaly-confirmation').value);
   if (value === appliedConfirmation) return;
   pendingConfirmation = {value, id: null}; confirmationFailure = '';
@@ -641,8 +691,8 @@ function syncInputSize(data, unavailable) {
   const stride = appliedModel === 'mobilenetv3'
     || ['pp-lcnet-x0.5', 'mobilenetv4-convsmall-x0.5'].includes(appliedModel) ? 16 : 8;
   const grid = appliedHeatmap || [Math.ceil(dimensions.width / stride), Math.ceil(dimensions.height / stride)];
-  select.disabled = unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
-  $('anomaly-size-apply').disabled = unavailable || learning || roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty;
+  select.disabled = unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
+  $('anomaly-size-apply').disabled = unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty;
   $('input-size-status').textContent = inputSizeFailure || (pendingROI !== null
     ? 'Applying analysis area. New learning is required after confirmation…'
     : pendingModel !== null || pendingInputSize !== null
@@ -653,7 +703,7 @@ function syncInputSize(data, unavailable) {
     : appliedInputSize !== null ? `Model input: ${inputLabel} · heatmap grid: ${grid[0]} × ${grid[1]}.` : 'Checking model input size…');
 }
 async function applyInputSize() {
-  if (roiConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty) return;
+  if (analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty) return;
   const value = $('anomaly-input-size').value;
   pendingInputSize = {value, id: null}; inputSizeFailure = '';
   syncInputSize({}, false); syncDetectionControls({}, false);
@@ -758,8 +808,8 @@ function syncCaptureOptions() {
     $('capture-exposure').value = '0';
     $('capture-status').textContent = 'Previous exposure does not fit this interval. Auto exposure selected; apply to save.';
   }
-  for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).disabled = capturePending || roiConfiguring();
-  $('capture-apply').disabled = capturePending || roiConfiguring() || !captureDirty || ['learning', 'training'].includes(latestAnomalyState) || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
+  for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).disabled = capturePending || analysisConfiguring();
+  $('capture-apply').disabled = capturePending || analysisConfiguring() || !captureDirty || ['learning', 'training'].includes(latestAnomalyState) || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
 }
 async function refreshCapture() {
   if (capturePolling || document.hidden) return;
@@ -794,7 +844,7 @@ for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-
   $('capture-status').textContent = 'Not applied. Applying pauses detection; check the new image and learn the normal view again.';
 });
 $('capture-apply').onclick = async () => {
-  if (capturePending || roiConfiguring() || !captureDirty || ['learning', 'training'].includes(latestAnomalyState)) return;
+  if (capturePending || analysisConfiguring() || !captureDirty || ['learning', 'training'].includes(latestAnomalyState)) return;
   capturePending = true; syncCaptureOptions();
   $('capture-status').textContent = 'Applying capture settings; the live image will reconnect…';
   try {

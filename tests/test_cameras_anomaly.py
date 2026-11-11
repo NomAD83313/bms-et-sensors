@@ -9,6 +9,17 @@ from app.cameras import anomaly_control
 
 
 class AnomalyControlTests(unittest.TestCase):
+    def test_color_mode_validates_before_replacing_the_command(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for mode in ('rgb', 'grayscale'):
+                saved = anomaly_control.request('color', color_mode=mode)
+                self.assertEqual(saved['color_mode'], mode)
+            for mode in (None, '', 'RGB', 'gray', True, 1, []):
+                with self.subTest(mode=mode), self.assertRaises(ValueError):
+                    anomaly_control.request('color', color_mode=mode)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), saved)
+            self.assertEqual(anomaly_control.command_mode('color', True, True, True), (False, False))
+
     def test_confirmation_requires_consecutive_scores_and_cooldown(self):
         confirmation = anomaly_control.Confirmation(required=3, cooldown=30)
         self.assertEqual(confirmation.update(2, 1, 0), (False, False))

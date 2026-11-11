@@ -2,6 +2,7 @@
 
 DEFAULT_MODEL = 'resnet-fp32'
 ANALYSIS_SOURCE = 'original-v1'
+COLOR_MODES = ('rgb', 'grayscale')
 MODELS = {
     'resnet-fp32': dict(label='ResNet FP32', encoder='resnet18-layer2-v1', dimensions=128, stride=8),
     'mobilenetv3': dict(label='MobileNetV3', encoder='mobilenetv3-small-stride16-v1', dimensions=48, stride=16),
@@ -19,6 +20,12 @@ MODELS = {
 def validate_model(value):
     if not isinstance(value, str) or value not in MODELS:
         raise ValueError('Select a supported analysis model')
+    return value
+
+
+def validate_color_mode(value):
+    if not isinstance(value, str) or value not in COLOR_MODES:
+        raise ValueError('Select color or grayscale analysis')
     return value
 
 

@@ -30,6 +30,7 @@ def session_text(value, maximum):
 def configuration(model):
     """Only combine sessions whose preprocessing and source geometry match."""
     return dict(model_key=model.model_key, input_size=model.input_size,
+                color_mode=getattr(model, 'color_mode', 'rgb'),
                 roi=getattr(model, 'roi', None),
                 source_size=list(model.source_size) if getattr(model, 'source_size', None) else None,
                 effective_input_size=list(model.effective_input_size)
@@ -79,6 +80,9 @@ class LearningSessions:
             raise ValueError('Invalid learning session catalog')
         for item in result['sessions']:
             session_id(item['id'])
+        if result.get('configuration') is not None:
+            # Existing RGB sessions predate the explicit analysis color setting.
+            result['configuration'].setdefault('color_mode', 'rgb')
         return result
 
     def path(self, identifier):
