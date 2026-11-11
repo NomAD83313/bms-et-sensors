@@ -115,11 +115,17 @@ class CorruptedStreamTests(unittest.TestCase):
             def spawn(args, **kwargs):
                 # Reuse the production decoder path against a paced local fixture.
                 args = list(args)
-                for option in ['-rtsp_transport', '-timeout']:
+                # Network-only no-buffer probing can consume a short raw fixture
+                # before FFmpeg has exposed its first decoded frame.
+                for option in ['-fflags', '-flags', '-err_detect', '-analyzeduration',
+                               '-probesize', '-max_delay', '-reorder_queue_size',
+                               '-rtsp_transport', '-timeout']:
                     index = args.index(option)
                     del args[index:index + 2]
                 args[args.index('-i') + 1] = str(damaged)
                 args.insert(args.index('-i'), '-re')
+                args[args.index('-i'):args.index('-i')] = ['-fflags', '+discardcorrupt',
+                                                          '-err_detect', 'explode']
                 return original_spawn(args, **kwargs)
 
             preview.last_request = time.monotonic()

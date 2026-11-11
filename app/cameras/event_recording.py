@@ -11,17 +11,13 @@ import subprocess
 import time
 
 try:
+    from . import source
+    from .anomaly_control import analysis_available, read_json, valid_event_id, write_json
     from .source import input_args
 except ImportError:
     import source
+    from anomaly_control import analysis_available, read_json, valid_event_id, write_json
     from source import input_args
-
-
-try:
-    from . import source
-    from .anomaly_control import read_json, write_json
-except ImportError:
-    from anomaly_control import read_json, write_json
 
 LOG = logging.getLogger('camera-events')
 SEGMENT_SECONDS = 5
@@ -29,11 +25,6 @@ SEGMENT_SECONDS = 5
 
 def overlaps(first, second):
     return first['start'] < second['end'] and first['end'] > second['start']
-
-
-def analysis_available(status, now):
-    return (status.get('state') in ('normal', 'suspect', 'anomaly')
-            and 0 <= now - status.get('updated', 0) < 20)
 
 
 def link_or_copy(source, target):
@@ -135,7 +126,7 @@ class EventBuffer:
         last = trigger.get('last', 0)
         first = trigger.get('start', last)
         name = trigger.get('id', '')
-        if (not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', name)
+        if (not valid_event_id(name)
                 or last > now + 5 or last + self.post <= now or first > last):
             return
         start = max(first - self.pre, now - self.keep, self.closed_until)
@@ -199,7 +190,7 @@ class EventBuffer:
         shutil.rmtree(self.buffer / old['name'])
         LOG.info('Saved anomaly video %s', target.name)
 
-    def update(self, now, status, trigger):
+    def update(self, now, trigger):
         self._trigger(trigger, now)
         self._protect()
         self._finish(now)
@@ -260,7 +251,7 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
                 manager.read_index()
                 now = time.time()
                 status = read_json(anomaly / 'status.json', {})
-                manager.update(now, status, read_json(anomaly / 'video-trigger.json', {}))
+                manager.update(now, read_json(anomaly / 'video-trigger.json', {}))
                 state = progress.state(time.monotonic())
                 if state == 'recording':
                     state = 'saving_event' if manager.active else 'buffering'
@@ -281,7 +272,7 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
             process.stdout.close()
             manager.read_index()
             now = time.time()
-            manager.update(now, read_json(anomaly / 'status.json', {}), read_json(anomaly / 'video-trigger.json', {}))
+            manager.update(now, read_json(anomaly / 'video-trigger.json', {}))
             if stop.is_set() or not control.enabled():
                 manager.finish_on_stop(now)
         if not stop.is_set() and control.enabled():

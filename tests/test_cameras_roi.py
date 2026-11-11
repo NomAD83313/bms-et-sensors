@@ -51,11 +51,20 @@ class RoiGeometryTests(unittest.TestCase):
             with self.subTest(preset=preset):
                 _, maximum_height = anomaly_control.input_dimensions(preset)
                 self.assertEqual(roi_input_dimensions(preset, 2000, 1000, square),
-                                 (maximum_height, maximum_height))
+                                 (min(500, maximum_height), min(500, maximum_height)))
         self.assertEqual(roi_input_dimensions('768x432', 2000, 1000,
                                              dict(x=.1, y=.1, width=.5, height=.5)), (768, 384))
         self.assertEqual(roi_input_dimensions('768x432', 2000, 1000,
                                              dict(x=.1, y=.1, width=.2, height=.5)), (346, 432))
+
+    def test_small_roi_retains_native_pixels_including_fractional_edges(self):
+        rectangle = dict(x=.242994, y=.120816, width=.524776, height=.425954)
+        self.assertEqual(roi_input_dimensions('1920x1080', 3280, 2464, rectangle), (1722, 1051))
+        self.assertEqual(roi_input_dimensions('1920x1080', 101, 51,
+                                             dict(x=.1, y=0, width=.5, height=1)), (51, 51))
+        with self.assertRaises(ValueError):
+            roi_input_dimensions('1920x1080', 1000, 1000,
+                                 dict(x=0, y=0, width=.02, height=.02))
 
     def test_extreme_roi_aspects_cannot_create_a_model_side_smaller_than_thirty_two(self):
         for rectangle in (dict(x=0, y=0, width=.01, height=1),

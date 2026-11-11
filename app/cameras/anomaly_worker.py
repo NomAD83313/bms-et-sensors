@@ -1,298 +1,626 @@
 """Visual anomaly analysis and linked event-recording session control."""
+import contextlib
 import json
 import logging
 import os
-import time
+import pickle
+import shutil
 import threading
-import urllib.request
+import time
+import uuid
 import urllib.error
+import urllib.request
 from urllib.parse import quote
 
 import control
-from anomaly_control import DATA, Confirmation, read_json, write_json, validate_multiplier, validate_input_size, validate_confirmation_frames, command_mode, input_dimensions, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions
+from anomaly_control import (
+    DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, DEFAULT_MULTIPLIER, MODELS, SESSION_ACTIONS,
+    command_mode, heatmap_dimensions, input_dimensions, read_json,
+    validate_confirmation_frames, validate_input_size, validate_model,
+    validate_learning_seconds, validate_multiplier, validate_color_mode, write_json,
+)
 from patchcore_lite import PatchCoreLite, overlay
 try:
     from .model_profiles import ANALYSIS_SOURCE
     from .roi import ROIGeometryChanged, validate_roi
+    from .learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from .source import MAX_FRAME_BYTES
 except ImportError:
     from model_profiles import ANALYSIS_SOURCE
     from roi import ROIGeometryChanged, validate_roi
+    from learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from source import MAX_FRAME_BYTES
 
 LOG = logging.getLogger('camera-anomaly')
+MAX_EVENTS = 100
+LEARNING_INTERVAL_SEC = 2
+# Actions that only take effect when they change a model setting.
+CONFIGURATION_ACTIONS = ('resize', 'model', 'roi', 'color')
+# Actions that keep collected samples and the running session unless a setting changed.
+NON_DISRUPTIVE_ACTIONS = ('configure', 'confirmation') + CONFIGURATION_ACTIONS
+
+
+class AnomalyWorker:
+    def __init__(self):
+        self.preview = os.environ.get(
+            'CAMERA_ANOMALY_PREVIEW_URL', 'http://127.0.0.1:8082/api/live.jpg')
+        self.recording_mode = os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
+        self.interval = max(.2, float(os.environ.get('CAMERA_ANOMALY_INTERVAL_SEC', '.2')))
+        self.confirmation_frames = max(
+            1, min(5, int(os.environ.get('CAMERA_ANOMALY_CONFIRM_FRAMES', '2'))))
+        sample_count = max(
+            20, min(120, int(os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60'))))
+        self.state = dict(state='loading', message='Loading visual model', updated=time.time())
+        self.baseline_source = None
+        write_json(DATA / 'status.json', self.state)
+
+        previous = read_json(DATA / 'session.json', {})
+        try:
+            self.learning_seconds = validate_learning_seconds(
+                previous.get('learning_seconds', sample_count * 2))
+            self.sample_count = self.learning_seconds // 2
+        except ValueError:
+            self.learning_seconds = sample_count * 2
+            self.sample_count = sample_count
+        self.confirmation_frames = validate_confirmation_frames(
+            previous.get('confirmation_frames', self.confirmation_frames))
+        self.baseline_invalidated = previous.get('baseline_invalidated', False)
+        configuration_reset = False
+
+        def saved_setting(validator, key, default):
+            # An invalid saved setting falls back to its default and forces new learning.
+            nonlocal configuration_reset
+            try:
+                return validator(previous.get(key, default))
+            except ValueError:
+                configuration_reset = True
+                return default
+
+        selected_input_size = saved_setting(validate_input_size, 'input_size', DEFAULT_INPUT_SIZE)
+        selected_model = saved_setting(validate_model, 'model_key', DEFAULT_MODEL)
+        self.selected_roi = saved_setting(validate_roi, 'roi', None)
+        selected_color = saved_setting(validate_color_mode, 'color_mode', 'rgb')
+        self.baseline_invalidated = self.baseline_invalidated or configuration_reset
+
+        self.model = PatchCoreLite()
+        if selected_input_size != self.model.input_size:
+            self.model.set_input_size(selected_input_size)
+        if selected_model != self.model.model_key:
+            self.model.set_model(selected_model)
+        if self.selected_roi is not None:
+            self.model.set_roi(self.selected_roi)
+        if selected_color != self.model.color_mode:
+            self.model.set_color_mode(selected_color)
+
+        self.model_path = DATA / 'baseline.pt'
+        self.sessions = LearningSessions(DATA)
+        self.sessions.recover()
+        self.learning_error = None
+        catalog = self.sessions.catalog()
+        current = configuration(self.model)
+        if catalog['sessions'] and not configuration_matches(current, catalog):
+            self.baseline_invalidated = configuration_reset = True
+        if self.baseline_invalidated:
+            self.invalidate_baseline(clear_sessions=configuration_reset)
+        elif self.model_path.exists() or self.model_path.with_name('baseline-previous.pt').exists():
+            try:
+                self.load_baseline()
+            except ValueError:
+                self.invalidate_baseline()
+                configuration_reset = True
+                LOG.warning('Baseline is incompatible; new learning required')
+
+        self.last_request = previous.get('last_request')
+        if configuration_reset:
+            self.last_request = read_json(DATA / 'command.json', {}).get(
+                'id', self.last_request)
+        self.monitoring = previous.get('monitoring', False) and self.model.memory is not None
+        self.multiplier = previous.get('multiplier', DEFAULT_MULTIPLIER)
+        self.learning = False
+        self.samples = []
+        self.confirmation = Confirmation(required=self.confirmation_frames)
+        self.candidate_since = None
+        self.video_id = None
+        self.event_count = len(list((DATA / 'events').glob('*.json')))
+
+        if configuration_reset:
+            self.clear_video_trigger()
+            self.save_session()
+
+    def invalidate_baseline(self, clear_sessions=False):
+        self.baseline_invalidated = True
+        self.baseline_source = None
+        self.model.memory = None
+        self.model.threshold = None
+        self.model.baseline_frames = 0
+        self.model_path.unlink(missing_ok=True)
+        self.model_path.with_name('baseline-previous.pt').unlink(missing_ok=True)
+        if clear_sessions:
+            self.learning_error = None
+            count = self.sessions.clear()
+            if count:
+                LOG.info('Removed %d incompatible normal sessions', count)
+
+    def load_baseline(self):
+        backup = self.model_path.with_name('baseline-previous.pt')
+        for path in (self.model_path, backup):
+            if not path.is_file():
+                continue
+            try:
+                self.model.set_input_size(self.model.input_size)
+                self.model.load(path)
+                revision = self.model.learning_revision
+                catalog = self.sessions.catalog()
+                if (revision or catalog['sessions']) and revision != catalog['revision']:
+                    raise ValueError('Interrupted learning publication')
+                if path == backup:
+                    backup.replace(self.model_path)
+                else:
+                    backup.unlink(missing_ok=True)
+                self.baseline_source = self.model.source_size
+                return
+            except (OSError, ValueError, RuntimeError, EOFError, pickle.UnpicklingError):
+                continue
+        self.model.set_input_size(self.model.input_size)
+        raise ValueError('No compatible normal baseline is available')
+
+    def clear_video_trigger(self):
+        write_json(DATA / 'video-trigger.json', {})
+
+    def reset_detection_candidate(self):
+        self.confirmation = Confirmation(required=self.confirmation_frames)
+        self.candidate_since = None
+        self.video_id = None
+
+    def save_session(self):
+        write_json(DATA / 'session.json', dict(
+            last_request=self.last_request, monitoring=self.monitoring,
+            multiplier=self.multiplier, input_size=self.model.input_size,
+            model_key=self.model.model_key,
+            color_mode=self.model.color_mode,
+            roi=self.selected_roi, learning_seconds=self.learning_seconds,
+            baseline_invalidated=self.baseline_invalidated,
+            confirmation_frames=self.confirmation_frames,
+            analysis_source=(ANALYSIS_SOURCE if not self.baseline_invalidated
+                             and self.model.memory is not None else None)))
+
+    def update_geometry(self, state):
+        source_size = self.model.source_size
+        size = self.model.effective_input_size
+        if source_size is not None:
+            state.update(source_width=source_size[0], source_height=source_size[1])
+        width, height = size or input_dimensions(self.model.input_size)
+        model_key = self.model.model_key
+        heat_width, heat_height = heatmap_dimensions(width, height, model_key)
+        state.update(effective_input_width=width, effective_input_height=height,
+                     heatmap_width=heat_width, heatmap_height=heat_height)
+
+    def configuration_change(self, action, command):
+        """Return whether a resize/model/roi/color command differs from the current setting."""
+        if action == 'resize':
+            return validate_input_size(command.get('input_size')) != self.model.input_size
+        if action == 'model':
+            return validate_model(command.get('model_key')) != self.model.model_key
+        if action == 'roi':
+            return validate_roi(command.get('roi')) != self.selected_roi
+        if action == 'color':
+            return validate_color_mode(command.get('color_mode')) != self.model.color_mode
+        return False
+
+    def apply_configuration(self, action, command):
+        if action == 'resize':
+            self.model.set_input_size(command['input_size'])
+        elif action == 'model':
+            self.model.set_model(command['model_key'])
+        elif action == 'roi':
+            self.selected_roi = validate_roi(command['roi'])
+            self.model.set_roi(self.selected_roi)
+        elif action == 'color':
+            self.model.set_color_mode(command['color_mode'])
+
+    def apply_pending_command(self):
+        command = read_json(DATA / 'command.json', {})
+        if not command.get('id') or command['id'] == self.last_request:
+            return
+        action = command.get('action')
+        if action in SESSION_ACTIONS:
+            self.apply_session_command(command)
+            return
+        was_learning = self.learning
+        changed = self.configuration_change(action, command)
+        if action not in CONFIGURATION_ACTIONS or changed:
+            self.learning, self.monitoring = command_mode(
+                action, self.model.memory is not None, self.learning, self.monitoring)
+        if action == 'confirmation':
+            self.confirmation_frames = validate_confirmation_frames(
+                command.get('confirmation_frames'))
+        elif changed:
+            self.apply_configuration(action, command)
+            self.invalidate_baseline(clear_sessions=True)
+        elif action == 'invalidate':
+            self.model.set_input_size(self.model.input_size)
+            self.invalidate_baseline(clear_sessions=True)
+        else:
+            self.multiplier = validate_multiplier(command.get('multiplier', self.multiplier))
+        self.last_request = command['id']
+        self.reset_detection_candidate()
+        if action not in NON_DISRUPTIVE_ACTIONS or changed:
+            self.samples = []
+            self.sessions.abort()
+            self.clear_video_trigger()
+        if action == 'pause' and was_learning and self.model_path.exists():
+            try:
+                self.load_baseline()
+                self.baseline_invalidated = False
+            except ValueError:
+                self.baseline_invalidated = True
+        self.save_session()
+
+    def apply_session_command(self, command):
+        action = command['action']
+        self.last_request = command['id']
+        self.learning_error = None
+        try:
+            if self.learning:
+                if action != 'learn':
+                    raise ValueError('Pause the current learning session first')
+            self.multiplier = validate_multiplier(command.get('multiplier', self.multiplier))
+            if action == 'rename-session':
+                self.sessions.rename(command['session_id'], command.get('session_name', ''),
+                                     command.get('session_note', ''))
+                return
+            if action != 'learn':
+                catalog = self.sessions.catalog()
+                current = configuration(self.model)
+                if not catalog['sessions'] or not configuration_matches(current, catalog):
+                    raise ValueError('Create a new baseline for the current model and area first')
+            if action in ('learn', 'add-session', 'replace-session'):
+                mode = {'learn': 'new', 'add-session': 'add', 'replace-session': 'replace'}[action]
+                self.sessions.begin(mode, command.get('session_name', ''),
+                                    command.get('session_note', ''), command.get('session_id'))
+                if 'learning_seconds' in command:
+                    self.learning_seconds = validate_learning_seconds(command['learning_seconds'])
+                    self.sample_count = self.learning_seconds // 2
+                if action == 'learn' and self.selected_roi is not None:
+                    self.model.set_input_size(self.model.input_size)
+                self.learning, self.monitoring = True, False
+                self.samples = []
+            else:
+                self.learning = self.monitoring = False
+                self.sessions.abort()
+                items = self.sessions.proposed(command['session_id']) if action == 'remove-session' else self.sessions.catalog()['sessions']
+                self.clear_video_trigger()
+                control.follow_detection(False, self.recording_mode)
+                self.rebuild_sessions(self.state, items, resume=False)
+        except (ValueError, OSError) as error:
+            self.learning_error = str(error) if isinstance(error, ValueError) else 'Session storage unavailable; check free disk space'
+        finally:
+            if action != 'rename-session':
+                self.reset_detection_candidate()
+                self.clear_video_trigger()
+            self.save_session()
+
+    def effective_interval(self):
+        return max(LEARNING_INTERVAL_SEC, self.interval) if self.learning else self.interval
+
+    def status_snapshot(self):
+        width, height = input_dimensions(self.model.input_size)
+        model_key = self.model.model_key
+        memory = self.model.memory
+        memory_shape = getattr(memory, 'shape', ())
+        memory_vectors = (int(memory_shape[0]) if memory_shape
+                          else self.model.coreset_size)
+        state = dict(
+            updated=time.time(), model='PatchCore-style / ' + MODELS[model_key]['label'],
+            model_key=model_key, model_label=MODELS[model_key]['label'],
+            color_mode=self.model.color_mode,
+            baseline_ready=self.model.memory is not None,
+            baseline_frames=self.model.baseline_frames,
+            monitoring_enabled=self.monitoring, input_size=self.model.input_size,
+            roi=self.selected_roi,
+            inference_threads=self.model.inference_threads,
+            feature_engine=self.model.feature_engine,
+            distance_engine=self.model.distance_engine,
+            score_top_k=self.model.top_k,
+            coreset_size=memory_vectors,
+            onnx_provider=self.model.onnx_provider,
+            input_width=width, input_height=height,
+            retraining_required=self.baseline_invalidated,
+            analysis_source=ANALYSIS_SOURCE, last_request=self.last_request,
+            collected=len(self.samples), target=self.sample_count,
+            multiplier=self.multiplier, learning_seconds=self.learning_seconds,
+            analysis_interval_sec=self.effective_interval(),
+            confirmation_frames=self.confirmation_frames,
+            event_count=self.event_count,
+            learning_error=self.learning_error,
+            learning_sessions=self.sessions.public(), session_limit=MAX_SESSIONS,
+            state='paused' if self.model.memory is not None else 'untrained',
+            message=('Analysis paused' if self.model.memory is not None
+                     else 'Learn a normal view to begin'))
+        self.update_geometry(state)  # effective input and heatmap size, which depend on the area
+        if self.baseline_invalidated:
+            state['message'] = (
+                'Model, area or analysis source changed. Learn normal view again before detection.')
+        return state
+
+    def fetch_analysis_frame(self):
+        fetch_started = time.monotonic()
+        with urllib.request.urlopen(self.preview + '?analysis=1', timeout=5) as response:
+            jpeg = response.read(MAX_FRAME_BYTES + 1)
+            token = response.headers.get('X-Camera-Frame-Token')
+            if response.headers.get('X-Camera-Analysis-Source') != ANALYSIS_SOURCE:
+                raise ValueError('Full-frame analysis source is unavailable')
+        if (len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b'\xff\xd8')
+                or not jpeg.endswith(b'\xff\xd9')):
+            raise ValueError('Full analysis frame is incomplete')
+        return jpeg, token, round((time.monotonic() - fetch_started) * 1000)
+
+    def validate_frame_token(self, token):
+        if not token:
+            return
+        # Errors arriving while inference ran invalidate the earlier JPEG too.
+        with urllib.request.urlopen(
+                self.preview + '?check=' + quote(token, safe=''), timeout=2) as response:
+            if json.loads(response.read(4096)).get('valid') is not True:
+                raise ValueError('Preview frame invalidated')
+
+    def record_preparation_metrics(self, state):
+        preparation = self.model.preparation_metrics
+        if not preparation:
+            return
+        state.update(
+            preparation_ms=round(preparation['total_ms']),
+            jpeg_decode_ms=round(preparation['decode_ms']),
+            image_transform_ms=round(preparation['transform_ms']),
+            tensor_ms=round(preparation['tensor_ms']),
+            encoder_ms=max(0, state['feature_ms'] - round(preparation['total_ms'])),
+            jpeg_draft=self.model.jpeg_draft,
+            decoded_mode=preparation.get('decoded_mode', 'RGB'),
+            decoded_width=preparation['decoded_width'],
+            decoded_height=preparation['decoded_height'])
+
+    def finish_learning(self, state):
+        self.rebuild_sessions(state, self.sessions.proposed(), resume=True)
+
+    @contextlib.contextmanager
+    def training_heartbeat(self, state):
+        """Keep status.json fresh while a long rebuild blocks the worker loop."""
+        done = threading.Event()
+
+        def beat():
+            while not done.wait(2):
+                write_json(DATA / 'status.json', dict(state, updated=time.time()))
+
+        heartbeat = threading.Thread(target=beat, daemon=True)
+        heartbeat.start()
+        try:
+            yield
+        finally:
+            done.set()
+            heartbeat.join()
+
+    def publish_baseline(self, items, revision, progress):
+        """Fit and atomically publish the baseline; restore the previous file if publication fails."""
+        temporary = self.model_path.with_name('baseline-next.pt')
+        backup = self.model_path.with_name('baseline-previous.pt')
+        published = False
+        try:
+            if items:
+                calibration = self.model.fit_sessions(self.sessions.groups(items), progress=progress)
+                for item, metrics in zip(items, calibration):
+                    item.update(metrics)
+                self.model.learning_revision = revision
+                self.model.save(temporary)
+                if self.model_path.exists():
+                    shutil.copyfile(self.model_path, backup)
+                temporary.replace(self.model_path)
+            else:
+                self.model.set_input_size(self.model.input_size)
+                if self.model_path.exists():
+                    shutil.copyfile(self.model_path, backup)
+                self.model_path.unlink(missing_ok=True)
+            published = True
+            self.sessions.publish(items, revision)
+        except Exception:
+            if published:
+                if backup.exists():
+                    backup.replace(self.model_path)
+                else:
+                    self.model_path.unlink(missing_ok=True)
+            raise
+
+    def rebuild_sessions(self, state, items, resume):
+        state.update(state='training', training_collected=0,
+                     training_target=sum(item['frames'] for item in items),
+                     message='Rebuilding saved normal sessions and calibrating the threshold')
+        write_json(DATA / 'status.json', state)
+        temporary = self.model_path.with_name('baseline-next.pt')
+        backup = self.model_path.with_name('baseline-previous.pt')
+        revision = uuid.uuid4().hex
+
+        def progress(completed, total):
+            state.update(training_collected=completed, training_target=total)
+
+        try:
+            with self.training_heartbeat(state):
+                self.publish_baseline(items, revision, progress)
+        except Exception:
+            self.learning = self.monitoring = False
+            self.samples = []
+            self.sessions.abort()
+            self.learning_error = 'Learning rebuild failed; previous sessions are retained. Check storage and retry.'
+            self.model.set_input_size(self.model.input_size)
+            try:
+                self.load_baseline()
+                self.baseline_invalidated = False
+            except (OSError, ValueError):
+                self.baseline_invalidated = True
+            self.save_session()
+            raise
+        finally:
+            temporary.unlink(missing_ok=True)
+            backup.unlink(missing_ok=True)
+        self.learning = False
+        queued = read_json(DATA / 'command.json', {})
+        if queued.get('id') != self.last_request and queued.get('action') == 'pause':
+            resume = False
+        self.monitoring = bool(items) and resume
+        self.baseline_source = self.model.source_size if items else None
+        self.samples = []
+        self.confirmation = Confirmation(required=self.confirmation_frames)
+        self.baseline_invalidated = not bool(items)
+        self.save_session()
+        control.follow_detection(self.monitoring, self.recording_mode)
+        state.update(
+            state='normal' if self.monitoring else 'paused' if items else 'untrained', baseline_ready=bool(items),
+            baseline_frames=self.model.baseline_frames,
+            monitoring_enabled=self.monitoring, retraining_required=self.baseline_invalidated,
+            learning_sessions=self.sessions.public(),
+            message='Normal sessions rebuilt; monitoring started' if self.monitoring else
+                    'Normal sessions rebuilt; detection paused' if items else 'No normal sessions; learn a normal view')
+        LOG.info('Baseline ready; frames=%s', self.model.baseline_frames)
+
+    def save_event(self, jpeg, distances, threshold, score):
+        name = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + str(time.time_ns())
+        (DATA / 'events' / (name + '.jpg')).write_bytes(jpeg)
+        heatmap = overlay(jpeg, distances, threshold, roi=self.selected_roi)
+        (DATA / 'events' / (name + '-heat.jpg')).write_bytes(heatmap)
+        write_json(DATA / 'events' / (name + '.json'), dict(
+            id=name, timestamp=time.time(), score=score, threshold=threshold,
+            video_id=self.video_id, roi=self.selected_roi,
+            image=name + '.jpg', heatmap=name + '-heat.jpg'))
+        for expired in sorted((DATA / 'events').glob('*.json'))[:-MAX_EVENTS]:
+            for suffix in ('.jpg', '-heat.jpg', '.json'):
+                expired.with_name(expired.stem + suffix).unlink(missing_ok=True)
+        self.event_count += 1
+        LOG.info('Unusual view snapshot saved')
+
+    def monitor_frame(self, state, jpeg, score, distances):
+        threshold = self.model.threshold * self.multiplier
+        abnormal, event = self.confirmation.update(score, threshold, time.monotonic())
+        if score > threshold:
+            if self.candidate_since is None:
+                self.candidate_since = time.time()
+        else:
+            self.candidate_since = None
+            self.video_id = None
+        if abnormal:
+            if self.video_id is None:
+                self.video_id = (time.strftime(
+                    '%Y%m%dT%H%M%SZ', time.gmtime(self.candidate_since))
+                    + '-' + str(time.time_ns()))
+            write_json(DATA / 'video-trigger.json', dict(
+                id=self.video_id, start=self.candidate_since, last=time.time()))
+        state.update(
+            state='anomaly' if abnormal else 'suspect' if score > threshold else 'normal',
+            score=score, threshold=threshold, ratio=score / threshold,
+            message=('Unusual view detected' if abnormal else
+                     'Confirming unusual view' if score > threshold else
+                     'View matches normal baseline'))
+        if event:
+            self.save_event(jpeg, distances, threshold, score)
+            state['event_count'] = self.event_count
+
+    def analyze_frame(self, state, started):
+        jpeg, token, fetch_ms = self.fetch_analysis_frame()
+        state['fetch_ms'] = fetch_ms
+        feature_started = time.monotonic()
+        previous_source = self.baseline_source
+        features = self.model.features(jpeg)
+        geometry_changed = (self.monitoring and previous_source is not None
+                            and previous_source != self.model.source_size)
+        self.update_geometry(state)
+        state['feature_ms'] = round((time.monotonic() - feature_started) * 1000)
+        self.record_preparation_metrics(state)
+        result = None
+        if not self.learning and not geometry_changed:
+            distance_started = time.monotonic()
+            result = self.model.score(features)
+            state['distance_ms'] = round((time.monotonic() - distance_started) * 1000)
+        self.validate_frame_token(token)
+        if geometry_changed:
+            raise ROIGeometryChanged()
+        if self.learning:
+            try:
+                self.sessions.append(jpeg, configuration(self.model))
+            except ValueError as error:
+                raise ROIGeometryChanged() from error
+            except OSError:
+                self.learning = False
+                self.samples = []
+                self.sessions.abort()
+                self.learning_error = 'Learning stopped: storage limit or free-space check failed. Saved sessions are retained.'
+                raise
+            self.samples.append(None)
+            state.update(state='learning', collected=len(self.samples),
+                         message='Learning current view as normal')
+            if len(self.samples) >= self.sample_count:
+                self.finish_learning(state)
+        else:
+            self.monitor_frame(state, jpeg, *result)
+        state['inference_ms'] = round((time.monotonic() - started) * 1000)
+
+    def handle_geometry_change(self):
+        self.learning = False
+        self.monitoring = False
+        self.samples = []
+        self.sessions.abort()
+        self.invalidate_baseline(clear_sessions=True)
+        self.reset_detection_candidate()
+        self.clear_video_trigger()
+        self.save_session()
+        control.follow_detection(False, self.recording_mode)
+        self.state.update(
+            state='untrained', updated=time.time(), baseline_ready=False,
+            monitoring_enabled=False, retraining_required=True,
+            message=('Source dimensions changed. Check the analysis area and learn it again '
+                     'before detection.'))
+        for key in ('score', 'threshold', 'ratio'):
+            self.state.pop(key, None)
+        self.update_geometry(self.state)
+        write_json(DATA / 'status.json', self.state)
+
+    def handle_error(self, error):
+        # Never include URLs, credentials or arbitrary exception text in status/logs.
+        self.reset_detection_candidate()
+        self.state.update(
+            state='unavailable', updated=time.time(),
+            message='Analysis unavailable; check camera and worker logs')
+        for key in ('score', 'threshold', 'ratio'):
+            self.state.pop(key, None)
+        if (isinstance(error, urllib.error.HTTPError)
+                and (error.headers or {}).get('X-Camera-Stream-Error') == '1'):
+            self.state['message'] = (
+                'Video stream error; damaged frames excluded from analysis and learning')
+        write_json(DATA / 'status.json', self.state)
+        LOG.warning('Analysis iteration failed (%s); retrying', type(error).__name__)
+
+    def step(self):
+        started = time.monotonic()
+        try:
+            self.apply_pending_command()
+            control.follow_detection(self.monitoring, self.recording_mode)
+            self.state = self.status_snapshot()
+            if self.learning or self.monitoring:
+                self.analyze_frame(self.state, started)
+            self.state['updated'] = time.time()
+            write_json(DATA / 'status.json', self.state)
+        except ROIGeometryChanged:
+            self.handle_geometry_change()
+        except Exception as error:
+            self.handle_error(error)
+        return max(0, self.effective_interval() - (time.monotonic() - started))
+
+    def run(self):
+        while True:
+            time.sleep(self.step())
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     DATA.mkdir(parents=True, exist_ok=True)
     (DATA / 'events').mkdir(exist_ok=True)
-    preview = os.environ.get('CAMERA_ANOMALY_PREVIEW_URL', 'http://127.0.0.1:8082/api/live.jpg')
-    recording_mode = os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
-    interval = max(.2, float(os.environ.get('CAMERA_ANOMALY_INTERVAL_SEC', '.2')))
-    confirmation_frames = max(1, min(5, int(os.environ.get('CAMERA_ANOMALY_CONFIRM_FRAMES', '2'))))
-    sample_count = max(20, min(120, int(os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60'))))
-    state = dict(state='loading', message='Loading visual model', updated=time.time())
-    write_json(DATA / 'status.json', state)
-    previous = read_json(DATA / 'session.json', {})
-    confirmation_frames = validate_confirmation_frames(previous.get('confirmation_frames', confirmation_frames))
-    model = PatchCoreLite()
-    baseline_invalidated = previous.get('baseline_invalidated', False)
-    configuration_reset = False
-    try:
-        model.input_size = validate_input_size(previous.get('input_size', DEFAULT_INPUT_SIZE))
-    except ValueError:
-        model.input_size = DEFAULT_INPUT_SIZE
-        baseline_invalidated = configuration_reset = True
-    try:
-        selected_model = validate_model(previous.get('model_key', DEFAULT_MODEL))
-    except ValueError:
-        selected_model = DEFAULT_MODEL
-        baseline_invalidated = configuration_reset = True
-    if selected_model != getattr(model, 'model_key', DEFAULT_MODEL):
-        model.set_model(selected_model)
-    try:
-        selected_roi = validate_roi(previous.get('roi'))
-    except ValueError:
-        selected_roi = None
-        baseline_invalidated = configuration_reset = True
-    if selected_roi is not None:
-        model.set_roi(selected_roi)
-    model_path = DATA / 'baseline.pt'
-    if model_path.exists() and not baseline_invalidated:
-        try:
-            model.load(model_path)
-        except ValueError:
-            baseline_invalidated = configuration_reset = True
-            LOG.warning('Baseline is incompatible; new learning required')
-    last_request = previous.get('last_request')
-    if configuration_reset:
-        last_request = read_json(DATA / 'command.json', {}).get('id', last_request)
-    monitoring = previous.get('monitoring', False) and model.memory is not None
-    multiplier = previous.get('multiplier', 1.25)
-    learning = False
-    samples = []
-    confirmation = Confirmation(required=confirmation_frames)
-    candidate_since, video_id = None, None
-    event_count = len(list((DATA / 'events').glob('*.json')))
-    def save_session():
-        write_json(DATA / 'session.json', dict(last_request=last_request, monitoring=monitoring,
-                   multiplier=multiplier, input_size=model.input_size,
-                   model_key=getattr(model, 'model_key', DEFAULT_MODEL),
-                   roi=selected_roi,
-                   baseline_invalidated=baseline_invalidated, confirmation_frames=confirmation_frames,
-                   analysis_source=ANALYSIS_SOURCE if not baseline_invalidated and model.memory is not None else None))
-
-    def update_geometry(state):
-        source_size = getattr(model, 'source_size', None)
-        size = getattr(model, 'effective_input_size', None)
-        if source_size is not None:
-            state.update(source_width=source_size[0], source_height=source_size[1])
-        width, height = size or input_dimensions(model.input_size)
-        heat_width, heat_height = heatmap_dimensions(width, height, getattr(model, 'model_key', DEFAULT_MODEL))
-        state.update(effective_input_width=width, effective_input_height=height,
-                     heatmap_width=heat_width, heatmap_height=heat_height)
-
-    if configuration_reset:
-        write_json(DATA / 'video-trigger.json', {})
-        save_session()
-
-    while True:
-        started = time.monotonic()
-        try:
-            command = read_json(DATA / 'command.json', {})
-            if command.get('id') and command['id'] != last_request:
-                action = command.get('action')
-                resized = action == 'resize' and validate_input_size(command.get('input_size')) != model.input_size
-                model_changed = action == 'model' and validate_model(command.get('model_key')) != getattr(model, 'model_key', DEFAULT_MODEL)
-                roi_changed = action == 'roi' and validate_roi(command.get('roi')) != selected_roi
-                if action not in ('resize', 'model', 'roi') or resized or model_changed or roi_changed:
-                    learning, monitoring = command_mode(action, model.memory is not None, learning, monitoring)
-                if action == 'confirmation':
-                    confirmation_frames = validate_confirmation_frames(command.get('confirmation_frames'))
-                elif action == 'resize':
-                    if resized:
-                        model.set_input_size(command['input_size'])
-                        baseline_invalidated = True
-                elif action == 'model':
-                    if model_changed:
-                        model.set_model(command['model_key'])
-                        baseline_invalidated = True
-                elif action == 'roi':
-                    if roi_changed:
-                        selected_roi = validate_roi(command['roi'])
-                        model.set_roi(selected_roi)
-                        baseline_invalidated = True
-                else:
-                    multiplier = validate_multiplier(command.get('multiplier', 1.25))
-                    if action == 'learn' and selected_roi is not None:
-                        # A deliberate new learning session accepts the current source geometry.
-                        model.set_input_size(model.input_size)
-                        baseline_invalidated = True
-                last_request = command['id']
-                confirmation = Confirmation(required=confirmation_frames)
-                candidate_since, video_id = None, None
-                if action not in ('configure', 'resize', 'confirmation', 'model', 'roi') or resized or model_changed or roi_changed:
-                    samples = []
-                    # A restarted session must not reuse an earlier event marker.
-                    write_json(DATA / 'video-trigger.json', {})
-                save_session()
-            control.follow_detection(monitoring, recording_mode)
-            width, height = input_dimensions(model.input_size)
-            model_key = getattr(model, 'model_key', DEFAULT_MODEL)
-            heat_width, heat_height = heatmap_dimensions(width, height, model_key)
-            memory = getattr(model, 'memory', None)
-            memory_shape = getattr(memory, 'shape', ())
-            memory_vectors = (int(memory_shape[0]) if memory_shape
-                              else getattr(model, 'coreset_size', 1024))
-            state = dict(updated=time.time(), model='PatchCore-style / ' + MODELS[model_key]['label'],
-                         model_key=model_key, model_label=MODELS[model_key]['label'],
-                         baseline_ready=model.memory is not None, baseline_frames=model.baseline_frames,
-                         monitoring_enabled=monitoring, input_size=model.input_size,
-                         roi=selected_roi,
-                         inference_threads=getattr(model, 'inference_threads', 1),
-                         feature_engine=getattr(model, 'feature_engine', 'torch'),
-                         distance_engine=getattr(model, 'distance_engine', 'torch'),
-                         score_top_k=getattr(model, 'top_k', 1),
-                         coreset_size=memory_vectors,
-                         onnx_provider=getattr(model, 'onnx_provider', None),
-                         input_width=width, input_height=height,
-                         heatmap_width=heat_width, heatmap_height=heat_height,
-                         retraining_required=baseline_invalidated,
-                         analysis_source=ANALYSIS_SOURCE,
-                         last_request=last_request,
-                         collected=len(samples), target=sample_count, multiplier=multiplier,
-                         analysis_interval_sec=max(2, interval) if learning else interval, confirmation_frames=confirmation_frames,
-                         event_count=event_count, state='paused' if model.memory is not None else 'untrained',
-                         message='Analysis paused' if model.memory is not None else 'Learn a normal view to begin')
-            update_geometry(state)
-            if baseline_invalidated:
-                state['message'] = 'Model, area or analysis source changed. Learn normal view again before detection.'
-            if learning or monitoring:
-                # Resize the full source directly in the model, never an upscaled preview.
-                fetch_started = time.monotonic()
-                with urllib.request.urlopen(preview + '?fresh=1&analysis=1', timeout=5) as response:
-                    jpeg = response.read(16 * 1024 * 1024 + 1)
-                    token = response.headers.get('X-Camera-Frame-Token')
-                    if response.headers.get('X-Camera-Analysis-Source') != ANALYSIS_SOURCE:
-                        raise ValueError('Full-frame analysis source is unavailable')
-                if (len(jpeg) > 16 * 1024 * 1024 or not jpeg.startswith(b'\xff\xd8')
-                        or not jpeg.endswith(b'\xff\xd9')):
-                    raise ValueError('Full analysis frame is incomplete')
-                state['fetch_ms'] = round((time.monotonic() - fetch_started) * 1000)
-                feature_started = time.monotonic()
-                features = model.features(jpeg)
-                update_geometry(state)
-                state['feature_ms'] = round((time.monotonic() - feature_started) * 1000)
-                preparation = getattr(model, 'preparation_metrics', {})
-                if preparation:
-                    state.update(preparation_ms=round(preparation['total_ms']),
-                                 jpeg_decode_ms=round(preparation['decode_ms']),
-                                 image_transform_ms=round(preparation['transform_ms']),
-                                 tensor_ms=round(preparation['tensor_ms']),
-                                 encoder_ms=max(0, state['feature_ms'] - round(preparation['total_ms'])),
-                                 jpeg_draft=getattr(model, 'jpeg_draft', False),
-                                 decoded_width=preparation['decoded_width'],
-                                 decoded_height=preparation['decoded_height'])
-                if not learning:
-                    distance_started = time.monotonic()
-                    score, distances = model.score(features)
-                    state['distance_ms'] = round((time.monotonic() - distance_started) * 1000)
-                if token:
-                    # Errors arriving while inference ran invalidate the earlier JPEG too.
-                    with urllib.request.urlopen(preview + '?check=' + quote(token, safe=''), timeout=2) as response:
-                        if json.loads(response.read(4096)).get('valid') is not True:
-                            raise ValueError('Preview frame invalidated')
-                if learning:
-                    samples.append(features)
-                    state.update(state='learning', collected=len(samples), message='Learning current view as normal')
-                    if len(samples) >= sample_count:
-                        state.update(state='training', message='Building normal patch memory')
-                        write_json(DATA / 'status.json', state)
-                        done = threading.Event()
-                        def training_heartbeat():
-                            while not done.wait(2):
-                                write_json(DATA / 'status.json', dict(state, updated=time.time()))
-                        heartbeat = threading.Thread(target=training_heartbeat, daemon=True)
-                        heartbeat.start()
-                        try:
-                            model.fit(samples)
-                        finally:
-                            done.set()
-                            heartbeat.join()
-                        model.save(model_path)
-                        learning, monitoring, samples = False, True, []
-                        confirmation = Confirmation(required=confirmation_frames)
-                        baseline_invalidated = False
-                        save_session()
-                        control.follow_detection(True, recording_mode)
-                        state.update(state='normal', baseline_ready=True, baseline_frames=model.baseline_frames, monitoring_enabled=True, retraining_required=False,
-                                     message='Normal view learned; monitoring started')
-                        LOG.info('Baseline ready; frames=%s', model.baseline_frames)
-                else:
-                    threshold = model.threshold * multiplier
-                    abnormal, event = confirmation.update(score, threshold, time.monotonic())
-                    event_jpeg = jpeg
-                    if score > threshold:
-                        if candidate_since is None:
-                            candidate_since = time.time()
-                    else:
-                        candidate_since, video_id = None, None
-                    if abnormal:
-                        if video_id is None:
-                            video_id = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(candidate_since)) + '-' + str(time.time_ns())
-                        write_json(DATA / 'video-trigger.json', dict(id=video_id, start=candidate_since, last=time.time()))
-                    state.update(state='anomaly' if abnormal else 'suspect' if score > threshold else 'normal',
-                                 score=score, threshold=threshold, ratio=score / threshold,
-                                 message='Unusual view detected' if abnormal else 'Confirming unusual view' if score > threshold else 'View matches normal baseline')
-                    if event:
-                        name = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + str(time.time_ns())
-                        # Preserve source dimensions and JPEG quality; retention stays bounded.
-                        (DATA / 'events' / (name + '.jpg')).write_bytes(event_jpeg)
-                        heatmap = (overlay(event_jpeg, distances, threshold, roi=selected_roi)
-                                   if selected_roi is not None else overlay(event_jpeg, distances, threshold))
-                        (DATA / 'events' / (name + '-heat.jpg')).write_bytes(heatmap)
-                        write_json(DATA / 'events' / (name + '.json'), dict(id=name, timestamp=time.time(), score=score,
-                                   threshold=threshold, video_id=video_id, roi=selected_roi,
-                                   image=name + '.jpg', heatmap=name + '-heat.jpg'))
-                        for expired in sorted((DATA / 'events').glob('*.json'))[:-100]:
-                            for suffix in ('.jpg', '-heat.jpg', '.json'):
-                                expired.with_name(expired.stem + suffix).unlink(missing_ok=True)
-                        event_count += 1
-                        state['event_count'] = event_count
-                        LOG.info('Unusual view snapshot saved')
-                state['inference_ms'] = round((time.monotonic() - started) * 1000)
-            state['updated'] = time.time()
-            write_json(DATA / 'status.json', state)
-        except ROIGeometryChanged:
-            learning = monitoring = False
-            samples = []
-            baseline_invalidated = True
-            confirmation = Confirmation(required=confirmation_frames)
-            candidate_since, video_id = None, None
-            write_json(DATA / 'video-trigger.json', {})
-            save_session()
-            control.follow_detection(False, recording_mode)
-            state.update(state='untrained', updated=time.time(), baseline_ready=False,
-                         monitoring_enabled=False, retraining_required=True,
-                         message='Source dimensions changed. Check the analysis area and learn it again before detection.')
-            for key in ('score', 'threshold', 'ratio'):
-                state.pop(key, None)
-            update_geometry(state)
-            write_json(DATA / 'status.json', state)
-        except Exception as error:
-            # Never include URLs, credentials or arbitrary exception text in status/logs.
-            confirmation = Confirmation(required=confirmation_frames)
-            candidate_since, video_id = None, None
-            state.update(state='unavailable', updated=time.time(), message='Analysis unavailable; check camera and worker logs')
-            state.pop('score', None)
-            state.pop('threshold', None)
-            state.pop('ratio', None)
-            if isinstance(error, urllib.error.HTTPError) and (error.headers or {}).get('X-Camera-Stream-Error') == '1':
-                state['message'] = 'Video stream error; damaged frames excluded from analysis and learning'
-            write_json(DATA / 'status.json', state)
-            LOG.warning('Analysis iteration failed (%s); retrying', type(error).__name__)
-        # Keep normal-view collection spread over two minutes, even with faster detection.
-        effective_interval = max(2, interval) if learning else interval
-        time.sleep(max(0, effective_interval - (time.monotonic() - started)))
+    AnomalyWorker().run()
 
 
 if __name__ == '__main__':

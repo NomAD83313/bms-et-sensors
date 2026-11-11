@@ -2,7 +2,7 @@ import queue
 import unittest
 from pathlib import Path
 
-from app.cameras.source import input_args
+from app.cameras.source import browser_stream_url, input_args, preview_input_args
 from app.cameras.pi_source import Broadcast
 from app.cameras.recorder import command
 from app.cameras.event_recording import segment_command
@@ -18,6 +18,42 @@ class InputTests(unittest.TestCase):
             self.assertIn('-rw_timeout', args)
             self.assertEqual(args[args.index('-c:v') + 1], 'copy')
             self.assertEqual(args[args.index('-i') + 1], url)
+
+    def test_rtsp_preview_uses_bounded_low_latency_input(self):
+        url = 'rtsp://camera/live'
+        args = preview_input_args(url)
+        self.assertEqual(args[args.index('-i') + 1], url)
+        self.assertEqual(args[args.index('-fflags') + 1], '+discardcorrupt+nobuffer')
+        self.assertEqual(args[args.index('-flags') + 1], 'low_delay')
+        self.assertEqual(args[args.index('-analyzeduration') + 1], '0')
+        self.assertEqual(args[args.index('-max_delay') + 1], '0')
+        self.assertEqual(args[args.index('-reorder_queue_size') + 1], '0')
+
+    def test_browser_preview_can_use_non_strict_udp_without_changing_recording(self):
+        args = preview_input_args('rtsp://camera/ch1', transport='udp', strict=False)
+        self.assertEqual(args[args.index('-rtsp_transport') + 1], 'udp')
+        self.assertNotIn('-err_detect', args)
+        self.assertEqual(input_args('rtsp://camera/ch0')[1], 'tcp')
+
+    def test_pi_preview_keeps_buffered_loopback_input(self):
+        url = 'http://127.0.0.1:8084/stream.ts'
+        args = preview_input_args(url)
+        self.assertEqual(args[args.index('-fflags') + 1], '+discardcorrupt')
+        self.assertNotIn('-max_delay', args)
+        self.assertEqual(args[args.index('-i') + 1], url)
+
+    def test_browser_substream_preserves_rtsp_authority(self):
+        from unittest.mock import patch
+        url = 'rtsp://user:password@camera:554/ch0'
+        with patch.dict('os.environ', {'CAMERA_PREVIEW_PATH': '/ch1'}):
+            self.assertEqual(browser_stream_url(url), 'rtsp://user:password@camera:554/ch1')
+            self.assertEqual(browser_stream_url('http://127.0.0.1:8084/stream.ts'),
+                             'http://127.0.0.1:8084/stream.ts')
+
+    def test_invalid_browser_substream_path_is_rejected(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ', {'CAMERA_PREVIEW_PATH': 'ch1'}), self.assertRaises(ValueError):
+            browser_stream_url('rtsp://camera/ch0')
 
     def test_unsupported_sources_fail_explicitly(self):
         for url in ('', '/etc/passwd', 'http://camera/stream.ts', 'http://127.0.0.1/private', 'file:///tmp/video'):
@@ -127,7 +163,7 @@ class ModeTests(unittest.TestCase):
         from app.cameras.pi_source import command
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'mode.json'
-            path.write_text('{"width":1920,"height":1080,"fps":30}')
+            path.write_text('{"width":1920,"height":1080,"fps":15}')
             with patch.dict(os.environ, {'PI_CAMERA_MODE_FILE': str(path)}):
                 args = command()
             self.assertEqual(args[args.index('--width') + 1], '1438')

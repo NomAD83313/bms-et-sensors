@@ -68,6 +68,12 @@ async function run() {
   assert.equal(requests.length, 0, 'Dragging a draft sends no command');
   assert.ok(element('roi-status').textContent.includes('960 × 720'), 'A 4:3 area fits inside the selected 1280x720 maximum');
   assert.deepEqual(api.fittedInput({x: 0, y: 0, width: .75, height: 1}), {width: 720, height: 720, label: '720 × 720'}, 'Square ROI keeps square input');
+  assert.deepEqual(api.fittedInput({x: 0, y: 0, width: .1, height: .1}),
+    {width: 400, height: 300, label: '400 × 300'}, 'A small ROI keeps its native pixels');
+  api.update({...state, source_width: 3280, source_height: 2464});
+  assert.deepEqual(api.fittedInput({x: .242994, y: .120816, width: .524776, height: .425954}, '1920x1080'),
+    {width: 1722, height: 1051, label: '1722 × 1051'}, 'Fractional pixel bounds match the backend without upscaling');
+  api.update(state);
   await element('roi-apply').onclick();
   assert.deepEqual(requests[0], {url: 'api/anomaly/roi', body: {roi: {x: .25, y: .25, width: .5, height: .5}, multiplier: 1.25}, id: 'roi-1'});
   for (const id of ['roi-select', 'roi-apply', 'roi-full', 'roi-cancel', 'anomaly-model', 'anomaly-input-size', 'anomaly-confirmation', 'anomaly-learn', 'anomaly-monitor', 'anomaly-pause']) {

@@ -11,13 +11,24 @@ import time
 import uuid
 
 try:
-    from .anomaly_control import read_json, write_json
     from . import source
+    from .anomaly_control import analysis_available, read_json, valid_event_id, write_json
+    from .event_recording import link_or_copy
 except ImportError:
-    from anomaly_control import read_json, write_json
     import source
+    from anomaly_control import analysis_available, read_json, valid_event_id, write_json
+    from event_recording import link_or_copy
 
 LOG = logging.getLogger('camera-snapshots')
+MIN_EXPORT_TIMEOUT_SECONDS = 180
+MAX_EXPORT_TIMEOUT_SECONDS = 3600
+EXPORT_TIMEOUT_SECONDS_PER_FRAME = 1.2
+
+
+def export_timeout(frame_count):
+    return max(MIN_EXPORT_TIMEOUT_SECONDS, min(
+        MAX_EXPORT_TIMEOUT_SECONDS,
+        int(frame_count * EXPORT_TIMEOUT_SECONDS_PER_FRAME)))
 
 
 def encode(directory, target):
@@ -26,8 +37,11 @@ def encode(directory, target):
     if not frames:
         raise ValueError('No snapshots available for event')
     metadata.update(actual_start=frames[0]['time'], actual_end=frames[-1]['time'], parts=len(frames))
-    if target.exists() and target.stat().st_size > 0:
+    def write_metadata():
         write_json(target.with_suffix('.json'), {k: v for k, v in metadata.items() if k != 'frames'})
+
+    if target.exists() and target.stat().st_size > 0:
+        write_metadata()
         return
     interval = metadata['snapshot_interval_ms'] / 1000
     lines = []
@@ -48,11 +62,12 @@ def encode(directory, target):
             '-r', str(1000/metadata['snapshot_interval_ms']), '-fps_mode', 'cfr',
             '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
             '-threads', '1', '-f', 'matroska', '-y', str(partial.resolve())],
-            check=True, timeout=180, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            check=True, timeout=export_timeout(len(frames)),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if not partial.stat().st_size:
             raise ValueError('Empty snapshot video')
         partial.replace(target)
-        write_json(target.with_suffix('.json'), {k: v for k, v in metadata.items() if k != 'frames'})
+        write_metadata()
     finally:
         partial.unlink(missing_ok=True)
 
@@ -85,7 +100,7 @@ class SnapshotBuffer:
     def trigger(self, marker, now):
         first, last = marker.get('start', 0), marker.get('last', 0)
         identifier = marker.get('id', '')
-        if (not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', identifier)
+        if (not valid_event_id(identifier)
                 or first > last or last > now + 5 or last + self.post <= now):
             return
         start = max(first-self.pre, self.closed_until)
@@ -116,11 +131,7 @@ class SnapshotBuffer:
         for frame in self.frames:
             if frame['name'] in names or not self.active['start'] <= frame['time'] <= end:
                 continue
-            original, target = self.buffer / frame['name'], self.buffer / self.active['name'] / frame['name']
-            try:
-                os.link(original, target)
-            except OSError:
-                shutil.copyfile(original, target)
+            link_or_copy(self.buffer / frame['name'], self.buffer / self.active['name'] / frame['name'])
             self.active['frames'].append(frame)
         if self.active['frames']:
             write_json(self.buffer / self.active['name'] / 'event.json', self.active)
@@ -204,9 +215,9 @@ def run(directory, stop, max_bytes, max_age, prune, control, anomaly, recording_
                     future.result()
                     shutil.rmtree(raw)
                     LOG.info('Saved video from snapshots: %s', target.name)
-                except (OSError, ValueError, subprocess.SubprocessError):
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
                     failed = True
-                    LOG.warning('Snapshot export failed; raw event retained for retry')
+                    LOG.warning('Snapshot export failed (%s); raw event retained for retry', exc)
             recover_exports()
             prune(Path(directory), max_bytes, max_age)
             if failed:
@@ -232,11 +243,10 @@ def run(directory, stop, max_bytes, max_age, prune, control, anomaly, recording_
                 if len(pending) < 2:
                     schedule(manager.close(now))
                 analysis = read_json(anomaly / 'status.json', {})
-                analysis_ok = analysis.get('state') in ('normal', 'suspect', 'anomaly') and 0 <= now-analysis.get('updated', 0) < 20
                 state = ('saving_event' if manager.active else 'buffering') if recording_mode == 'anomaly' else 'recording'
                 control.heartbeat(state, capture_mode='snapshots', event_active=manager.active is not None,
                     event_until=manager.active['end'] if manager.active else None,
-                    analysis_available=analysis_ok, exporting=len(pending), export_failed=failed)
+                    analysis_available=analysis_available(analysis, now), exporting=len(pending), export_failed=failed)
             except (OSError, ValueError):
                 control.heartbeat('connecting', capture_mode='snapshots')
             stop.wait(min(.1, settings['snapshot_interval_ms']/2000))

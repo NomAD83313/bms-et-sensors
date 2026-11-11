@@ -40,6 +40,7 @@ sudo install -m 644 "$unit_file" /etc/systemd/system/bms-pi-camera.service
 sudo systemctl daemon-reload
 sudo systemctl enable bms-pi-camera.service
 sudo systemctl restart bms-pi-camera.service
+bms_ensure_camera_onnx_runtime
 "${COMPOSE[@]}" --profile pi-camera up -d --build pi-camera-recorder pi-camera-dashboard pi-camera-anomaly
 for service in pi-camera-recorder pi-camera-dashboard pi-camera-anomaly; do
   if [[ -z "$("${COMPOSE[@]}" --profile pi-camera ps -a -q "$service")" ]]; then

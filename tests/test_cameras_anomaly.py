@@ -9,6 +9,23 @@ from app.cameras import anomaly_control
 
 
 class AnomalyControlTests(unittest.TestCase):
+    def test_event_ids_are_limited_to_a_safe_file_name_alphabet(self):
+        for good in ('a', 'event-2026_11', 'x' * 100):
+            self.assertTrue(anomaly_control.valid_event_id(good), good)
+        for bad in ('', 'x' * 101, '../etc', 'a/b', 'a b', 'a.jpg', None, 5, b'abc'):
+            self.assertFalse(anomaly_control.valid_event_id(bad), bad)
+
+    def test_color_mode_validates_before_replacing_the_command(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for mode in ('rgb', 'grayscale'):
+                saved = anomaly_control.request('color', color_mode=mode)
+                self.assertEqual(saved['color_mode'], mode)
+            for mode in (None, '', 'RGB', 'gray', True, 1, []):
+                with self.subTest(mode=mode), self.assertRaises(ValueError):
+                    anomaly_control.request('color', color_mode=mode)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), saved)
+            self.assertEqual(anomaly_control.command_mode('color', True, True, True), (False, False))
+
     def test_confirmation_requires_consecutive_scores_and_cooldown(self):
         confirmation = anomaly_control.Confirmation(required=3, cooldown=30)
         self.assertEqual(confirmation.update(2, 1, 0), (False, False))
@@ -35,6 +52,17 @@ class AnomalyControlTests(unittest.TestCase):
             for action, threshold in [('delete', 1), ('learn', 0), ('learn', float('nan')), ('learn', 21)]:
                 with self.subTest(action=action, threshold=threshold), self.assertRaises(ValueError):
                     anomaly_control.request(action, threshold)
+
+    def test_learning_time_is_validated_and_stored_with_the_command(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
+            for seconds in anomaly_control.LEARNING_SECONDS:
+                command = anomaly_control.request('learn', learning_seconds=seconds)
+                self.assertEqual(command['learning_seconds'], seconds)
+            saved = anomaly_control.read_json(Path(directory) / 'command.json')
+            for value in (0, 30, 300, 120.0, '120', True):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    anomaly_control.request('learn', learning_seconds=value)
+            self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), saved)
 
     def test_configure_accepts_values_above_old_limit_without_starting_detection(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):

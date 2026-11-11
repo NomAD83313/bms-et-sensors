@@ -55,7 +55,7 @@ async function run(source) {
   assert(values.join(',')==='768x432,1024x576,1280x720,1536x864,1920x1080','Only requested 16:9 presets are offered');
   api.syncInputSize({...state,input_size:'1920x1080',retraining_required:false},false);
   assert(element('input-size-status').textContent.includes('1920 × 1080'),'Show both input dimensions');
-  assert(element('input-size-status').textContent.includes('240 × 135'),'Show rectangular heatmap grid');
+  assert(element('input-size-status').textContent.includes('120 × 68'),'Show rectangular heatmap grid for the default stride-sixteen model');
   console.log('16:9 model presets, acknowledgment, heatmap dimensions and retraining UI passed.');
 }
 const fs = require('node:fs');

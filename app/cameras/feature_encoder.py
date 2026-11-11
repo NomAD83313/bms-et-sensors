@@ -1,7 +1,7 @@
 """Pretrained patch encoders shared by PyTorch and exported ONNX models."""
 import torch
 from torch.nn import functional as F
-from torchvision.models import resnet18, ResNet18_Weights, mobilenet_v3_small, MobileNet_V3_Small_Weights
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 
 try:
     from .model_profiles import DEFAULT_MODEL, MODELS, validate_model
@@ -33,9 +33,7 @@ class FeatureEncoder(torch.nn.Module):
             # Remove later stages; requesting a feature alone does not truncate timm.
             self.layers = torch.nn.Sequential(network.conv_stem, network.bn1, network.blocks[:stage + 1])
         else:
-            network = resnet18(weights=ResNet18_Weights.DEFAULT).eval()
-            self.layers = torch.nn.Sequential(network.conv1, network.bn1, network.relu,
-                                             network.maxpool, network.layer1, network.layer2)
+            raise ValueError('No encoder is defined for the selected model')
 
     def forward(self, image):
         features = F.avg_pool2d(self.layers(image), 3, stride=1, padding=1)

@@ -8,14 +8,84 @@ In anomaly mode, **Start detection & recording** starts analysis and the video
 buffer together. **Pause detection & recording** stops both. Continuous recording
 keeps its separate recording controls; retention and live preview remain independent.
 
+## Saved normal sessions
+
+The **Analysis image** radio buttons select **Color** (default RGB) or **Grayscale**
+independently for each camera. This affects learning and detection only: live preview,
+stored session JPEGs, event snapshots, heatmaps and video retain their original color.
+Grayscale JPEG decoding requests luminance directly, then crops and resizes one
+channel. Normalization broadcasts that channel into three, preserving compatibility
+with the current RGB ONNX input. Both modes write directly into one owned contiguous
+FP32 CHW buffer, using the same divide-by-255, subtract-mean, divide-by-standard-deviation
+order as the torchvision reference. NumPy performs normalization in place and PyTorch
+shares the result without copying it. Each frame owns its buffer, so later frames
+cannot overwrite tensors already in use. This implementation change preserves
+normalized values and does not require rebuilding saved normal sessions. The CNN
+and nearest-neighbor workloads remain unchanged; compare preparation and total
+cycle time to measure the benefit. Color-only anomalies may become less visible.
+
+Changing the analysis color mode pauses detection and event recording, removes the
+incompatible baseline and normal sessions, and requires new learning. Selecting the
+already active mode is a no-op. The selection persists across worker restarts and
+is validated in saved baselines and session configuration. Existing baselines and
+session catalogs without this setting are interpreted as RGB.
+
+Both cameras support up to eight independently named normal sessions. Names are
+optional and default to `Session 1`, `Session 2`, etc.; an optional comment can
+describe any reason for a normal state, including a new permitted object. Sessions
+are not associated with a time of day. Thumbnails outline the saved analysis region
+and dim the surrounding image; full-frame sessions are labeled **FULL FRAME**.
+They use the session's stored ROI, independently of current live selection.
+Each card shows a thumbnail, capture time,
+frame count and its held-out calibration threshold.
+
+- **Learn new baseline** collects 30–120 frames at the selected 1–4 minute duration
+  and replaces the previous saved sessions only after a successful rebuild.
+- **Add normal session** retains previous sessions, collects another normal state,
+  rebuilds the common bank and starts detection when complete.
+- **Replace** collects a replacement for one selected session and retains the rest.
+- **Save name / comment** changes metadata without retraining or pausing detection.
+- **Delete** rebuilds the remaining sessions and leaves detection paused. Deleting
+  the last session clears the baseline. **Rebuild saved sessions** retries training
+  without capturing another session and also leaves detection paused.
+
+Capture and rebuilding report separate progress. Rebuilding reprocesses all saved
+JPEGs and may take longer as sessions accumulate; inference continues to use one
+bounded bank, not one model execution per session. Every fifth frame in each
+session is excluded from the memory bank. Calibration uses the maximum of the
+per-session 99th-percentile normal scores. These adjacent held-out frames are still
+correlated: evaluate independent normal footage and real anomalies after adding
+a new state. More accepted appearances can also make similar anomalies less visible.
+
+Sessions must use the same model, input preset, ROI, source dimensions and
+preprocessing. Changing ROI, input preset, model, analysis color mode or source dimensions automatically
+deletes the incompatible baseline and its normal sessions, including their JPEGs.
+Startup configuration mismatches also clear incompatible sessions. New normal-view
+learning is then required. Pausing, a temporary camera outage, metadata edits,
+threshold changes and confirmation settings retain the saved sessions. Failed
+rebuilds retain compatible sessions for retry. A pre-session baseline
+continues to work, but has no source training images to extend; create the first
+new baseline to enable accumulation. There is no automatic learning of live frames.
+
+Original JPEGs and the catalog live under the existing runtime anomaly mount in
+`learning/`; they are never committed. Each camera has its own catalog. Storage is
+limited to 4 GiB of published and currently collected JPEGs, with at least 64 MiB
+free-space reserve. Interrupted in-progress captures do not replace saved sessions.
+Completed sessions and baseline publication use a revision check and a temporary
+baseline backup so a power interruption cannot silently pair an unrelated bank
+with the saved sessions. A failed rebuild leaves detection paused and the previous
+sessions available for retry. History deletion does not delete learning sessions.
+
 ## Workflow
 
 1. Point the camera at a fixed scene with normal conditions. Choose a model,
    maximum input size and optionally an analysis area (ROI). Apply any changes
    before learning.
-2. Select **Learn normal view · 2 min**. Keep the view normal while 60 frames
-   are collected, one every two seconds. Successful learning replaces the
-   previous baseline and starts detection. In anomaly mode, the recording buffer
+2. Select a **Learning time** from 1–4 minutes, then select **Learn new baseline**.
+   Keep the view normal while 30–120 frames are collected, one every two seconds.
+   Successful learning replaces the
+   previous baseline and saved normal sessions and starts detection. Use **Add normal session**
+   to include another normal state while retaining the existing sessions. In anomaly mode, the recording buffer
    is stopped during learning and starts after learning succeeds. Pause cancels collection.
 3. Introduce an obvious temporary scene change and observe the score and badge.
    The Confirmation menu selects 1–5 consecutive above-threshold samples to
@@ -35,23 +105,21 @@ Pi snapshot mode uses the selected capture resolution (including 3280x2464).
 The browser receives a separate 960x540 preview. Frames with other aspect ratios
 fit inside that canvas with black bars, preserving the complete field of view.
 Native Pi snapshot previews are resized lazily and cached; analysis and recording
-retain the source JPEG. Video still uses a single FFmpeg decoder split into a
-browser JPEG and a full-size JPEG.
+retain the source JPEG. Pi video uses its full-size decoder output for analysis
+and resizes it only when serving the browser. A WiFi camera can use its main
+stream for analysis and a separate substream for the browser.
 
 Learning and detection request
-`/api/live.jpg?fresh=1&analysis=1`. The dashboard returns the full source JPEG with
+`/api/live.jpg?analysis=1`. The dashboard returns the full source JPEG with
 an `X-Camera-Analysis-Source: original-v1` header and decoder-generation token.
 The model decodes this original, crops the selected ROI if enabled, and resizes
 directly to the effective model input. The worker
 rejects a missing source marker, incomplete JPEG, a response above 16 MiB, or a
 decoder token invalidated during inference. Event snapshots and overlays use the
 same full-size analysis JPEG; no later snapshot is requested for an event.
-
-The existing frame-ID lookup remains available for diagnostics. Its cache is
-limited to 32 requested frames and 64 MiB; IDs expire after 15 seconds and all
-cached originals are invalidated on decoder errors. Full-size video JPEG encoding
-adds CPU work, and decoding a full JPEG before model resizing costs more than
-reading the old preview. It avoids enlarging an already reduced image.
+Full-size video JPEG encoding adds CPU work, and decoding a full JPEG before
+model resizing costs more than reading the browser preview. It avoids enlarging
+an already reduced image.
 
 The latest 100 events (JPEG, heatmap and JSON metadata) are retained. Completed event videos use the ordinary video retention policy. The recorder
 discards ordinary temporary buffer segments only in event-only mode.
@@ -62,9 +130,9 @@ Save important video separately before normal retention expires.
 
 This is a small **PatchCore-style variant**, not the original benchmark model:
 
-- The default frozen ImageNet ResNet-18 runs through **layer2** only, with locally
-  averaged 128-dimensional patch features. MobileNetV3-Small uses its first nine
-  feature stages, with 48-dimensional stride-sixteen features. Maximum input selects
+- The default frozen ImageNet MobileNetV3-Small uses its first nine feature stages,
+  with locally averaged 48-dimensional stride-sixteen patch features. MobileOne-S0
+  provides 128-dimensional stride-eight features. Maximum input selects
   bounds of 768 × 432, 1024 × 576, 1280 × 720, 1536 × 864 or 1920 × 1080;
   an enabled ROI is fitted within those bounds while preserving its proportions.
   Analysis settings do not change capture resolution.
@@ -82,8 +150,8 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
 - Baselines use one strict schema that records the encoder, source geometry, ROI,
   preprocessing, input size, score aggregation and coreset size. Any mismatch pauses
   monitoring and requires a new normal-view learning run.
-- Every fifth baseline frame is held out entirely for calibration. The base
-  threshold is the 99th percentile of those held-out frame scores. The UI margin
+- Every fifth frame in each normal session is held out entirely for calibration.
+  The base threshold is the largest per-session 99th percentile of held-out scores. The UI margin
   scales it. Adjacent window frames are correlated; this is an initial calibration,
   not a measured false-alarm probability.
 - A separate CPU worker reuses the existing preview decoder over local HTTP.
@@ -104,7 +172,7 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
   by the camera itself cannot be identified by this decoder-error filter.
 
 References: [PatchCore source](https://github.com/amazon-science/patchcore-inspection),
-[ResNet-18 weights](https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html).
+[MobileNetV3 weights](https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.mobilenet_v3_small.html).
 
 The CPU inference libraries, exported models and weights are installed during Docker build. Camera
 images are processed locally. Analysis does not receive the RTSP URL or Docker
@@ -116,7 +184,7 @@ belong to the optional `cameras` and `pi-camera` profiles.
 ## Runtime files and operations
 
 All learned data is local under `runtime/cameras/anomaly/`, ignored by Git:
-`baseline.pt`, `status.json`, `session.json`, `command.json`, and `events/`.
+`baseline.pt`, `status.json`, `session.json`, `command.json`, `events/`, and `learning/`.
 Pi uses the same structure under `runtime/pi-camera/anomaly/`. Neither directory
 belongs in Git.
 The pretrained backbone is in the image; normal-view memory is runtime state.
@@ -135,7 +203,8 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_INTERVAL_SEC=0.2`: detection interval, minimum 0.2 seconds; effective rate is bounded
   by inference and decoder availability.
 - `CAMERA_ANOMALY_CONFIRM_FRAMES=2`: consecutive suspicious frames to confirm, clamped to 1–5.
-- `CAMERA_ANOMALY_NORMAL_FRAMES=60`: clamped to 20–120 successful frames.
+- `CAMERA_ANOMALY_NORMAL_FRAMES=60`: startup default, clamped to 20–120 successful
+  frames. The 1–4 minute UI selection stores 30, 60, 90 or 120 frames for later runs.
 - `CAMERA_DASHBOARD_PORT=8082`: also configures the worker's internal preview URL.
 - `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: `onnx` or `torch`.
 - `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `torch`.
@@ -155,10 +224,12 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_CORESET_SIZE=1024`: maximum normal-memory vectors, from 256 to
   4096. Pi-only overrides use the `PI_CAMERA_ANOMALY_` prefix. A newly configured
   coreset size takes effect at the next learning run.
-- `CAMERA_ONNX_RUNTIME_IMAGE=onnx-cpu`: standard ONNX Runtime wheel. For the optional
-  Linux XNNPACK build, first build the wheel image below, then set this value to
-  `bms-onnx-xnnpack:local` and rebuild `pi-camera-anomaly`. The same image can also
-  be used by `camera-anomaly`. Source compilation is resource intensive on Pi.
+- `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local` (installation template): ONNX
+  Runtime compiled with XNNPACK. `restart-cameras.sh` and `restart-pi-camera.sh`
+  build this wheel image automatically when it is missing; the one-time compile is
+  resource intensive on Pi. Set `onnx-cpu` to use the standard PyPI wheel instead
+  (also the Compose default when the variable is unset). To force a rebuild, remove
+  the image and rerun a camera start script. Manual equivalent:
 
 ```sh
 docker build -f Dockerfile.camera-onnx-xnnpack -t bms-onnx-xnnpack:local .
@@ -168,7 +239,8 @@ CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose build pi-camera-
 Ordinary `CPUExecutionProvider` is not XNNPACK. See the
 [ONNX Runtime XNNPACK provider documentation](https://onnxruntime.ai/docs/execution-providers/Xnnpack-ExecutionProvider.html).
 
-The installation template uses the standard CPU wheel and one thread per worker.
+The installation template uses the locally built XNNPACK wheel and two threads with a
+two-CPU quota per worker.
 The isolated Pi 5 measurement on 2026-11-06 used a locally built XNNPACK wheel,
 `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local`, and four threads/four CPUs per
 worker. These are deployment settings, not installation defaults. See
@@ -186,7 +258,7 @@ acquisition, decoder-token validation, event rendering and video recording.
 ```sh
 TASK_TEST_DIR="$PWD/runtime/camera-inference-test"
 mkdir -p "$TASK_TEST_DIR"
-curl -fsS 'http://127.0.0.1:8083/api/live.jpg?fresh=1&analysis=1' -o "$TASK_TEST_DIR/frame.jpg"
+curl -fsS 'http://127.0.0.1:8083/api/live.jpg?analysis=1' -o "$TASK_TEST_DIR/frame.jpg"
 docker run --rm --network none --cpus 4 \
   -v "$PWD:/work:ro" -v "$TASK_TEST_DIR:/bench" -w /work \
   bms-camera-anomaly:local python scripts/benchmark-camera-engines.py \
@@ -195,7 +267,7 @@ docker run --rm --network none --cpus 4 \
 
 Add `--providers cpu xnnpack` when using the XNNPACK wheel.
 
-A two-minute window baseline covers only the current conditions. Clouds, daylight,
+A 1–4 minute baseline covers only the conditions present during that run. Clouds, daylight,
 reflections, curtains and a moved camera can trigger novelty. Relearn when changing
 camera position or scene. For a production line, collect representative normal
 cycles and separate validation footage, choose an ROI, check missed anomalies and
@@ -247,13 +319,10 @@ waiting for its remaining post-window. Live preview remains available.
 Starting again fills a new pre-event buffer; the requested seven-second context
 is available only after enough video has arrived. The worker restores linked
 recording from the saved monitoring selection on restart. Threshold changes do
-not start or stop the session. Legacy recording start/stop API routes also
-request monitor/pause in anomaly mode.
+not start or stop the session.
 
 The library's **Events only** filter is selected by default in anomaly mode.
-It shows event video and any historical unchecked video; uncheck it to see historical continuous
-recordings. Switching modes does not retroactively classify or delete old
-continuous recordings. Video links appear on snapshot cards once remuxing
+Uncheck it to see continuous recordings. Video links appear on snapshot cards once remuxing
 finishes after the post-window. A hand test shorter than the detector's
 two-sample confirmation may not create an event.
 
@@ -284,26 +353,23 @@ model inference, distance search and frame availability; the sampling target doe
 not guarantee 5 FPS. Camera/RTSP latency is additional.
 The worker waits only for the unused part of the target interval. If processing
 already exceeds that interval, it starts the next iteration without an extra pause.
-The UI polls analysis every 0.25 seconds. Normal-view learning still samples
-one frame every two seconds to preserve the two-minute baseline coverage.
+The UI polls analysis every 0.25 seconds. Normal-view learning samples one frame
+every two seconds for the selected 1–4 minute duration.
 The 30-second snapshot cooldown applies within a continuing anomaly; a new
 confirmed anomaly after a normal sample can save a new snapshot immediately.
 
 ### Analysis model selection
 
-Both camera pages offer the five backend models below. No retired model identifiers
+Both camera pages offer the three backend models below. No retired model identifiers
 or hidden menu entries are retained.
 
 | Model | Features | Heatmap stride |
 | --- | --- | --- |
 | MobileNetV3 | MobileNetV3-Small first nine feature stages, FP32, 48 channels | 16 |
-| PP-LCNet ×0.5 | FP32, 128 channels | 16 |
 | MobileNetV4 ConvSmall ×0.5 | FP32, 48 channels | 16 |
-| ResNet FP32 | ResNet-18 layer2, FP32, 128 channels | 8 |
 | MobileOne-S0 | Fused stages 0–2, FP32, 128 channels | 8 |
 
-PP-LCNet uses the pretrained timm `lcnet_050.ra2_in1k` weights. MobileNetV4 uses
-`mobilenetv4_conv_small_050.e3000_r224_in1k`. MobileOne uses Apple's published
+MobileNetV4 uses the pretrained timm `mobilenetv4_conv_small_050.e3000_r224_in1k` weights. MobileOne uses Apple's published
 fused S0 checkpoint; its license is retained under `app/cameras/licenses/`.
 All encoder files are exported during the image build, so live inference does not
 download weights.
@@ -330,8 +396,10 @@ need a larger maximum input or a wider selection.
 
 With an ROI, **Maximum input** selects the bounding dimensions of the model tensor.
 The crop keeps its own aspect ratio rather than being stretched to 16:9. For example,
-the 768x432 maximum produces 576x432 for a 4:3 crop, 432x432 for a square crop, or
-approximately 346x432 for a 4:5 crop. The status shows the actual input dimensions
+the 768x432 maximum reduces larger crops to 576x432 for 4:3, 432x432 for a square,
+or approximately 346x432 for 4:5. Smaller crops retain their native pixel dimensions:
+a 1722x1051 crop stays 1722x1051 with a 1920x1080 maximum. ROI pixels are never
+upscaled. The status shows the actual input dimensions
 and heatmap grid. Rounding to whole pixels can introduce a small aspect difference.
 Without an ROI, the selected full-frame preset dimensions are used directly.
 
@@ -339,6 +407,7 @@ Apply the final area and maximum input, then select **Learn normal view**. Apply
 a different ROI pauses detection and event-only recording, clears the confirmation
 streak and requires new normal-view learning. Changing source dimensions also
 invalidates the baseline. No new learning starts automatically.
+Baselines saved with enlarged ROI dimensions are rejected and require new learning.
 
 All baselines use format version 6 and record the normalized ROI (or full frame),
 `roi-original-aspect-v1` preprocessing revision, source dimensions and effective
@@ -366,7 +435,7 @@ Both camera pages offer five **Maximum input** presets. They are fixed 16:9 mode
 dimensions for full-frame analysis and maximum bounds for an enabled ROI. The
 table lists full-frame heatmap grids; an ROI's grid follows its effective dimensions.
 
-| Input (width x height) | ResNet / MobileOne grid | MobileNetV3 / PP-LCNet / MobileNetV4 grid |
+| Input (width x height) | MobileOne grid | MobileNetV3 / MobileNetV4 grid |
 | --- | --- | --- |
 | 768x432 (default) | 96x54 | 48x27 |
 | 1024x576 | 128x72 | 64x36 |
@@ -382,16 +451,17 @@ and live preview remain available independently.
 Without an ROI, the full analysis image is resized to the selected width and height.
 A 16:9 source keeps its proportions; other full-frame aspect ratios retain the
 existing resize behavior. An enabled ROI is cropped first and fitted to the
-selected bounds while preserving its own proportions. Camera
+selected bounds while preserving its own proportions, without upscaling. Camera
 capture/recording resolution remains independent. Both video and snapshot analysis use
-the full source JPEG directly. Inputs larger than the source image still upscale
-it without adding detail. Event snapshots and overlays use the matched
+the full source JPEG directly. Full-frame inputs larger than the source image still
+upscale it without adding detail; an enabled ROI never does. Event snapshots and overlays use the matched
 full-size source frame, independently of this analysis-input limit.
 Higher presets increase CPU, memory and latency.
-Pairwise patch distances are computed in bounded batches. Training selects its
-8000 candidates without concatenating all full-resolution training frames; the
-60 collected feature frames can still consume substantial memory at the largest
-presets. Learning never uses fewer frames automatically.
+Pairwise patch distances are computed in bounded batches. Rebuilding saved sessions
+processes JPEGs one at a time and selects at most 8000 candidate vectors, sharing
+the candidate budget equally between sessions. Full-resolution feature frames are
+not accumulated in RAM. The final coreset remains bounded by the configured size.
+Learning never uses fewer frames automatically.
 
 Baselines use strict format version 6. A baseline from another model, input size,
 source geometry, ROI, preprocessing mode, Top-K setting or JPEG Draft setting cannot
@@ -523,7 +593,8 @@ it for each photograph. Snapshots use the source's configured capture resolution
 The recorder keeps a time-bounded disk ring under `.snapshot-buffer/` and protects
 pre/post-event JPEGs with hard links. At event completion, a background single
 FFmpeg worker encodes H.264 MKV, using timestamps to preserve elapsed time and the
-selected nominal snapshot FPS. There are at most two queued exports plus the
+selected nominal snapshot FPS. The export timeout scales with frame count, up to
+one hour for long, high-resolution events. There are at most two queued exports plus the
 current event; long events split at 300 seconds. Normal frames expire after
 pre-window + post-window + 10 seconds. Protected JPEGs and metadata survive an
 interrupted export and are retried at recorder restart; failed exports retain raw

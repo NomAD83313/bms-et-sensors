@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 from app.cameras import anomaly_control, control, dashboard
 from app.cameras.roi import ROIGeometryChanged
 from tests.isolated_import import load_isolated_module
-from tests.test_cameras_worker_quality import StopLoop
+from tests.test_cameras_worker_quality import FakeModelGeometry, StopLoop
 
 
 ROI = dict(x=.25, y=.25, width=.5, height=.5)
@@ -41,8 +41,8 @@ class RoiApiTests(unittest.TestCase):
                 try:
                     with urllib.request.urlopen(url, timeout=3) as response:
                         data = json.load(response)
-                    self.assertEqual((data['effective_input_width'], data['effective_input_height']), (960, 720))
-                    self.assertEqual((data['heatmap_width'], data['heatmap_height']), (60, 45))
+                    self.assertEqual((data['effective_input_width'], data['effective_input_height']), (200, 150))
+                    self.assertEqual((data['heatmap_width'], data['heatmap_height']), (13, 10))
                     geometry.return_value = (400, 4000)
                     state['roi'] = dict(x=0, y=0, width=.05, height=1)
                     anomaly_control.write_json(root / 'anomaly/status.json', state)
@@ -139,9 +139,9 @@ class RoiWorkerTests(unittest.TestCase):
             with self.assertRaises(StopLoop): worker.main()
         return anomaly_control.read_json(root / 'status.json')
 
-    def test_area_change_pauses_and_persists_without_reusing_or_deleting_old_bank(self):
+    def test_area_change_pauses_persists_and_discards_previous_bank(self):
         calls = []
-        class Model:
+        class Model(FakeModelGeometry):
             memory = None
             baseline_frames = 60
             def load(self, path): self.memory = True
@@ -167,13 +167,13 @@ class RoiWorkerTests(unittest.TestCase):
                     self.assertEqual(state['last_request'], command['id'])
                     self.assertFalse(control.enabled())
                 self.assertEqual(calls, [ROI, ROI])
-                self.assertEqual((root / 'baseline.pt').read_bytes(), b'previous-learned-bank')
+                self.assertFalse((root / 'baseline.pt').exists())
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
                 self.assertEqual(anomaly_control.read_json(root / 'session.json')['roi'], ROI)
 
     def test_roi_event_keeps_original_jpeg_and_maps_heatmap_to_the_same_area(self):
         jpeg = b'\xff\xd8original-source\xff\xd9'
-        class Model:
+        class Model(FakeModelGeometry):
             memory = None
             baseline_frames = 60
             threshold = 1
@@ -201,7 +201,7 @@ class RoiWorkerTests(unittest.TestCase):
                 render.assert_called_once_with(jpeg, 'heat', 1, roi=ROI)
 
     def test_geometry_change_clears_confirmation_and_requires_learning(self):
-        class Model:
+        class Model(FakeModelGeometry):
             memory = None
             baseline_frames = 60
             def set_roi(self, value): self.roi = value

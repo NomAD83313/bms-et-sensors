@@ -17,9 +17,9 @@ async function run() {
   const api = new Function('document', 'fetch', 'Image', 'setInterval', 'setTimeout', 'performance', 'window',
     fs.readFileSync('app/cameras/web/app.js', 'utf8') + '\nreturn {syncModel, syncDetectionControls, syncInputSize, applyModel};')(
       document, fetch, class {}, () => {}, () => {}, {now: () => 0}, {});
-  api.syncModel({model_key: 'resnet-fp32'}, false);
+  api.syncModel({model_key: 'mobileone-s0'}, false);
   const select = element('anomaly-model');
-  assert(select.value === 'resnet-fp32', 'Initialize from the actual worker model');
+  assert(select.value === 'mobileone-s0', 'Initialize from the actual worker model');
   select.value = 'mobilenetv3'; select.listeners.change();
   assert(!element('anomaly-model-apply').disabled, 'Offer Apply for a changed model');
   assert(element('anomaly-learn').disabled, 'Do not learn against an unapplied model selection');
@@ -35,8 +35,7 @@ async function run() {
   assert(element('input-size-status').textContent.includes('New learning'), 'Retain the input-size retraining warning');
   api.syncInputSize({...applied, retraining_required: false, input_size: '1920x1080', heatmap_width: 120, heatmap_height: 68}, false);
   assert(element('input-size-status').textContent.includes('120 × 68'), 'Use the worker heatmap grid, including rounded height');
-  for (const [model, fallback] of [['pp-lcnet-x0.5', '120 × 68'],
-      ['mobilenetv4-convsmall-x0.5', '120 × 68'], ['resnet-fp32', '240 × 135'],
+  for (const [model, fallback] of [['mobilenetv4-convsmall-x0.5', '120 × 68'],
       ['mobileone-s0', '240 × 135']]) {
     select.value = model; select.listeners.change();
     assert(!element('anomaly-model-apply').disabled, 'Offer Apply for the new model');
@@ -62,14 +61,14 @@ async function run() {
   const options = html.match(/<select id="anomaly-model"[^>]*>(.*?)<\/select>/s)[1];
   const visible = [...options.matchAll(/<option value="([^"]+)"([^>]*)>/g)]
     .filter(match => !/\bhidden\b|\bdisabled\b/.test(match[2])).map(match => match[1]);
-  assert(JSON.stringify(visible) === JSON.stringify(['mobilenetv3', 'pp-lcnet-x0.5', 'mobilenetv4-convsmall-x0.5', 'resnet-fp32', 'mobileone-s0']), 'Offer the five selected candidates');
+  assert(JSON.stringify(visible) === JSON.stringify(['mobilenetv3', 'mobilenetv4-convsmall-x0.5', 'mobileone-s0']), 'Offer the three selected candidates');
   const shortlisted = [...options.matchAll(/<option value="([^"]+)"[^>]*class="model-shortlist"[^>]*>/g)].map(match => match[1]);
-  assert(JSON.stringify(shortlisted) === JSON.stringify(['mobilenetv3', 'pp-lcnet-x0.5']), 'Bold the two strongest current Pi Camera models');
+  assert(JSON.stringify(shortlisted) === JSON.stringify(['mobilenetv3']), 'Bold the strongest current Pi Camera model');
   assert(fs.readFileSync('app/cameras/web/style.css', 'utf8').includes('option.model-shortlist{font-weight:700}'), 'Render shortlisted model options in bold');
-  for (const key of ['resnet-int8', 'shufflenetv2-x0.5', 'shufflenetv2-x1.0', 'mobilenetv3-int8'])
+  for (const key of ['resnet-fp32', 'pp-lcnet-x0.5', 'resnet-int8', 'shufflenetv2-x0.5', 'shufflenetv2-x1.0', 'mobilenetv3-int8'])
     assert(!options.includes('value="' + key + '"'), 'Remove retired model identifiers from the UI');
   assert(html.includes('Experimental candidates: verify detection sensitivity'), 'Do not imply the shortlist passed quality acceptance');
-  assert(html.includes('ResNet and MobileOne provide a finer heatmap'), 'Explain the finer stride-eight heatmap');
+  assert(html.includes('MobileOne provides a finer heatmap'), 'Explain the finer stride-eight heatmap');
   console.log('Model selection, acknowledgment, retraining and stride-sixteen heatmap UI passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
