@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import time
 
+import numpy as np
 import torch
 from torch.nn import functional as F
 from torchvision.transforms import functional as TF
@@ -100,6 +101,8 @@ class PatchCoreLite:
             if self.onnx_provider not in ort.get_available_providers():
                 raise ValueError('Requested ONNX provider is unavailable')
         profile = MODELS[model_key]
+        self._mean = np.asarray(profile.get('mean', (.485, .456, .406)), dtype=np.float32)[:, None, None]
+        self._std = np.asarray(profile.get('std', (.229, .224, .225)), dtype=np.float32)[:, None, None]
         self.feature_engine = feature_engine
         if feature_engine == 'torch':
             self.onnx_provider = None
@@ -181,7 +184,10 @@ class PatchCoreLite:
             image.draft(decode_mode, draft_size)
         decoded_width, decoded_height = image.size
         decoded_mode = image.mode
-        image = image.convert(decode_mode)
+        if image.mode != decode_mode:
+            image = image.convert(decode_mode)
+        else:
+            image.load()
         decode_ms = (time.perf_counter() - decode_started) * 1000
         transform_started = time.perf_counter()
         if self.roi is not None:
@@ -194,12 +200,16 @@ class PatchCoreLite:
         image = TF.resize(image, [height, width])
         transform_ms = (time.perf_counter() - transform_started) * 1000
         tensor_started = time.perf_counter()
-        profile = MODELS[self.model_key]
-        tensor = TF.to_tensor(image)
-        if self.color_mode == 'grayscale':
-            tensor = tensor.expand(3, -1, -1)
-        tensor = TF.normalize(tensor, profile.get('mean', (.485, .456, .406)),
-                              profile.get('std', (.229, .224, .225))).unsqueeze(0)
+        pixels = np.asarray(image)
+        # Grayscale is broadcast to three channels so the ufunc output shape matches.
+        pixels = (np.broadcast_to(pixels[None], (3, height, width)) if self.color_mode == 'grayscale'
+                  else pixels.transpose(2, 0, 1))
+        # Write directly into one owned CHW buffer, preserving the FP32 operation order.
+        normalized = np.empty((3, height, width), dtype=np.float32)
+        np.divide(pixels, np.float32(255), out=normalized, dtype=np.float32)
+        normalized -= self._mean
+        normalized /= self._std
+        tensor = torch.from_numpy(normalized).unsqueeze(0)
         tensor_ms = (time.perf_counter() - tensor_started) * 1000
         self.preparation_metrics = dict(
             geometry_ms=geometry_ms, decode_ms=decode_ms, transform_ms=transform_ms,

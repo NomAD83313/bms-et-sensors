@@ -14,8 +14,13 @@ The **Analysis image** radio buttons select **Color** (default RGB) or **Graysca
 independently for each camera. This affects learning and detection only: live preview,
 stored session JPEGs, event snapshots, heatmaps and video retain their original color.
 Grayscale JPEG decoding requests luminance directly, then crops and resizes one
-channel. That channel is expanded to three before the encoder's existing ImageNet
-normalization, preserving compatibility with the current RGB ONNX input. The CNN
+channel. Normalization broadcasts that channel into three, preserving compatibility
+with the current RGB ONNX input. Both modes write directly into one owned contiguous
+FP32 CHW buffer, using the same divide-by-255, subtract-mean, divide-by-standard-deviation
+order as the torchvision reference. NumPy performs normalization in place and PyTorch
+shares the result without copying it. Each frame owns its buffer, so later frames
+cannot overwrite tensors already in use. This implementation change preserves
+normalized values and does not require rebuilding saved normal sessions. The CNN
 and nearest-neighbor workloads remain unchanged; compare preparation and total
 cycle time to measure the benefit. Color-only anomalies may become less visible.
 

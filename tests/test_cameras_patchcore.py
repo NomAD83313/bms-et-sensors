@@ -14,6 +14,59 @@ except ImportError:
 
 @unittest.skipIf(torch is None, 'Requires the optional camera-anomaly image')
 class PatchMemoryTests(unittest.TestCase):
+    def test_preparation_matches_torchvision_and_keeps_independent_contiguous_tensors(self):
+        import io
+        import math
+        import numpy as np
+        from PIL import Image
+        from torchvision.transforms import functional as TF
+        from app.cameras.model_profiles import MODELS
+        from app.cameras.roi import roi_bounds
+
+        pixels = (np.arange(1280 * 960 * 3) % 256).astype(np.uint8).reshape(960, 1280, 3)
+        stream = io.BytesIO()
+        Image.fromarray(pixels).save(stream, format='JPEG', quality=90)
+        jpeg = stream.getvalue()
+        region = dict(x=.123, y=.111, width=.631, height=.733)
+        for key, profile in MODELS.items():
+            for mode in ('rgb', 'grayscale'):
+                for draft in (False, True):
+                    for roi in (None, region):
+                        with self.subTest(model=key, mode=mode, draft=draft, roi=roi):
+                            model = PatchCoreLite(model_key=key, feature_engine='onnx',
+                                                  input_size='768x432', color_mode=mode, jpeg_draft=draft)
+                            model.set_roi(roi)
+                            actual = model._image(jpeg)
+                            width, height = model.effective_input_size
+                            image = Image.open(io.BytesIO(jpeg))
+                            source_width, source_height = image.size
+                            decode_mode = 'L' if mode == 'grayscale' else 'RGB'
+                            target = image.size
+                            if draft:
+                                target = ((width, height) if roi is None else
+                                          (math.ceil(width / roi['width']), math.ceil(height / roi['height'])))
+                            if draft or mode == 'grayscale':
+                                image.draft(decode_mode, target)
+                            decoded_width, decoded_height = image.size
+                            image = image.convert(decode_mode)
+                            if roi is not None:
+                                bounds = roi_bounds(source_width, source_height, roi)
+                                image = image.crop((round(bounds[0] * decoded_width / source_width),
+                                                    round(bounds[1] * decoded_height / source_height),
+                                                    round(bounds[2] * decoded_width / source_width),
+                                                    round(bounds[3] * decoded_height / source_height)))
+                            image = TF.resize(image, [height, width])
+                            expected = TF.to_tensor(image)
+                            if mode == 'grayscale':
+                                expected = expected.expand(3, -1, -1)
+                            expected = TF.normalize(expected, profile.get('mean', (.485, .456, .406)),
+                                                    profile.get('std', (.229, .224, .225))).unsqueeze(0)
+                            self.assertTrue(torch.equal(actual, expected))
+                            self.assertTrue(actual.is_contiguous())
+                            self.assertEqual(actual.dtype, torch.float32)
+                            model._image(self._roi_jpeg(size=(1280, 960)))
+                            self.assertTrue(torch.equal(actual, expected), 'Later frames must not overwrite earlier tensors')
+
     def test_grayscale_decodes_luminance_and_separates_baselines(self):
         jpeg = self._roi_jpeg()
         roi = dict(x=.25, y=.25, width=.5, height=.5)
