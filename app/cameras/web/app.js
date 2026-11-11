@@ -120,6 +120,9 @@ let appliedROI = null, draftROI = null, pendingROI = null, roiEditing = false, r
 let roiSource = null, roiPointer = null, roiDragStart = null, appliedEffectiveInput = null;
 let latestAnomalyData = {}, latestAnomalyUnavailable = true;
 const analysisConfiguring = () => roiEditing || pendingROI !== null || pendingColor !== null;
+// A model, input size, threshold or confirmation change awaits worker acknowledgment.
+const settingPending = () => pendingModel !== null || pendingInputSize !== null
+  || pendingMultiplier !== null || pendingConfirmation !== null;
 function canonicalROI(roi) {
   return roi && roi.x === 0 && roi.y === 0 && roi.width === 1 && roi.height === 1 ? null : roi;
 }
@@ -306,7 +309,7 @@ function syncModel(data, unavailable) {
     if (!modelDirty && pendingModel === null) $('anomaly-model').value = appliedModel;
   }
   const learning = ['learning', 'training'].includes(data.state);
-  const busy = capturePending || unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
+  const busy = capturePending || unavailable || learning || analysisConfiguring() || settingPending();
   $('anomaly-model').disabled = busy || inputSizeDirty;
   $('anomaly-model-apply').disabled = busy || !modelDirty;
   $('model-status').textContent = modelFailure || (pendingModel
@@ -316,7 +319,7 @@ function syncModel(data, unavailable) {
     : appliedModel ? `Applied model: ${$('anomaly-model').options?.[ $('anomaly-model').selectedIndex ]?.text || data.model_label || appliedModel}.` : 'Checking analysis model…');
 }
 async function applyModel() {
-  if (!modelDirty || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || ['learning', 'training'].includes(latestAnomalyState)) return;
+  if (!modelDirty || analysisConfiguring() || settingPending() || ['learning', 'training'].includes(latestAnomalyState)) return;
   const value = $('anomaly-model').value;
   pendingModel = {value, id: null}; modelFailure = '';
   syncModel({}, false); syncDetectionControls({}, false);
@@ -631,13 +634,13 @@ function syncConfirmation(data, unavailable) {
     if (pendingConfirmation === null) select.value = String(appliedConfirmation);
   }
   select.disabled = unavailable || ['learning', 'training'].includes(data.state)
-    || analysisConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null;
+    || analysisConfiguring() || settingPending();
   $('confirmation-status').textContent = confirmationFailure || (pendingConfirmation !== null
     ? 'Applying confirmation setting…'
     : appliedConfirmation !== null ? `Applied: ${appliedConfirmation} consecutive analyzed frame${appliedConfirmation === 1 ? '' : 's'}. No new learning required.` : 'Checking confirmation setting…');
 }
 async function applyConfirmation() {
-  if (analysisConfiguring() || pendingConfirmation !== null || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null) return;
+  if (analysisConfiguring() || settingPending()) return;
   const value = Number($('anomaly-confirmation').value);
   if (value === appliedConfirmation) return;
   pendingConfirmation = {value, id: null}; confirmationFailure = '';
@@ -688,11 +691,10 @@ function syncInputSize(data, unavailable) {
   const dimensions = appliedROI ? (appliedEffectiveInput || fittedInput(appliedROI)) : bounds;
   const inputLabel = dimensions.label + (appliedROI ? ` · maximum ${bounds.label} · area proportions preserved` : ' · full frame');
   if (data.heatmap_width != null) appliedHeatmap = [data.heatmap_width, data.heatmap_height];
-  const stride = appliedModel === 'mobilenetv3'
-    || ['pp-lcnet-x0.5', 'mobilenetv4-convsmall-x0.5'].includes(appliedModel) ? 16 : 8;
+  const stride = appliedModel === 'mobileone-s0' ? 8 : 16;
   const grid = appliedHeatmap || [Math.ceil(dimensions.width / stride), Math.ceil(dimensions.height / stride)];
-  select.disabled = unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null;
-  $('anomaly-size-apply').disabled = unavailable || learning || analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty;
+  select.disabled = unavailable || learning || analysisConfiguring() || settingPending();
+  $('anomaly-size-apply').disabled = unavailable || learning || analysisConfiguring() || settingPending() || !inputSizeDirty;
   $('input-size-status').textContent = inputSizeFailure || (pendingROI !== null
     ? 'Applying analysis area. New learning is required after confirmation…'
     : pendingModel !== null || pendingInputSize !== null
@@ -703,7 +705,7 @@ function syncInputSize(data, unavailable) {
     : appliedInputSize !== null ? `Model input: ${inputLabel} · heatmap grid: ${grid[0]} × ${grid[1]}.` : 'Checking model input size…');
 }
 async function applyInputSize() {
-  if (analysisConfiguring() || pendingModel !== null || pendingInputSize !== null || pendingMultiplier !== null || pendingConfirmation !== null || !inputSizeDirty) return;
+  if (analysisConfiguring() || settingPending() || !inputSizeDirty) return;
   const value = $('anomaly-input-size').value;
   pendingInputSize = {value, id: null}; inputSizeFailure = '';
   syncInputSize({}, false); syncDetectionControls({}, false);

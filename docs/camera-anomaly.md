@@ -130,9 +130,9 @@ Save important video separately before normal retention expires.
 
 This is a small **PatchCore-style variant**, not the original benchmark model:
 
-- The default frozen ImageNet ResNet-18 runs through **layer2** only, with locally
-  averaged 128-dimensional patch features. MobileNetV3-Small uses its first nine
-  feature stages, with 48-dimensional stride-sixteen features. Maximum input selects
+- The default frozen ImageNet MobileNetV3-Small uses its first nine feature stages,
+  with locally averaged 48-dimensional stride-sixteen patch features. MobileOne-S0
+  provides 128-dimensional stride-eight features. Maximum input selects
   bounds of 768 × 432, 1024 × 576, 1280 × 720, 1536 × 864 or 1920 × 1080;
   an enabled ROI is fitted within those bounds while preserving its proportions.
   Analysis settings do not change capture resolution.
@@ -172,7 +172,7 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
   by the camera itself cannot be identified by this decoder-error filter.
 
 References: [PatchCore source](https://github.com/amazon-science/patchcore-inspection),
-[ResNet-18 weights](https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html).
+[MobileNetV3 weights](https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.mobilenet_v3_small.html).
 
 The CPU inference libraries, exported models and weights are installed during Docker build. Camera
 images are processed locally. Analysis does not receive the RTSP URL or Docker
@@ -224,10 +224,12 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_CORESET_SIZE=1024`: maximum normal-memory vectors, from 256 to
   4096. Pi-only overrides use the `PI_CAMERA_ANOMALY_` prefix. A newly configured
   coreset size takes effect at the next learning run.
-- `CAMERA_ONNX_RUNTIME_IMAGE=onnx-cpu`: standard ONNX Runtime wheel. For the optional
-  Linux XNNPACK build, first build the wheel image below, then set this value to
-  `bms-onnx-xnnpack:local` and rebuild `pi-camera-anomaly`. The same image can also
-  be used by `camera-anomaly`. Source compilation is resource intensive on Pi.
+- `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local` (installation template): ONNX
+  Runtime compiled with XNNPACK. `restart-cameras.sh` and `restart-pi-camera.sh`
+  build this wheel image automatically when it is missing; the one-time compile is
+  resource intensive on Pi. Set `onnx-cpu` to use the standard PyPI wheel instead
+  (also the Compose default when the variable is unset). To force a rebuild, remove
+  the image and rerun a camera start script. Manual equivalent:
 
 ```sh
 docker build -f Dockerfile.camera-onnx-xnnpack -t bms-onnx-xnnpack:local .
@@ -237,7 +239,8 @@ CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose build pi-camera-
 Ordinary `CPUExecutionProvider` is not XNNPACK. See the
 [ONNX Runtime XNNPACK provider documentation](https://onnxruntime.ai/docs/execution-providers/Xnnpack-ExecutionProvider.html).
 
-The installation template uses the standard CPU wheel and one thread per worker.
+The installation template uses the locally built XNNPACK wheel and two threads with a
+two-CPU quota per worker.
 The isolated Pi 5 measurement on 2026-11-06 used a locally built XNNPACK wheel,
 `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local`, and four threads/four CPUs per
 worker. These are deployment settings, not installation defaults. See
@@ -357,19 +360,16 @@ confirmed anomaly after a normal sample can save a new snapshot immediately.
 
 ### Analysis model selection
 
-Both camera pages offer the five backend models below. No retired model identifiers
+Both camera pages offer the three backend models below. No retired model identifiers
 or hidden menu entries are retained.
 
 | Model | Features | Heatmap stride |
 | --- | --- | --- |
 | MobileNetV3 | MobileNetV3-Small first nine feature stages, FP32, 48 channels | 16 |
-| PP-LCNet ×0.5 | FP32, 128 channels | 16 |
 | MobileNetV4 ConvSmall ×0.5 | FP32, 48 channels | 16 |
-| ResNet FP32 | ResNet-18 layer2, FP32, 128 channels | 8 |
 | MobileOne-S0 | Fused stages 0–2, FP32, 128 channels | 8 |
 
-PP-LCNet uses the pretrained timm `lcnet_050.ra2_in1k` weights. MobileNetV4 uses
-`mobilenetv4_conv_small_050.e3000_r224_in1k`. MobileOne uses Apple's published
+MobileNetV4 uses the pretrained timm `mobilenetv4_conv_small_050.e3000_r224_in1k` weights. MobileOne uses Apple's published
 fused S0 checkpoint; its license is retained under `app/cameras/licenses/`.
 All encoder files are exported during the image build, so live inference does not
 download weights.
@@ -435,7 +435,7 @@ Both camera pages offer five **Maximum input** presets. They are fixed 16:9 mode
 dimensions for full-frame analysis and maximum bounds for an enabled ROI. The
 table lists full-frame heatmap grids; an ROI's grid follows its effective dimensions.
 
-| Input (width x height) | ResNet / MobileOne grid | MobileNetV3 / PP-LCNet / MobileNetV4 grid |
+| Input (width x height) | MobileOne grid | MobileNetV3 / MobileNetV4 grid |
 | --- | --- | --- |
 | 768x432 (default) | 96x54 | 48x27 |
 | 1024x576 | 128x72 | 64x36 |

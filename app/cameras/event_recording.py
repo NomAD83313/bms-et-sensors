@@ -11,17 +11,13 @@ import subprocess
 import time
 
 try:
+    from . import source
+    from .anomaly_control import analysis_available, read_json, valid_event_id, write_json
     from .source import input_args
 except ImportError:
     import source
+    from anomaly_control import analysis_available, read_json, valid_event_id, write_json
     from source import input_args
-
-
-try:
-    from . import source
-    from .anomaly_control import analysis_available, read_json, write_json
-except ImportError:
-    from anomaly_control import analysis_available, read_json, write_json
 
 LOG = logging.getLogger('camera-events')
 SEGMENT_SECONDS = 5
@@ -130,7 +126,7 @@ class EventBuffer:
         last = trigger.get('last', 0)
         first = trigger.get('start', last)
         name = trigger.get('id', '')
-        if (not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', name)
+        if (not valid_event_id(name)
                 or last > now + 5 or last + self.post <= now or first > last):
             return
         start = max(first - self.pre, now - self.keep, self.closed_until)

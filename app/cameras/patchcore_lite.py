@@ -1,4 +1,4 @@
-"""PatchCore-style patch memory with a small pretrained ResNet-18 backbone.
+"""PatchCore-style patch memory with a small pretrained CNN backbone.
 
 This experimental variant uses a bounded candidate pool, projected greedy
 coreset, and an unweighted maximum nearest-patch distance. It does not claim
@@ -19,13 +19,43 @@ from PIL import Image
 try:
     from .anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
     from .feature_encoder import FeatureEncoder
-    from .model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, ANALYSIS_SOURCE
+    from .model_profiles import (DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions,
+                                 ANALYSIS_SOURCE, IMAGENET_MEAN, IMAGENET_STD)
     from .roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 except ImportError:
     from anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
     from feature_encoder import FeatureEncoder
-    from model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, ANALYSIS_SOURCE
+    from model_profiles import (DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions,
+                                ANALYSIS_SOURCE, IMAGENET_MEAN, IMAGENET_STD)
     from roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
+
+
+# Every fifth frame is held out for threshold calibration and never enters the bank.
+HOLDOUT_STEP = 5
+CANDIDATE_LIMIT = 8000
+MIN_SESSION_FRAMES, MAX_SESSION_FRAMES, MAX_SESSION_GROUPS = 20, 120, 8
+CALIBRATION_QUANTILE = .99
+
+
+def is_held_out(index):
+    return index % HOLDOUT_STEP == 0
+
+
+def calibrated_threshold(scores):
+    return max(float(torch.quantile(torch.as_tensor(scores), CALIBRATION_QUANTILE)), 1e-6)
+
+
+def bounded_int(value, low, high, message):
+    """Parse an integer-valued setting (int, whole float or numeric string) within bounds."""
+    if isinstance(value, bool):
+        raise ValueError(message)
+    try:
+        number = int(value)
+        if not low <= number <= high or float(value) != number:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError(message) from None
+    return number
 
 
 class PatchCoreLite:
@@ -34,9 +64,8 @@ class PatchCoreLite:
                  coreset_size=None, color_mode='rgb'):
         self.color_mode = validate_color_mode(color_mode)
         requested_threads = os.environ.get('CAMERA_ANOMALY_THREADS', '1') if threads is None else threads
-        self.inference_threads = int(requested_threads)
-        if isinstance(requested_threads, bool) or self.inference_threads not in (1, 2, 3, 4) or float(requested_threads) != self.inference_threads:
-            raise ValueError('Analysis CPU threads must be between 1 and 4')
+        self.inference_threads = bounded_int(
+            requested_threads, 1, 4, 'Analysis CPU threads must be between 1 and 4')
         torch.set_num_threads(self.inference_threads)
         self.feature_engine = feature_engine or os.environ.get('CAMERA_ANOMALY_FEATURE_ENGINE', 'torch')
         self.distance_engine = distance_engine or os.environ.get('CAMERA_ANOMALY_DISTANCE_ENGINE', 'torch')
@@ -49,28 +78,16 @@ class PatchCoreLite:
             self.jpeg_draft = str(requested_draft) == '1'
         else:
             raise ValueError('JPEG draft must be 0 or 1')
-        requested_top_k = os.environ.get('CAMERA_ANOMALY_TOP_K', '1') if top_k is None else top_k
-        if isinstance(requested_top_k, bool):
-            raise ValueError('Top-K score aggregation must be an integer between 1 and 20')
-        try:
-            self.top_k = int(requested_top_k)
-            if self.top_k < 1 or self.top_k > 20 or float(requested_top_k) != self.top_k:
-                raise ValueError
-        except (TypeError, ValueError):
-            raise ValueError('Top-K score aggregation must be an integer between 1 and 20')
-        requested_coreset = os.environ.get('CAMERA_ANOMALY_CORESET_SIZE', '1024') if coreset_size is None else coreset_size
-        if isinstance(requested_coreset, bool):
-            raise ValueError('Coreset size must be an integer between 256 and 4096')
-        try:
-            self.coreset_size = int(requested_coreset)
-            if (self.coreset_size < 256 or self.coreset_size > 4096
-                    or float(requested_coreset) != self.coreset_size):
-                raise ValueError
-        except (TypeError, ValueError):
-            raise ValueError('Coreset size must be an integer between 256 and 4096')
+        self.top_k = bounded_int(
+            os.environ.get('CAMERA_ANOMALY_TOP_K', '1') if top_k is None else top_k,
+            1, 20, 'Top-K score aggregation must be an integer between 1 and 20')
+        self.coreset_size = bounded_int(
+            os.environ.get('CAMERA_ANOMALY_CORESET_SIZE', '1024') if coreset_size is None else coreset_size,
+            256, 4096, 'Coreset size must be an integer between 256 and 4096')
         self._requested_feature_engine = self.feature_engine
         self.network = None
         self.onnx_provider = None
+        self._ort = None
         self._session = None
         self._session_size = None
         self._index = None
@@ -90,19 +107,10 @@ class PatchCoreLite:
             return
         feature_engine = self._requested_feature_engine
         if feature_engine == 'onnx':
-            import onnxruntime as ort
-            ort.disable_telemetry_events()
-            self._ort = ort
-            requested = os.environ.get('CAMERA_ANOMALY_ONNX_PROVIDER', 'auto')
-            if requested not in ('auto', 'cpu', 'xnnpack'):
-                raise ValueError('Unsupported ONNX provider')
-            self.onnx_provider = ('XnnpackExecutionProvider' if requested == 'xnnpack' or
-                (requested == 'auto' and 'XnnpackExecutionProvider' in ort.get_available_providers()) else 'CPUExecutionProvider')
-            if self.onnx_provider not in ort.get_available_providers():
-                raise ValueError('Requested ONNX provider is unavailable')
+            self._init_onnx()
         profile = MODELS[model_key]
-        self._mean = np.asarray(profile.get('mean', (.485, .456, .406)), dtype=np.float32)[:, None, None]
-        self._std = np.asarray(profile.get('std', (.229, .224, .225)), dtype=np.float32)[:, None, None]
+        self._mean = np.asarray(profile.get('mean', IMAGENET_MEAN), dtype=np.float32)[:, None, None]
+        self._std = np.asarray(profile.get('std', IMAGENET_STD), dtype=np.float32)[:, None, None]
         self.feature_engine = feature_engine
         if feature_engine == 'torch':
             self.onnx_provider = None
@@ -111,6 +119,19 @@ class PatchCoreLite:
         self.network = (FeatureEncoder(model_key).eval().to(memory_format=torch.channels_last)
                         if self.feature_engine == 'torch' else None)
         self.set_input_size(self.input_size)
+
+    def _init_onnx(self):
+        import onnxruntime as ort
+        ort.disable_telemetry_events()
+        self._ort = ort
+        requested = os.environ.get('CAMERA_ANOMALY_ONNX_PROVIDER', 'auto')
+        if requested not in ('auto', 'cpu', 'xnnpack'):
+            raise ValueError('Unsupported ONNX provider')
+        available = ort.get_available_providers()
+        self.onnx_provider = ('XnnpackExecutionProvider' if requested == 'xnnpack' or
+            (requested == 'auto' and 'XnnpackExecutionProvider' in available) else 'CPUExecutionProvider')
+        if self.onnx_provider not in available:
+            raise ValueError('Requested ONNX provider is unavailable')
 
     def set_input_size(self, input_size):
         self.input_size = validate_input_size(input_size)
@@ -225,36 +246,39 @@ class PatchCoreLite:
             return self.network(x)
         session_size = self.effective_input_size if self.roi is not None else self.input_size
         if self._session is None or self._session_size != session_size:
-            directory = Path(os.environ.get('CAMERA_ANOMALY_MODEL_DIR', '/opt/bms-camera/encoders'))
-            options = self._ort.SessionOptions()
-            options.intra_op_num_threads = 1 if self.onnx_provider == 'XnnpackExecutionProvider' else self.inference_threads
-            options.inter_op_num_threads = 1
-            options.add_session_config_entry('session.intra_op.allow_spinning', '0')
-            if self.roi is not None:
-                width, height = self.effective_input_size
-                options.add_free_dimension_override_by_name('height', height)
-                options.add_free_dimension_override_by_name('width', width)
-            provider = ((self.onnx_provider, {'intra_op_num_threads': str(self.inference_threads)})
-                        if self.onnx_provider == 'XnnpackExecutionProvider' else self.onnx_provider)
-            suffix = 'dynamic' if self.roi is not None else self.input_size
-            path = directory / f'{self.encoder_id}-{suffix}.onnx'
-            self._session = self._ort.InferenceSession(str(path), options, providers=[provider])
-            if self.onnx_provider not in self._session.get_providers():
-                self._session = None
-                raise RuntimeError('Requested ONNX provider did not initialize')
-            self._session_size = session_size
+            self._open_session(session_size)
         return torch.from_numpy(self._session.run(None, {'image': x.numpy()})[0])
+
+    def _open_session(self, session_size):
+        directory = Path(os.environ.get('CAMERA_ANOMALY_MODEL_DIR', '/opt/bms-camera/encoders'))
+        options = self._ort.SessionOptions()
+        options.intra_op_num_threads = 1 if self.onnx_provider == 'XnnpackExecutionProvider' else self.inference_threads
+        options.inter_op_num_threads = 1
+        options.add_session_config_entry('session.intra_op.allow_spinning', '0')
+        if self.roi is not None:
+            width, height = self.effective_input_size
+            options.add_free_dimension_override_by_name('height', height)
+            options.add_free_dimension_override_by_name('width', width)
+        provider = ((self.onnx_provider, {'intra_op_num_threads': str(self.inference_threads)})
+                    if self.onnx_provider == 'XnnpackExecutionProvider' else self.onnx_provider)
+        suffix = 'dynamic' if self.roi is not None else self.input_size
+        path = directory / f'{self.encoder_id}-{suffix}.onnx'
+        self._session = self._ort.InferenceSession(str(path), options, providers=[provider])
+        if self.onnx_provider not in self._session.get_providers():
+            self._session = None
+            raise RuntimeError('Requested ONNX provider did not initialize')
+        self._session_size = session_size
 
     @torch.inference_mode()
     def fit(self, samples):
-        if len(samples) < 20:
+        if len(samples) < MIN_SESSION_FRAMES:
             raise ValueError('At least 20 independent frames are required')
         # Hold out complete frames: calibration patches never enter the bank.
-        training = [sample for i, sample in enumerate(samples) if i % 5]
-        validation = [sample for i, sample in enumerate(samples) if not i % 5]
+        training = [sample for i, sample in enumerate(samples) if not is_held_out(i)]
+        validation = [sample for i, sample in enumerate(samples) if is_held_out(i)]
         generator = torch.Generator().manual_seed(42)
         # Select the same global sample without concatenating full-resolution frames.
-        indices = torch.randperm(sum(len(frame) for frame in training), generator=generator)[:8000]
+        indices = torch.randperm(sum(len(frame) for frame in training), generator=generator)[:CANDIDATE_LIMIT]
         patches = torch.empty((len(indices), training[0].shape[1]), dtype=training[0].dtype)
         offset = 0
         for frame in training:
@@ -263,21 +287,22 @@ class PatchCoreLite:
             offset += len(frame)
         self._fit_candidates(patches, generator)
         scores = torch.tensor([self.score(sample)[0] for sample in validation])
-        self.threshold = max(float(torch.quantile(scores, .99)), 1e-6)
+        self.threshold = calibrated_threshold(scores)
         self.baseline_frames = len(samples)
         return scores.tolist()
 
     @torch.inference_mode()
     def fit_sessions(self, groups, progress=None):
         """Stream saved JPEGs with equal candidate budgets and held-out frames per session."""
-        if not 1 <= len(groups) <= 8 or any(not 20 <= len(group) <= 120 for group in groups):
+        if (not 1 <= len(groups) <= MAX_SESSION_GROUPS
+                or any(not MIN_SESSION_FRAMES <= len(group) <= MAX_SESSION_FRAMES for group in groups)):
             raise ValueError('Learn one to eight sessions with 20 to 120 frames each')
         generator = torch.Generator().manual_seed(42)
         candidates = []
         completed, total = 0, sum(map(len, groups))
         for group_index, paths in enumerate(groups):
-            training = [path for index, path in enumerate(paths) if index % 5]
-            budget = 8000 // len(groups) + int(group_index < 8000 % len(groups))
+            training = [path for index, path in enumerate(paths) if not is_held_out(index)]
+            budget = CANDIDATE_LIMIT // len(groups) + int(group_index < CANDIDATE_LIMIT % len(groups))
             for index, path in enumerate(training):
                 features = self.features(path.read_bytes())
                 count = min(len(features), budget // len(training) + int(index < budget % len(training)))
@@ -291,15 +316,14 @@ class PatchCoreLite:
         for paths in groups:
             held_out = []
             for index, path in enumerate(paths):
-                if index % 5:
+                if not is_held_out(index):
                     continue
                 held_out.append(self.score(self.features(path.read_bytes()))[0])
                 completed += 1
                 if progress:
                     progress(completed, total)
-            scores = torch.tensor(held_out)
-            calibration.append(dict(calibration_frames=len(scores),
-                                    calibration_threshold=max(float(torch.quantile(scores, .99)), 1e-6)))
+            calibration.append(dict(calibration_frames=len(held_out),
+                                    calibration_threshold=calibrated_threshold(held_out)))
         self.threshold = max(item['calibration_threshold'] for item in calibration)
         self.baseline_frames = sum(map(len, groups))
         return calibration
@@ -322,7 +346,6 @@ class PatchCoreLite:
         if self.memory is None:
             raise ValueError('Learn a normal view first')
         if self.distance_engine == 'faiss':
-            import numpy as np
             if self._index is None or self._indexed_memory is not self.memory:
                 self._index = self._faiss.IndexFlatL2(self.feature_dimensions)
                 self._index.add(self.memory.contiguous().numpy())

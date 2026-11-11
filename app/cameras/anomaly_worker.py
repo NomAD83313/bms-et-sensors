@@ -1,4 +1,5 @@
 """Visual anomaly analysis and linked event-recording session control."""
+import contextlib
 import json
 import logging
 import os
@@ -13,7 +14,7 @@ from urllib.parse import quote
 
 import control
 from anomaly_control import (
-    DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, MODELS,
+    DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, DEFAULT_MULTIPLIER, MODELS, SESSION_ACTIONS,
     command_mode, heatmap_dimensions, input_dimensions, read_json,
     validate_confirmation_frames, validate_input_size, validate_model,
     validate_learning_seconds, validate_multiplier, validate_color_mode, write_json,
@@ -22,13 +23,21 @@ from patchcore_lite import PatchCoreLite, overlay
 try:
     from .model_profiles import ANALYSIS_SOURCE
     from .roi import ROIGeometryChanged, validate_roi
-    from .learning_sessions import LearningSessions, configuration, MAX_SESSIONS
+    from .learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from .source import MAX_FRAME_BYTES
 except ImportError:
     from model_profiles import ANALYSIS_SOURCE
     from roi import ROIGeometryChanged, validate_roi
-    from learning_sessions import LearningSessions, configuration, MAX_SESSIONS
+    from learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from source import MAX_FRAME_BYTES
 
 LOG = logging.getLogger('camera-anomaly')
+MAX_EVENTS = 100
+LEARNING_INTERVAL_SEC = 2
+# Actions that only take effect when they change a model setting.
+CONFIGURATION_ACTIONS = ('resize', 'model', 'roi', 'color')
+# Actions that keep collected samples and the running session unless a setting changed.
+NON_DISRUPTIVE_ACTIONS = ('configure', 'confirmation') + CONFIGURATION_ACTIONS
 
 
 class AnomalyWorker:
@@ -42,6 +51,7 @@ class AnomalyWorker:
         sample_count = max(
             20, min(120, int(os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60'))))
         self.state = dict(state='loading', message='Loading visual model', updated=time.time())
+        self.baseline_source = None
         write_json(DATA / 'status.json', self.state)
 
         previous = read_json(DATA / 'session.json', {})
@@ -57,36 +67,29 @@ class AnomalyWorker:
         self.baseline_invalidated = previous.get('baseline_invalidated', False)
         configuration_reset = False
 
-        try:
-            selected_input_size = validate_input_size(
-                previous.get('input_size', DEFAULT_INPUT_SIZE))
-        except ValueError:
-            selected_input_size = DEFAULT_INPUT_SIZE
-            self.baseline_invalidated = configuration_reset = True
-        try:
-            selected_model = validate_model(previous.get('model_key', DEFAULT_MODEL))
-        except ValueError:
-            selected_model = DEFAULT_MODEL
-            self.baseline_invalidated = configuration_reset = True
-        try:
-            self.selected_roi = validate_roi(previous.get('roi'))
-        except ValueError:
-            self.selected_roi = None
-            self.baseline_invalidated = configuration_reset = True
-        try:
-            selected_color = validate_color_mode(previous.get('color_mode', 'rgb'))
-        except ValueError:
-            selected_color = 'rgb'
-            self.baseline_invalidated = configuration_reset = True
+        def saved_setting(validator, key, default):
+            # An invalid saved setting falls back to its default and forces new learning.
+            nonlocal configuration_reset
+            try:
+                return validator(previous.get(key, default))
+            except ValueError:
+                configuration_reset = True
+                return default
+
+        selected_input_size = saved_setting(validate_input_size, 'input_size', DEFAULT_INPUT_SIZE)
+        selected_model = saved_setting(validate_model, 'model_key', DEFAULT_MODEL)
+        self.selected_roi = saved_setting(validate_roi, 'roi', None)
+        selected_color = saved_setting(validate_color_mode, 'color_mode', 'rgb')
+        self.baseline_invalidated = self.baseline_invalidated or configuration_reset
 
         self.model = PatchCoreLite()
-        if selected_input_size != getattr(self.model, 'input_size', DEFAULT_INPUT_SIZE):
+        if selected_input_size != self.model.input_size:
             self.model.set_input_size(selected_input_size)
-        if selected_model != getattr(self.model, 'model_key', DEFAULT_MODEL):
+        if selected_model != self.model.model_key:
             self.model.set_model(selected_model)
         if self.selected_roi is not None:
             self.model.set_roi(self.selected_roi)
-        if selected_color != getattr(self.model, 'color_mode', 'rgb'):
+        if selected_color != self.model.color_mode:
             self.model.set_color_mode(selected_color)
 
         self.model_path = DATA / 'baseline.pt'
@@ -95,8 +98,7 @@ class AnomalyWorker:
         self.learning_error = None
         catalog = self.sessions.catalog()
         current = configuration(self.model)
-        if catalog['sessions'] and any(current[key] != catalog['configuration'][key]
-                for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k', 'color_mode')):
+        if catalog['sessions'] and not configuration_matches(current, catalog):
             self.baseline_invalidated = configuration_reset = True
         if self.baseline_invalidated:
             self.invalidate_baseline(clear_sessions=configuration_reset)
@@ -113,7 +115,7 @@ class AnomalyWorker:
             self.last_request = read_json(DATA / 'command.json', {}).get(
                 'id', self.last_request)
         self.monitoring = previous.get('monitoring', False) and self.model.memory is not None
-        self.multiplier = previous.get('multiplier', 1.25)
+        self.multiplier = previous.get('multiplier', DEFAULT_MULTIPLIER)
         self.learning = False
         self.samples = []
         self.confirmation = Confirmation(required=self.confirmation_frames)
@@ -147,7 +149,7 @@ class AnomalyWorker:
             try:
                 self.model.set_input_size(self.model.input_size)
                 self.model.load(path)
-                revision = getattr(self.model, 'learning_revision', None)
+                revision = self.model.learning_revision
                 catalog = self.sessions.catalog()
                 if (revision or catalog['sessions']) and revision != catalog['revision']:
                     raise ValueError('Interrupted learning publication')
@@ -155,7 +157,7 @@ class AnomalyWorker:
                     backup.replace(self.model_path)
                 else:
                     backup.unlink(missing_ok=True)
-                self.baseline_source = getattr(self.model, 'source_size', None)
+                self.baseline_source = self.model.source_size
                 return
             except (OSError, ValueError, RuntimeError, EOFError, pickle.UnpicklingError):
                 continue
@@ -174,8 +176,8 @@ class AnomalyWorker:
         write_json(DATA / 'session.json', dict(
             last_request=self.last_request, monitoring=self.monitoring,
             multiplier=self.multiplier, input_size=self.model.input_size,
-            model_key=getattr(self.model, 'model_key', DEFAULT_MODEL),
-            color_mode=getattr(self.model, 'color_mode', 'rgb'),
+            model_key=self.model.model_key,
+            color_mode=self.model.color_mode,
             roi=self.selected_roi, learning_seconds=self.learning_seconds,
             baseline_invalidated=self.baseline_invalidated,
             confirmation_frames=self.confirmation_frames,
@@ -183,63 +185,66 @@ class AnomalyWorker:
                              and self.model.memory is not None else None)))
 
     def update_geometry(self, state):
-        source_size = getattr(self.model, 'source_size', None)
-        size = getattr(self.model, 'effective_input_size', None)
+        source_size = self.model.source_size
+        size = self.model.effective_input_size
         if source_size is not None:
             state.update(source_width=source_size[0], source_height=source_size[1])
         width, height = size or input_dimensions(self.model.input_size)
-        model_key = getattr(self.model, 'model_key', DEFAULT_MODEL)
+        model_key = self.model.model_key
         heat_width, heat_height = heatmap_dimensions(width, height, model_key)
         state.update(effective_input_width=width, effective_input_height=height,
                      heatmap_width=heat_width, heatmap_height=heat_height)
+
+    def configuration_change(self, action, command):
+        """Return whether a resize/model/roi/color command differs from the current setting."""
+        if action == 'resize':
+            return validate_input_size(command.get('input_size')) != self.model.input_size
+        if action == 'model':
+            return validate_model(command.get('model_key')) != self.model.model_key
+        if action == 'roi':
+            return validate_roi(command.get('roi')) != self.selected_roi
+        if action == 'color':
+            return validate_color_mode(command.get('color_mode')) != self.model.color_mode
+        return False
+
+    def apply_configuration(self, action, command):
+        if action == 'resize':
+            self.model.set_input_size(command['input_size'])
+        elif action == 'model':
+            self.model.set_model(command['model_key'])
+        elif action == 'roi':
+            self.selected_roi = validate_roi(command['roi'])
+            self.model.set_roi(self.selected_roi)
+        elif action == 'color':
+            self.model.set_color_mode(command['color_mode'])
 
     def apply_pending_command(self):
         command = read_json(DATA / 'command.json', {})
         if not command.get('id') or command['id'] == self.last_request:
             return
         action = command.get('action')
-        if action in ('learn', 'add-session', 'replace-session', 'remove-session',
-                      'rename-session', 'rebuild-sessions'):
+        if action in SESSION_ACTIONS:
             self.apply_session_command(command)
             return
         was_learning = self.learning
-        resized = (action == 'resize'
-                   and validate_input_size(command.get('input_size')) != self.model.input_size)
-        model_changed = (action == 'model'
-                         and validate_model(command.get('model_key'))
-                         != getattr(self.model, 'model_key', DEFAULT_MODEL))
-        roi_changed = (action == 'roi'
-                       and validate_roi(command.get('roi')) != self.selected_roi)
-        color_changed = (action == 'color' and validate_color_mode(command.get('color_mode'))
-                         != getattr(self.model, 'color_mode', 'rgb'))
-        if action not in ('resize', 'model', 'roi', 'color') or resized or model_changed or roi_changed or color_changed:
+        changed = self.configuration_change(action, command)
+        if action not in CONFIGURATION_ACTIONS or changed:
             self.learning, self.monitoring = command_mode(
                 action, self.model.memory is not None, self.learning, self.monitoring)
         if action == 'confirmation':
             self.confirmation_frames = validate_confirmation_frames(
                 command.get('confirmation_frames'))
-        elif action == 'resize' and resized:
-            self.model.set_input_size(command['input_size'])
-            self.invalidate_baseline(clear_sessions=True)
-        elif action == 'model' and model_changed:
-            self.model.set_model(command['model_key'])
-            self.invalidate_baseline(clear_sessions=True)
-        elif action == 'roi' and roi_changed:
-            self.selected_roi = validate_roi(command['roi'])
-            self.model.set_roi(self.selected_roi)
+        elif changed:
+            self.apply_configuration(action, command)
             self.invalidate_baseline(clear_sessions=True)
         elif action == 'invalidate':
             self.model.set_input_size(self.model.input_size)
             self.invalidate_baseline(clear_sessions=True)
-        elif action == 'color' and color_changed:
-            self.model.set_color_mode(command['color_mode'])
-            self.invalidate_baseline(clear_sessions=True)
         else:
-            self.multiplier = validate_multiplier(command.get('multiplier', 1.25))
+            self.multiplier = validate_multiplier(command.get('multiplier', self.multiplier))
         self.last_request = command['id']
         self.reset_detection_candidate()
-        if (action not in ('configure', 'resize', 'confirmation', 'model', 'roi', 'color')
-                or resized or model_changed or roi_changed or color_changed):
+        if action not in NON_DISRUPTIVE_ACTIONS or changed:
             self.samples = []
             self.sessions.abort()
             self.clear_video_trigger()
@@ -267,9 +272,7 @@ class AnomalyWorker:
             if action != 'learn':
                 catalog = self.sessions.catalog()
                 current = configuration(self.model)
-                if not catalog['sessions'] or any(
-                        current[key] != catalog['configuration'][key]
-                        for key in ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k', 'color_mode')):
+                if not catalog['sessions'] or not configuration_matches(current, catalog):
                     raise ValueError('Create a new baseline for the current model and area first')
             if action in ('learn', 'add-session', 'replace-session'):
                 mode = {'learn': 'new', 'add-session': 'add', 'replace-session': 'replace'}[action]
@@ -297,35 +300,36 @@ class AnomalyWorker:
                 self.clear_video_trigger()
             self.save_session()
 
+    def effective_interval(self):
+        return max(LEARNING_INTERVAL_SEC, self.interval) if self.learning else self.interval
+
     def status_snapshot(self):
         width, height = input_dimensions(self.model.input_size)
-        model_key = getattr(self.model, 'model_key', DEFAULT_MODEL)
-        heat_width, heat_height = heatmap_dimensions(width, height, model_key)
-        memory = getattr(self.model, 'memory', None)
+        model_key = self.model.model_key
+        memory = self.model.memory
         memory_shape = getattr(memory, 'shape', ())
         memory_vectors = (int(memory_shape[0]) if memory_shape
-                          else getattr(self.model, 'coreset_size', 1024))
+                          else self.model.coreset_size)
         state = dict(
             updated=time.time(), model='PatchCore-style / ' + MODELS[model_key]['label'],
             model_key=model_key, model_label=MODELS[model_key]['label'],
-            color_mode=getattr(self.model, 'color_mode', 'rgb'),
+            color_mode=self.model.color_mode,
             baseline_ready=self.model.memory is not None,
             baseline_frames=self.model.baseline_frames,
             monitoring_enabled=self.monitoring, input_size=self.model.input_size,
             roi=self.selected_roi,
-            inference_threads=getattr(self.model, 'inference_threads', 1),
-            feature_engine=getattr(self.model, 'feature_engine', 'torch'),
-            distance_engine=getattr(self.model, 'distance_engine', 'torch'),
-            score_top_k=getattr(self.model, 'top_k', 1),
+            inference_threads=self.model.inference_threads,
+            feature_engine=self.model.feature_engine,
+            distance_engine=self.model.distance_engine,
+            score_top_k=self.model.top_k,
             coreset_size=memory_vectors,
-            onnx_provider=getattr(self.model, 'onnx_provider', None),
+            onnx_provider=self.model.onnx_provider,
             input_width=width, input_height=height,
-            heatmap_width=heat_width, heatmap_height=heat_height,
             retraining_required=self.baseline_invalidated,
             analysis_source=ANALYSIS_SOURCE, last_request=self.last_request,
             collected=len(self.samples), target=self.sample_count,
             multiplier=self.multiplier, learning_seconds=self.learning_seconds,
-            analysis_interval_sec=max(2, self.interval) if self.learning else self.interval,
+            analysis_interval_sec=self.effective_interval(),
             confirmation_frames=self.confirmation_frames,
             event_count=self.event_count,
             learning_error=self.learning_error,
@@ -333,7 +337,7 @@ class AnomalyWorker:
             state='paused' if self.model.memory is not None else 'untrained',
             message=('Analysis paused' if self.model.memory is not None
                      else 'Learn a normal view to begin'))
-        self.update_geometry(state)
+        self.update_geometry(state)  # effective input and heatmap size, which depend on the area
         if self.baseline_invalidated:
             state['message'] = (
                 'Model, area or analysis source changed. Learn normal view again before detection.')
@@ -342,11 +346,11 @@ class AnomalyWorker:
     def fetch_analysis_frame(self):
         fetch_started = time.monotonic()
         with urllib.request.urlopen(self.preview + '?analysis=1', timeout=5) as response:
-            jpeg = response.read(16 * 1024 * 1024 + 1)
+            jpeg = response.read(MAX_FRAME_BYTES + 1)
             token = response.headers.get('X-Camera-Frame-Token')
             if response.headers.get('X-Camera-Analysis-Source') != ANALYSIS_SOURCE:
                 raise ValueError('Full-frame analysis source is unavailable')
-        if (len(jpeg) > 16 * 1024 * 1024 or not jpeg.startswith(b'\xff\xd8')
+        if (len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b'\xff\xd8')
                 or not jpeg.endswith(b'\xff\xd9')):
             raise ValueError('Full analysis frame is incomplete')
         return jpeg, token, round((time.monotonic() - fetch_started) * 1000)
@@ -361,7 +365,7 @@ class AnomalyWorker:
                 raise ValueError('Preview frame invalidated')
 
     def record_preparation_metrics(self, state):
-        preparation = getattr(self.model, 'preparation_metrics', {})
+        preparation = self.model.preparation_metrics
         if not preparation:
             return
         state.update(
@@ -370,7 +374,7 @@ class AnomalyWorker:
             image_transform_ms=round(preparation['transform_ms']),
             tensor_ms=round(preparation['tensor_ms']),
             encoder_ms=max(0, state['feature_ms'] - round(preparation['total_ms'])),
-            jpeg_draft=getattr(self.model, 'jpeg_draft', False),
+            jpeg_draft=self.model.jpeg_draft,
             decoded_mode=preparation.get('decoded_mode', 'RGB'),
             decoded_width=preparation['decoded_width'],
             decoded_height=preparation['decoded_height'])
@@ -378,27 +382,30 @@ class AnomalyWorker:
     def finish_learning(self, state):
         self.rebuild_sessions(state, self.sessions.proposed(), resume=True)
 
-    def rebuild_sessions(self, state, items, resume):
-        state.update(state='training', training_collected=0,
-                     training_target=sum(item['frames'] for item in items),
-                     message='Rebuilding saved normal sessions and calibrating the threshold')
-        write_json(DATA / 'status.json', state)
+    @contextlib.contextmanager
+    def training_heartbeat(self, state):
+        """Keep status.json fresh while a long rebuild blocks the worker loop."""
         done = threading.Event()
 
-        def training_heartbeat():
+        def beat():
             while not done.wait(2):
                 write_json(DATA / 'status.json', dict(state, updated=time.time()))
 
-        heartbeat = threading.Thread(target=training_heartbeat, daemon=True)
+        heartbeat = threading.Thread(target=beat, daemon=True)
         heartbeat.start()
+        try:
+            yield
+        finally:
+            done.set()
+            heartbeat.join()
+
+    def publish_baseline(self, items, revision, progress):
+        """Fit and atomically publish the baseline; restore the previous file if publication fails."""
         temporary = self.model_path.with_name('baseline-next.pt')
         backup = self.model_path.with_name('baseline-previous.pt')
         published = False
         try:
-            revision = uuid.uuid4().hex
             if items:
-                def progress(completed, total):
-                    state.update(training_collected=completed, training_target=total)
                 calibration = self.model.fit_sessions(self.sessions.groups(items), progress=progress)
                 for item, metrics in zip(items, calibration):
                     item.update(metrics)
@@ -407,13 +414,12 @@ class AnomalyWorker:
                 if self.model_path.exists():
                     shutil.copyfile(self.model_path, backup)
                 temporary.replace(self.model_path)
-                published = True
             else:
                 self.model.set_input_size(self.model.input_size)
                 if self.model_path.exists():
                     shutil.copyfile(self.model_path, backup)
                 self.model_path.unlink(missing_ok=True)
-                published = True
+            published = True
             self.sessions.publish(items, revision)
         except Exception:
             if published:
@@ -421,6 +427,24 @@ class AnomalyWorker:
                     backup.replace(self.model_path)
                 else:
                     self.model_path.unlink(missing_ok=True)
+            raise
+
+    def rebuild_sessions(self, state, items, resume):
+        state.update(state='training', training_collected=0,
+                     training_target=sum(item['frames'] for item in items),
+                     message='Rebuilding saved normal sessions and calibrating the threshold')
+        write_json(DATA / 'status.json', state)
+        temporary = self.model_path.with_name('baseline-next.pt')
+        backup = self.model_path.with_name('baseline-previous.pt')
+        revision = uuid.uuid4().hex
+
+        def progress(completed, total):
+            state.update(training_collected=completed, training_target=total)
+
+        try:
+            with self.training_heartbeat(state):
+                self.publish_baseline(items, revision, progress)
+        except Exception:
             self.learning = self.monitoring = False
             self.samples = []
             self.sessions.abort()
@@ -434,8 +458,6 @@ class AnomalyWorker:
             self.save_session()
             raise
         finally:
-            done.set()
-            heartbeat.join()
             temporary.unlink(missing_ok=True)
             backup.unlink(missing_ok=True)
         self.learning = False
@@ -443,7 +465,7 @@ class AnomalyWorker:
         if queued.get('id') != self.last_request and queued.get('action') == 'pause':
             resume = False
         self.monitoring = bool(items) and resume
-        self.baseline_source = getattr(self.model, 'source_size', None) if items else None
+        self.baseline_source = self.model.source_size if items else None
         self.samples = []
         self.confirmation = Confirmation(required=self.confirmation_frames)
         self.baseline_invalidated = not bool(items)
@@ -467,7 +489,7 @@ class AnomalyWorker:
             id=name, timestamp=time.time(), score=score, threshold=threshold,
             video_id=self.video_id, roi=self.selected_roi,
             image=name + '.jpg', heatmap=name + '-heat.jpg'))
-        for expired in sorted((DATA / 'events').glob('*.json'))[:-100]:
+        for expired in sorted((DATA / 'events').glob('*.json'))[:-MAX_EVENTS]:
             for suffix in ('.jpg', '-heat.jpg', '.json'):
                 expired.with_name(expired.stem + suffix).unlink(missing_ok=True)
         self.event_count += 1
@@ -503,10 +525,10 @@ class AnomalyWorker:
         jpeg, token, fetch_ms = self.fetch_analysis_frame()
         state['fetch_ms'] = fetch_ms
         feature_started = time.monotonic()
-        previous_source = getattr(self, 'baseline_source', None)
+        previous_source = self.baseline_source
         features = self.model.features(jpeg)
         geometry_changed = (self.monitoring and previous_source is not None
-                            and previous_source != getattr(self.model, 'source_size', None))
+                            and previous_source != self.model.source_size)
         self.update_geometry(state)
         state['feature_ms'] = round((time.monotonic() - feature_started) * 1000)
         self.record_preparation_metrics(state)
@@ -587,8 +609,7 @@ class AnomalyWorker:
             self.handle_geometry_change()
         except Exception as error:
             self.handle_error(error)
-        effective_interval = max(2, self.interval) if self.learning else self.interval
-        return max(0, effective_interval - (time.monotonic() - started))
+        return max(0, self.effective_interval() - (time.monotonic() - started))
 
     def run(self):
         while True:

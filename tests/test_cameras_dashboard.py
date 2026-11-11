@@ -315,6 +315,21 @@ class PreviewFreshnessTests(unittest.TestCase):
         preview.original_frame = None
         self.assertIsNone(preview.get(full_resolution=True))
 
+    def test_decoder_command_uses_substream_filter_only_for_browser(self):
+        main, sub = 'rtsp://camera/main', 'rtsp://camera/sub'
+        with patch.object(dashboard.source, 'browser_stream_url', return_value=sub):
+            browser_args, browser_substream = dashboard.decoder_command(main, True)
+            analysis_args, analysis_substream = dashboard.decoder_command(main, False)
+        self.assertTrue(browser_substream)
+        self.assertFalse(analysis_substream)
+        self.assertIn('fps=10,scale=960:540', ' '.join(browser_args))
+        self.assertEqual(analysis_args[analysis_args.index('-vf') + 1], 'fps=5')
+        self.assertEqual(analysis_args[analysis_args.index('-q:v') + 1], '3')
+        with patch.object(dashboard.source, 'browser_stream_url', return_value=main):
+            args, substream = dashboard.decoder_command(main, True)
+        self.assertFalse(substream)
+        self.assertEqual(args[args.index('-vf') + 1], 'fps=10')
+
     def test_jpeg_pair_parser_rejects_partial_or_unaligned_output(self):
         import io
         frames = [b'\xff\xd8one\xff\xd9', b'\xff\xd8two\xff\xd9']

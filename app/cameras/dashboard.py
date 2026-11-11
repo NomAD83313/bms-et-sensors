@@ -12,33 +12,30 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
 
 try:
-    from .source import preview_input_args
-except ImportError:
-    from source import preview_input_args
-
-
-try:
     from . import control, anomaly_control, history, source
+    from .capture_settings import validate_update
+    from .model_profiles import ANALYSIS_SOURCE
     from .preview_quality import DecodeGuard, decoder_error_kind
     from .roi import validate_roi, roi_input_dimensions, roi_bounds
     from .learning_sessions import LearningSessions, MAX_SESSIONS
+    from .source import preview_input_args
 except ImportError:
     import control
     import anomaly_control
     import history
     import source
+    from capture_settings import validate_update
+    from model_profiles import ANALYSIS_SOURCE
     from preview_quality import DecodeGuard, decoder_error_kind
     from roi import validate_roi, roi_input_dimensions, roi_bounds
     from learning_sessions import LearningSessions, MAX_SESSIONS
+    from source import preview_input_args
 
 ROOT = Path(__file__).resolve().parent
 RECORDINGS = Path(os.environ.get('RECORDING_DIR', ROOT / 'runtime/recordings')).resolve()
 WEB = ROOT / 'web'
 LOG = logging.getLogger('camera-preview')
-try:
-    from .model_profiles import ANALYSIS_SOURCE
-except ImportError:
-    from model_profiles import ANALYSIS_SOURCE
+MAX_FRAME_BYTES = source.MAX_FRAME_BYTES
 
 
 def browser_preview(jpeg):
@@ -53,6 +50,10 @@ def browser_preview(jpeg):
     result = io.BytesIO()
     canvas.save(result, format='JPEG', quality=85)
     return result.getvalue()
+
+
+def recording_mode():
+    return os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
 
 
 def clip_path(name):
@@ -78,11 +79,12 @@ def status():
     clips.sort(key=lambda p: p['timestamp'], reverse=True)
     newest = clips[0]['timestamp'] if clips else 0
     state = control.recording_state()
-    mode = os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
+    mode = recording_mode()
     details = control.recording_details()
     analysis = anomaly_control.read_json(anomaly_control.DATA / 'status.json', {})
     analysis_state = analysis.get('state', 'offline') if anomaly_control.state_is_current(analysis) else 'offline'
-    healthy = control.enabled() and state == 'recording' and time.time() - newest < int(os.environ.get('CLIP_SECONDS', '60')) + 60
+    clip_seconds = int(os.environ.get('CLIP_SECONDS', '60'))
+    healthy = control.enabled() and state == 'recording' and time.time() - newest < clip_seconds + 60
     if mode == 'anomaly':
         healthy = control.enabled() and state in ('buffering', 'saving_event')
     resolution = os.environ.get('CAMERA_RESOLUTION', 'Main stream')
@@ -103,7 +105,7 @@ def status():
                 pre_seconds=float(os.environ.get('CAMERA_EVENT_PRE_SEC', '7')),
                 post_seconds=float(os.environ.get('CAMERA_EVENT_POST_SEC', '10')),
                 clips=clips, total_bytes=sum(p['bytes'] for p in clips), free_bytes=shutil.disk_usage(RECORDINGS).free,
-                clip_seconds=int(os.environ.get('CLIP_SECONDS', '60')), max_storage_bytes=int(os.environ.get('MAX_STORAGE_MB', '10240'))*1024*1024,
+                clip_seconds=clip_seconds, max_storage_bytes=int(os.environ.get('MAX_STORAGE_MB', '10240'))*1024*1024,
                 max_age_hours=float(os.environ.get('MAX_AGE_HOURS', '24')), live_available=bool(os.environ.get('CAMERA_URL')))
 
 
@@ -121,15 +123,19 @@ class LivePreview:
         self.original_frame = None
         self.preview_source = self.preview_frame = None
 
+    def clear_frame(self):
+        """Drop every cached frame; the caller holds the condition lock."""
+        self.frame, self.updated, self.frame_token = None, 0, None
+        self.original_frame = None
+        self.preview_source = self.preview_frame = None
+
     def get(self, max_age=5, wait_seconds=20, with_token=False, full_resolution=False):
         with self.condition:
             self.last_request = time.monotonic()
             deadline = time.monotonic()+wait_seconds
             while True:
                 if self.worker is None or not self.worker.is_alive():
-                    self.frame, self.updated, self.frame_token = None, 0, None
-                    self.original_frame = None
-                    self.preview_source = self.preview_frame = None
+                    self.clear_frame()
                     self.guard.pending = None
                     self.worker = threading.Thread(target=self.run, daemon=True)
                     self.worker.start()
@@ -186,9 +192,7 @@ class LivePreview:
         with self.condition:
             now = time.monotonic()
             self.guard.note_error(kind, now, time.time())
-            self.frame, self.updated, self.frame_token = None, 0, None
-            self.original_frame = None
-            self.preview_source = self.preview_frame = None
+            self.clear_frame()
             self.condition.notify_all()
             if now - self.last_error_log >= 10:
                 # Only static categories and counters are safe to log; never the source line.
@@ -229,17 +233,7 @@ class LivePreview:
         main_url = os.environ.get('CAMERA_URL')
         if not main_url:
             return
-        url = source.browser_stream_url(main_url) if self.browser else main_url
-        browser_substream = self.browser and url != main_url
-        separate_analysis_stream = source.browser_stream_url(main_url) != main_url
-        frame_filter = ('fps=10,scale=960:540:force_original_aspect_ratio=decrease:'
-                        'force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
-                        if browser_substream else 'fps=5' if separate_analysis_stream else 'fps=10')
-        args = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'warning',
-                *preview_input_args(url, transport='tcp', strict=not browser_substream),
-                '-map', '0:v:0', '-an', '-vf', frame_filter,
-                '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3', '-threads', '1',
-                '-f', 'image2pipe', 'pipe:1']
+        args, browser_substream = decoder_command(main_url, self.browser)
 
         try:
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -289,6 +283,22 @@ class LivePreview:
             self.decoder_error('stream_error')
 
 
+def decoder_command(main_url, browser):
+    """Build the ffmpeg MJPEG decoder command; also report whether it reads a browser substream."""
+    url = source.browser_stream_url(main_url) if browser else main_url
+    browser_substream = browser and url != main_url
+    separate_analysis_stream = source.browser_stream_url(main_url) != main_url
+    frame_filter = ('fps=10,scale=960:540:force_original_aspect_ratio=decrease:'
+                    'force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
+                    if browser_substream else 'fps=5' if separate_analysis_stream else 'fps=10')
+    args = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'warning',
+            *preview_input_args(url, transport='tcp', strict=not browser_substream),
+            '-map', '0:v:0', '-an', '-vf', frame_filter,
+            '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3', '-threads', '1',
+            '-f', 'image2pipe', 'pipe:1']
+    return args, browser_substream
+
+
 def jpeg_frames(stream):
     """Read complete ordered JPEGs; never resynchronize one half of a frame pair."""
     buffer = b''
@@ -304,10 +314,10 @@ def jpeg_frames(stream):
             if end < 0:
                 break
             frame, buffer = buffer[:end+2], buffer[end+2:]
-            if not frame.startswith(b'\xff\xd8') or len(frame) > 16*1024*1024:
+            if not frame.startswith(b'\xff\xd8') or len(frame) > MAX_FRAME_BYTES:
                 raise OSError('Invalid JPEG output')
             yield frame
-        if len(buffer) > 16*1024*1024:
+        if len(buffer) > MAX_FRAME_BYTES:
             raise OSError('JPEG output limit exceeded')
 
 
@@ -360,17 +370,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def update_capture(self):
         body = self.read_json_body(2048, required=True)
-        try:
-            from .capture_settings import validate_update
-        except ImportError:
-            from capture_settings import validate_update
         previous = source.capture_settings()
         validate_update(previous, body)
         settings = source.configure_capture(body)
         session = anomaly_control.read_json(anomaly_control.DATA / 'session.json', {})
         geometry_changed = any(previous.get(key) != settings.get(key) for key in ('width', 'height'))
-        anomaly_control.request('invalidate' if geometry_changed else 'pause', session.get('multiplier', 1.25))
-        if os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly':
+        anomaly_control.request('invalidate' if geometry_changed else 'pause', session.get('multiplier', anomaly_control.DEFAULT_MULTIPLIER))
+        if recording_mode() == 'anomaly':
             control.set_enabled(False)
         return self.send(json.dumps(dict(settings=settings, detection_paused=True)).encode(),
                          'application/json')
@@ -384,9 +390,7 @@ class Handler(BaseHTTPRequestHandler):
     def control_anomaly(self, path):
         body = self.read_json_body(4096)
         action = path.rsplit('/', 1)[-1]
-        session_actions = ('learn', 'add-session', 'replace-session', 'remove-session',
-                           'rename-session', 'rebuild-sessions')
-        if action in session_actions:
+        if action in anomaly_control.SESSION_ACTIONS:
             state = anomaly_control.status()
             if state.get('state') in ('learning', 'training'):
                 return self.send(b'Pause the current learning operation first', 'text/plain', 409)
@@ -409,13 +413,13 @@ class Handler(BaseHTTPRequestHandler):
                         else session.get('input_size', anomaly_control.DEFAULT_INPUT_SIZE))
                 roi_input_dimensions(size, *geometry, roi)
         command = anomaly_control.request(
-            action, body.get('multiplier', 1.25), input_size=body.get('input_size'),
+            action, body.get('multiplier', anomaly_control.DEFAULT_MULTIPLIER), input_size=body.get('input_size'),
             confirmation_frames=body.get('confirmation_frames'),
             model_key=body.get('model_key'), roi=body.get('roi'),
             learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
             session_name=body.get('session_name', ''), session_note=body.get('session_note', ''),
             color_mode=body.get('color_mode'))
-        if (os.environ.get('CAMERA_RECORDING_MODE', 'continuous') == 'anomaly'
+        if (recording_mode() == 'anomaly'
                 and action in ('pause', 'learn', 'resize', 'model', 'roi', 'color', 'add-session',
                                'replace-session', 'remove-session', 'rebuild-sessions')):
             # Stopping the buffer must also work while the worker is offline.
@@ -466,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
         details = control.recording_details()
         result.update(video_pending=details.get('event_active', False),
                       event_until=details.get('event_until'),
-                      recording_mode=os.environ.get('CAMERA_RECORDING_MODE', 'continuous'),
+                      recording_mode=recording_mode(),
                       recording_enabled=control.enabled(), preview_quality=LIVE.quality())
         geometry = LIVE.geometry()
         if geometry is not None:

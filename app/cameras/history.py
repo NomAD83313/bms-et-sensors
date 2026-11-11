@@ -1,13 +1,17 @@
 """Delete completed camera history without touching live buffers or models."""
 from pathlib import Path
-import re
 import threading
+
+try:
+    from .anomaly_control import valid_event_id
+except ImportError:
+    from anomaly_control import valid_event_id
 
 LOCK = threading.Lock()
 
 
 def delete_event(anomaly, event_id):
-    if not isinstance(event_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', event_id):
+    if not valid_event_id(event_id):
         raise ValueError('Invalid event ID')
     directory = Path(anomaly) / 'events'
     if directory.is_symlink():
@@ -44,12 +48,12 @@ def delete_saved(recordings, anomaly, action, name=None):
             result['recordings'] = delete_recording(recordings, name)
         else:
             # Snapshot the file list once: newly created history is not removed.
-            events = list((Path(anomaly) / 'events').glob('*.json')) if action in ('all-events', 'history') else []
-            recordings = list(Path(recordings).glob('*.mkv')) if action in ('all-recordings', 'history') else []
-            for path in events:
+            event_files = list((Path(anomaly) / 'events').glob('*.json')) if action in ('all-events', 'history') else []
+            clip_files = list(Path(recordings).glob('*.mkv')) if action in ('all-recordings', 'history') else []
+            for path in event_files:
                 if not path.is_symlink():
                     result['events'] += delete_event(anomaly, path.stem)
-            for path in recordings:
+            for path in clip_files:
                 if not path.is_symlink():
                     result['recordings'] += delete_recording(path.parent, path.name)
     return result

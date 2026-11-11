@@ -35,6 +35,28 @@ bms_verify_services_created() {
   verify_stack_services_created "$@"
 }
 
+# Build the optional XNNPACK ONNX Runtime wheel image once, before camera analysis
+# images are built from it. A shell value overrides .env, as in Docker Compose.
+# Remove the image (docker image rm bms-onnx-xnnpack:local) to force a rebuild.
+bms_ensure_camera_onnx_runtime() {
+  local image="${CAMERA_ONNX_RUNTIME_IMAGE:-$(read_env_var CAMERA_ONNX_RUNTIME_IMAGE)}"
+  if [[ -z "$image" || "$image" == "onnx-cpu" ]]; then
+    return 0
+  fi
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    echo ">>> ONNX Runtime image present: $image"
+    return 0
+  fi
+  if [[ "$image" != "bms-onnx-xnnpack:local" ]]; then
+    echo "ERROR: CAMERA_ONNX_RUNTIME_IMAGE=$image is missing and is not built by this project." >&2
+    echo "       Use onnx-cpu or bms-onnx-xnnpack:local." >&2
+    return 1
+  fi
+  echo ">>> Building $image once: compiling ONNX Runtime with XNNPACK."
+  echo ">>> This is a one-time step and can take a long time on a Raspberry Pi."
+  docker build -f Dockerfile.camera-onnx-xnnpack -t "$image" .
+}
+
 bms_restart_service() {
   "${COMPOSE[@]}" restart "$1"
 }

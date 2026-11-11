@@ -9,6 +9,12 @@ from app.cameras import anomaly_control
 
 
 class AnomalyControlTests(unittest.TestCase):
+    def test_event_ids_are_limited_to_a_safe_file_name_alphabet(self):
+        for good in ('a', 'event-2026_11', 'x' * 100):
+            self.assertTrue(anomaly_control.valid_event_id(good), good)
+        for bad in ('', 'x' * 101, '../etc', 'a/b', 'a b', 'a.jpg', None, 5, b'abc'):
+            self.assertFalse(anomaly_control.valid_event_id(bad), bad)
+
     def test_color_mode_validates_before_replacing_the_command(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
             for mode in ('rgb', 'grayscale'):

@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 from app.cameras import anomaly_control, control, dashboard
 from app.cameras.learning_sessions import LearningSessions, MAX_SESSIONS
 from tests.isolated_import import load_isolated_module
+from tests.test_cameras_worker_quality import FakeModelGeometry
 
 
 CONFIG = dict(model_key='mobilenetv3', input_size='768x432', roi=None,
@@ -137,7 +138,7 @@ class LearningStoreTests(unittest.TestCase):
 
 class LearningWorkerTests(unittest.TestCase):
     def test_only_incompatible_changes_clear_the_baseline_and_sessions(self):
-        class Model:
+        class Model(FakeModelGeometry):
             model_key, input_size = 'mobilenetv3', '768x432'
             color_mode = 'rgb'
             roi = None
@@ -202,7 +203,7 @@ class LearningWorkerTests(unittest.TestCase):
                         self.assertEqual(restored.model.color_mode, arguments['color_mode'])
 
     def test_accumulation_rebuild_delete_and_failed_training_rollback(self):
-        class Model:
+        class Model(FakeModelGeometry):
             model_key, input_size = 'mobilenetv3', '768x432'
             source_size, effective_input_size = (1920, 1080), (768, 432)
             roi = None

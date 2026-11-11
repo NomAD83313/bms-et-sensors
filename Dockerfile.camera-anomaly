@@ -14,7 +14,6 @@ ENV PYTHONUNBUFFERED=1 TORCH_HOME=/opt/torch OMP_NUM_THREADS=1 OPENBLAS_NUM_THRE
 ENV CAMERA_ANOMALY_FEATURE_ENGINE=onnx CAMERA_ANOMALY_DISTANCE_ENGINE=faiss
 ENV CAMERA_ANOMALY_MODEL_DIR=/opt/bms-camera/encoders
 ENV HF_HOME=/opt/bms-camera/huggingface
-RUN python -c "from torchvision.models import resnet18, ResNet18_Weights; resnet18(weights=ResNet18_Weights.DEFAULT)"
 WORKDIR /app
 COPY app/cameras/ ./
 RUN python export_feature_encoder.py /opt/bms-camera/encoders

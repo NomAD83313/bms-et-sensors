@@ -21,7 +21,7 @@ class ModelSelectionTests(unittest.TestCase):
 
     def test_mobile_heatmap_rounds_up_non_divisible_height(self):
         self.assertEqual(heatmap_dimensions(1920, 1080, 'mobilenetv3'), (120, 68))
-        self.assertEqual(heatmap_dimensions(1920, 1080, 'resnet-fp32'), (240, 135))
+        self.assertEqual(heatmap_dimensions(1920, 1080, 'mobilenetv4-convsmall-x0.5'), (120, 68))
 
     def test_encoders_have_independent_identities_and_layouts(self):
         self.assertEqual(len({profile['encoder'] for profile in MODELS.values()}), len(MODELS))
@@ -30,7 +30,7 @@ class ModelSelectionTests(unittest.TestCase):
     def test_small_backbone_commands_and_all_supported_heatmap_layouts(self):
         from app.cameras.anomaly_control import INPUT_SIZES, input_dimensions
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
-            for key, channels in (('pp-lcnet-x0.5', 128), ('mobilenetv4-convsmall-x0.5', 48)):
+            for key, channels in (('mobilenetv4-convsmall-x0.5', 48),):
                 with self.subTest(model=key):
                     self.assertEqual(anomaly_control.request('model', model_key=key)['model_key'], key)
                     self.assertEqual(MODELS[key]['dimensions'], channels)

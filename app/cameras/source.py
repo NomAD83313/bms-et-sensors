@@ -1,7 +1,20 @@
 """FFmpeg input options shared by network and local Pi camera streams."""
+import json
+import math
 import os
+from pathlib import Path
+import time
 from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
+try:
+    from .anomaly_control import write_json
+    from .capture_settings import validate, DEFAULTS
+except ImportError:
+    from anomaly_control import write_json
+    from capture_settings import validate, DEFAULTS
+
+MAX_FRAME_BYTES = 16 * 1024 * 1024
 _CAPTURE_CACHE = None
 _CAPTURE_CACHE_AT = 0
 
@@ -56,15 +69,6 @@ def capture_url():
 
 def capture_settings():
     global _CAPTURE_CACHE, _CAPTURE_CACHE_AT
-    import time
-    import json
-    from pathlib import Path
-    import os
-    from urllib.request import urlopen
-    try:
-        from .capture_settings import validate, DEFAULTS
-    except ImportError:
-        from capture_settings import validate, DEFAULTS
     if not capture_url():
         return dict(DEFAULTS)
     path = Path(os.environ.get('CAMERA_CONTROL_DIR', '/control')) / 'capture.json'
@@ -82,19 +86,10 @@ def capture_settings():
 
 
 def capture_signature(settings=None):
-    import json
     return json.dumps(capture_settings() if settings is None else settings, sort_keys=True)
 
 
 def configure_capture(data):
-    import json
-    from pathlib import Path
-    import os
-    from urllib.request import Request, urlopen
-    try:
-        from .anomaly_control import write_json
-    except ImportError:
-        from anomaly_control import write_json
     if not capture_url():
         raise ValueError('Capture controls are only available for the Pi camera')
     request = Request(capture_url() + '/api/config', data=json.dumps(data).encode(),
@@ -106,16 +101,13 @@ def configure_capture(data):
 
 
 def snapshot(after=None):
-    import time
-    import math
-    from urllib.request import Request, urlopen
     request = Request(capture_url() + '/snapshot.jpg', headers={'X-Camera-After': after} if after else {})
     with urlopen(request, timeout=6) as response:
-        jpeg = response.read(16*1024*1024+1)
+        jpeg = response.read(MAX_FRAME_BYTES + 1)
         captured_at = float(response.headers['X-Camera-Captured-At'])
         token = response.headers['X-Camera-Sequence']
     maximum_age = max(1, capture_settings()['snapshot_interval_ms']/500)
     if (not token or not math.isfinite(captured_at) or not -.5 <= time.time()-captured_at <= maximum_age
-            or len(jpeg) > 16*1024*1024 or not jpeg.startswith(b'\xff\xd8') or not jpeg.endswith(b'\xff\xd9')):
+            or len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b'\xff\xd8') or not jpeg.endswith(b'\xff\xd9')):
         raise ValueError('Snapshot is incomplete or stale')
     return jpeg, captured_at, token

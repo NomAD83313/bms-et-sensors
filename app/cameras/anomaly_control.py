@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import time
 import uuid
 
@@ -17,8 +18,19 @@ DEFAULT_INPUT_SIZE = INPUT_SIZES[0]
 ACTIVE_STATES = frozenset(('normal', 'suspect', 'anomaly'))
 STATUS_MAX_AGE_SECONDS = 20
 LEARNING_SECONDS = (60, 120, 180, 240)
+DEFAULT_MULTIPLIER = 1.25
+SESSION_ACTIONS = ('learn', 'add-session', 'replace-session', 'remove-session',
+                   'rename-session', 'rebuild-sessions')
 
 DATA = Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly'))
+
+
+EVENT_ID = re.compile(r'[A-Za-z0-9_-]{1,100}')
+
+
+def valid_event_id(value):
+    """Event and trigger identifiers become file names, so keep them to a safe alphabet."""
+    return isinstance(value, str) and EVENT_ID.fullmatch(value) is not None
 
 
 def read_json(path, default=None):
@@ -95,7 +107,7 @@ def command_mode(action, ready, learning, monitoring):
     raise ValueError('Unknown analysis action')
 
 
-def request(action, multiplier=1.25, input_size=None, confirmation_frames=None, model_key=None,
+def request(action, multiplier=DEFAULT_MULTIPLIER, input_size=None, confirmation_frames=None, model_key=None,
             roi=None, learning_seconds=None, session_id=None, session_name='', session_note='',
             color_mode=None):
     command_mode(action, False, False, False)

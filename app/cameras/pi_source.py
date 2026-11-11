@@ -1,9 +1,10 @@
 """Share one rpicam MPEG-TS encoder between local camera consumers."""
-import logging
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
+import math
 import os
 from pathlib import Path
-import math
 import queue
 import signal
 import subprocess
@@ -15,7 +16,6 @@ try:
     from .capture_settings import validate, validate_update, DEFAULTS
 except ImportError:
     from capture_settings import validate, validate_update, DEFAULTS
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOG = logging.getLogger('pi-camera')
 
@@ -45,10 +45,16 @@ def mode():
     return validate(data)
 
 
+def frame_rate(settings):
+    if settings['capture_mode'] == 'snapshots':
+        return 1000 / settings['snapshot_interval_ms']
+    return settings['fps']
+
+
 def command(settings=None):
     settings = mode() if settings is None else settings
     snapshots = settings['capture_mode'] == 'snapshots'
-    fps = 1000 / settings['snapshot_interval_ms'] if snapshots else settings['fps']
+    fps = frame_rate(settings)
     width, height = image_size(settings)
     padded = (width, height) != (settings['width'], settings['height'])
     args = ['rpicam-vid', '--nopreview', '--timeout', '0',
@@ -77,7 +83,7 @@ def padding_command(settings):
     if (width, height) == (settings['width'], settings['height']):
         return None
     snapshots = settings['capture_mode'] == 'snapshots'
-    fps = 1000 / settings['snapshot_interval_ms'] if snapshots else settings['fps']
+    fps = frame_rate(settings)
     args = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-nostdin',
             '-f', 'nut', '-probesize', '32768', '-analyzeduration', '0',
             '-i', 'pipe:0', '-an', '-filter_threads', '1', '-vf',

@@ -39,6 +39,15 @@ def configuration(model):
                 score_top_k=getattr(model, 'top_k', 1))
 
 
+COMPATIBILITY_KEYS = ('model_key', 'input_size', 'roi', 'jpeg_draft', 'score_top_k', 'color_mode')
+
+
+def configuration_matches(current, catalog):
+    """Return whether saved sessions were captured with the current model settings."""
+    saved = catalog.get('configuration') or {}
+    return all(current[key] == saved.get(key) for key in COMPATIBILITY_KEYS)
+
+
 class LearningSessions:
     def __init__(self, data):
         self.root = Path(data) / 'learning'

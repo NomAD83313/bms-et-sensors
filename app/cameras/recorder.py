@@ -9,18 +9,14 @@ import threading
 import time
 
 try:
-    from .source import input_args
-except ImportError:
-    from source import input_args
-
-
-try:
     from . import control, event_recording, snapshot_recording, source
+    from .source import input_args
 except ImportError:
     import control
     import event_recording
     import snapshot_recording
     import source
+    from source import input_args
 
 LOG = logging.getLogger("bms-cameras")
 
@@ -94,6 +90,7 @@ def main():
     for partial in directory.glob("*.partial"):
         partial.unlink()
     mode = os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
+    anomaly = Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly'))
     if mode not in ('continuous', 'anomaly'):
         raise SystemExit('CAMERA_RECORDING_MODE must be continuous or anomaly')
     if mode == 'anomaly':
@@ -101,16 +98,16 @@ def main():
         while not stop.is_set():
             if source.capture_settings()['capture_mode'] == 'snapshots':
                 snapshot_recording.run(directory, stop, max_bytes, max_age, prune, control,
-                    Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')), mode, seconds)
+                    anomaly, mode, seconds)
             else:
                 event_recording.run(url, directory, stop, max_bytes, max_age, StreamProgress,
-                    prune, control, Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')))
+                    prune, control, anomaly)
         return
     LOG.info("Recorder started; clip duration=%ss", seconds)
     while not stop.is_set():
         if source.capture_settings()['capture_mode'] == 'snapshots':
             snapshot_recording.run(directory, stop, max_bytes, max_age, prune, control,
-                Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly')), mode, seconds)
+                anomaly, mode, seconds)
             continue
         if not control.enabled():
             control.heartbeat('paused')

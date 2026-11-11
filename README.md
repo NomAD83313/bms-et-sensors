@@ -288,6 +288,7 @@ Optional env flags for full Raspberry Pi setup:
 ```bash
 ./scripts/01-rpi-setup.sh
 ./scripts/02-rpi-nm-ap.sh
+./scripts/03-rpi-cameras-setup.sh   # optional: prebuild camera images and the XNNPACK ONNX Runtime
 ```
 
 ## Dev workflow (mscl-collector)
@@ -657,9 +658,8 @@ The `cameras` profile also includes a local **Unusual view detection** experimen
 using a lightweight PatchCore-style model. Learn a normal view, inspect anomaly
 scores and event snapshots. In anomaly mode, analysis and event recording share
 one start/pause control.
-Both camera pages offer MobileNetV3, PP-LCNet ×0.5, MobileNetV4 ConvSmall ×0.5,
-ResNet FP32 and MobileOne-S0. ResNet and MobileOne have a finer stride-eight heatmap
-but require more processing. Applying a different model pauses detection/event
+Both camera pages offer MobileNetV3, MobileNetV4 ConvSmall ×0.5 and MobileOne-S0.
+MobileOne has a finer stride-eight heatmap but requires more processing. Applying a different model pauses detection/event
 recording and requires new normal-view learning. Each camera keeps its own selection
 and strict baseline. All choices require scene-specific sensitivity validation.
 See [camera anomaly setup and limitations](docs/camera-anomaly.md).

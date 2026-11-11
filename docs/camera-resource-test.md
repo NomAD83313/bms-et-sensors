@@ -92,7 +92,8 @@ The script does not automatically change camera modes or start detection.
 
 Each camera was measured alone for 60 seconds after 15 seconds of warmup, with
 the other camera application stopped. The Pi host source was also stopped during
-the Wi-Fi measurement. Both workers used ResNet-18 layer2, ONNX Runtime XNNPACK,
+the Wi-Fi measurement. Both workers used ResNet-18 layer2 (since removed from the
+project), ONNX Runtime XNNPACK,
 FAISS, Model Input 1024x576, four threads and a four-CPU quota. These are the
 tested deployment settings; the installation template defaults to a standard
 CPU wheel and one thread/one CPU per worker.
@@ -149,8 +150,7 @@ installed source before using the matrix runner after a code change.
 
 `scripts/benchmark-camera-models.py` measures the actual `PatchCoreLite.features()`
 and `score()` implementations for the production model profiles. Use `--models`
-to select ResNet FP32, MobileNetV3, MobileOne-S0, PP-LCNet ×0.5 or MobileNetV4
-ConvSmall ×0.5.
+to select MobileNetV3, MobileOne-S0 or MobileNetV4 ConvSmall ×0.5.
 Run it inside the deployed anomaly image with a private, writable `--work`
 directory. Supply 24 distinct JPEGs in `frames/`; existing private
 `banks/<model>/` are validated and reused. Production learning is never replaced.

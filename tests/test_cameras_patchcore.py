@@ -12,8 +12,22 @@ except ImportError:
     torch = None
 
 
+def stride8_model(**kwargs):
+    """Synthetic-patch tests assume a 128-channel stride-eight encoder (MobileOne-S0)."""
+    kwargs.setdefault('model_key', 'mobileone-s0')
+    return PatchCoreLite(**kwargs)
+
+
 @unittest.skipIf(torch is None, 'Requires the optional camera-anomaly image')
 class PatchMemoryTests(unittest.TestCase):
+    def test_bounded_int_accepts_only_whole_numbers_in_range(self):
+        from app.cameras.patchcore_lite import bounded_int
+        self.assertEqual(bounded_int('4', 1, 4, 'x'), 4)
+        self.assertEqual(bounded_int(2.0, 1, 4, 'x'), 2)
+        for bad in (True, 0, 5, 2.5, '2.5', 'a', None):
+            with self.subTest(value=bad), self.assertRaisesRegex(ValueError, 'bounds'):
+                bounded_int(bad, 1, 4, 'bounds')
+
     def test_preparation_matches_torchvision_and_keeps_independent_contiguous_tensors(self):
         import io
         import math
@@ -198,15 +212,15 @@ class PatchMemoryTests(unittest.TestCase):
                 full.load(path)
         for invalid in (-1, 2, 'yes'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                PatchCoreLite(jpeg_draft=invalid)
+                stride8_model(jpeg_draft=invalid)
 
     def test_top_k_averages_the_largest_patch_scores_and_separates_baselines(self):
         patches = torch.zeros(96 * 54, 128)
         patches[:-1, 0] = 1
         patches[-1, 0] = 20
-        maximum = PatchCoreLite(top_k=1)
+        maximum = stride8_model(top_k=1)
         maximum.memory = torch.zeros(1, 128)
-        averaged = PatchCoreLite(top_k=5)
+        averaged = stride8_model(top_k=5)
         averaged.memory = maximum.memory
         self.assertAlmostEqual(maximum.score(patches)[0], 20, places=5)
         self.assertAlmostEqual(averaged.score(patches)[0], 4.8, places=5)
@@ -217,15 +231,15 @@ class PatchMemoryTests(unittest.TestCase):
             averaged.save(path)
             saved = torch.load(path, weights_only=True)
             self.assertEqual(saved['score_top_k'], 5)
-            PatchCoreLite(top_k=5).load(path)
+            stride8_model(top_k=5).load(path)
             with self.assertRaises(ValueError):
                 maximum.load(path)
         for invalid in (0, 21, 1.5, True, 'invalid'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                PatchCoreLite(top_k=invalid)
+                stride8_model(top_k=invalid)
 
     def test_configurable_coreset_size_is_bounded_and_persisted(self):
-        model = PatchCoreLite(coreset_size=256)
+        model = stride8_model(coreset_size=256)
         count = 96 * 54
         samples = [torch.full((count, 128), index * .01) for index in range(20)]
         model.fit(samples)
@@ -236,12 +250,12 @@ class PatchMemoryTests(unittest.TestCase):
             model.save(path)
             saved = torch.load(path, weights_only=True)
             self.assertEqual(saved['coreset_size'], 256)
-            restored = PatchCoreLite()
+            restored = stride8_model()
             restored.load(path)
             self.assertEqual(len(restored.memory), 256)
         for invalid in (0, 255, 4097, 256.5, True, 'invalid'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                PatchCoreLite(coreset_size=invalid)
+                stride8_model(coreset_size=invalid)
 
     def test_roi_dynamic_onnx_encoders_and_heatmaps_match_actual_input_geometry(self):
         from app.cameras.model_profiles import MODELS, heatmap_dimensions
@@ -359,7 +373,7 @@ class PatchMemoryTests(unittest.TestCase):
         pixel = Image.open(io.BytesIO(jpeg)).getpixel((0, 0))
         imagenet = ((.485, .456, .406), (.229, .224, .225))
         for key, (mean, deviation) in (
-                ('mobilenetv3', imagenet), ('pp-lcnet-x0.5', imagenet),
+                ('mobilenetv3', imagenet),
                 ('mobilenetv4-convsmall-x0.5', ((.5, .5, .5), (.5, .5, .5)))):
             with self.subTest(model=key):
                 model = PatchCoreLite(model_key=key, feature_engine='onnx')
@@ -372,7 +386,7 @@ class PatchMemoryTests(unittest.TestCase):
 
     def test_small_backbones_match_onnx_on_three_nonconstant_jpegs(self):
         from app.cameras.feature_encoder import FeatureEncoder
-        for key in ('pp-lcnet-x0.5', 'mobilenetv4-convsmall-x0.5'):
+        for key in ('mobilenetv4-convsmall-x0.5',):
             model = PatchCoreLite(model_key=key, feature_engine='onnx')
             network = FeatureEncoder(key).eval()
             for index, jpeg in enumerate(self._small_backbone_jpegs()):
@@ -390,7 +404,7 @@ class PatchMemoryTests(unittest.TestCase):
     def test_small_backbones_cover_all_input_sizes_and_keep_learning_independent(self):
         from app.cameras.model_profiles import MODELS, heatmap_dimensions
         jpeg = self._small_backbone_jpegs()[0]
-        keys = ('pp-lcnet-x0.5', 'mobilenetv4-convsmall-x0.5')
+        keys = ('mobilenetv4-convsmall-x0.5',)
         for key in keys:
             with self.subTest(model=key):
                 model = PatchCoreLite(model_key=key, feature_engine='onnx', distance_engine='faiss')
@@ -422,7 +436,7 @@ class PatchMemoryTests(unittest.TestCase):
                         with self.subTest(rejected_model=other), self.assertRaises(ValueError):
                             PatchCoreLite(model_key=other, feature_engine='onnx').load(path)
                         self.assertEqual(path.read_bytes(), saved)
-                    restored.set_model(next(value for value in keys if value != key))
+                    restored.set_model('mobilenetv3')
                     self.assertIsNone(restored.memory)
                     self.assertIsNone(restored.threshold)
                     self.assertEqual(restored.baseline_frames, 0)
@@ -455,7 +469,8 @@ class PatchMemoryTests(unittest.TestCase):
                     restored = PatchCoreLite(model_key=key, input_size=model.input_size, feature_engine='onnx')
                     restored.load(path)
                     with self.assertRaises(ValueError):
-                        PatchCoreLite(input_size=model.input_size).load(path)
+                        PatchCoreLite(model_key='mobilenetv3', input_size=model.input_size,
+                                      feature_engine='onnx').load(path)
 
     def test_mobile_onnx_layout_baseline_identity_and_learning(self):
         import io
@@ -478,11 +493,11 @@ class PatchMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.pt'
             mobile.save(path)
-            with self.assertRaises(ValueError): PatchCoreLite().load(path)
+            with self.assertRaises(ValueError): stride8_model().load(path)
             restored = PatchCoreLite(model_key='mobilenetv3', feature_engine='onnx')
             restored.load(path)
             self.assertEqual(restored.baseline_frames, 20)
-            restored.set_model('resnet-fp32')
+            restored.set_model('mobileone-s0')
             self.assertIsNone(restored.memory)
 
     def setUp(self):
@@ -496,7 +511,7 @@ class PatchMemoryTests(unittest.TestCase):
     def test_channels_last_preserves_features_and_existing_baseline_scores(self):
         import io
         from PIL import Image
-        model = PatchCoreLite()
+        model = stride8_model()
         source = io.BytesIO()
         Image.effect_noise((960, 540), 60).convert('RGB').save(source, format='JPEG')
         jpeg = source.getvalue()
@@ -509,7 +524,7 @@ class PatchMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.pt'
             model.save(path)
-            optimized = PatchCoreLite()
+            optimized = stride8_model()
             optimized.load(path)
             features = optimized.features(jpeg)
             new_score, new_heatmap = optimized.score(features)
@@ -518,7 +533,7 @@ class PatchMemoryTests(unittest.TestCase):
         self.assertAlmostEqual(new_score, score, places=4)
 
     def test_fit_holds_out_entire_frames_and_model_round_trip(self):
-        model = PatchCoreLite()
+        model = stride8_model()
         model.inspect_geometry(self._roi_jpeg())
         # Held-out frames contain distinct features, so leakage would yield zero.
         count = 96 * 54
@@ -533,7 +548,7 @@ class PatchMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.pt'
             model.save(path)
-            restored = PatchCoreLite()
+            restored = stride8_model()
             restored.load(path)
             self.assertEqual(restored.baseline_frames, 20)
             self.assertEqual(restored.threshold, model.threshold)
@@ -568,7 +583,7 @@ class PatchMemoryTests(unittest.TestCase):
         from PIL import Image
         source = io.BytesIO()
         Image.new('RGB', (960, 540), (128, 128, 128)).save(source, format='JPEG')
-        model = PatchCoreLite()
+        model = stride8_model()
         for size in INPUT_SIZES:
             with self.subTest(size=size):
                 width, height = input_dimensions(size)
@@ -582,11 +597,11 @@ class PatchMemoryTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     path = Path(directory) / 'baseline.pt'
                     model.save(path)
-                    restored = PatchCoreLite(input_size=size)
+                    restored = stride8_model(input_size=size)
                     restored.load(path)
                     if size != DEFAULT_INPUT_SIZE:
                         with self.assertRaises(ValueError):
-                            PatchCoreLite().load(path)
+                            stride8_model().load(path)
                 model.set_input_size(DEFAULT_INPUT_SIZE)
                 self.assertIsNone(model.memory)
 
@@ -600,8 +615,8 @@ class PatchMemoryTests(unittest.TestCase):
             self.skipTest('Requires faiss-cpu')
         generator = torch.Generator().manual_seed(12)
         patches = torch.randn(96 * 54, 128, generator=generator)
-        reference = PatchCoreLite()
-        fast = PatchCoreLite(distance_engine='faiss')
+        reference = stride8_model()
+        fast = stride8_model(distance_engine='faiss')
         for offset in (0, 3):
             reference.memory = torch.randn(64, 128, generator=generator) + offset
             fast.memory = reference.memory
@@ -628,8 +643,8 @@ class PatchMemoryTests(unittest.TestCase):
             self.skipTest('Requires ONNX Runtime and exported encoders')
         source = io.BytesIO()
         Image.effect_noise((960, 540), 60).convert('RGB').save(source, format='JPEG')
-        reference = PatchCoreLite()
-        fast = PatchCoreLite(feature_engine='onnx', distance_engine='faiss')
+        reference = stride8_model()
+        fast = stride8_model(feature_engine='onnx', distance_engine='faiss')
         self.assertIn(fast.onnx_provider, onnxruntime.get_available_providers())
         for size in INPUT_SIZES:
             with self.subTest(size=size):
@@ -645,7 +660,7 @@ class PatchMemoryTests(unittest.TestCase):
                 self.assertAlmostEqual(actual_score, expected_score, places=3)
 
     def test_chunked_distances_match_full_matrix(self):
-        model = PatchCoreLite()
+        model = stride8_model()
         generator = torch.Generator().manual_seed(10)
         patches = torch.randn(96*54,128,generator=generator)
         model.memory = torch.randn(64,128,generator=generator)
@@ -667,7 +682,7 @@ class PatchMemoryTests(unittest.TestCase):
         from PIL import Image
         source = io.BytesIO()
         Image.effect_noise((960, 540), 60).convert('RGB').save(source, format='JPEG')
-        model = PatchCoreLite(input_size='768x432', threads=1)
+        model = stride8_model(input_size='768x432', threads=1)
         features = model.features(source.getvalue())
         model.memory = features[::4].contiguous() + .1
         model.threshold = 1
@@ -675,7 +690,7 @@ class PatchMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.pt'
             model.save(path)
-            parallel = PatchCoreLite(input_size='768x432', threads=2)
+            parallel = stride8_model(input_size='768x432', threads=2)
             parallel.load(path)
             patches = parallel.features(source.getvalue())
             new_score, new_heatmap = parallel.score(patches)
@@ -684,10 +699,10 @@ class PatchMemoryTests(unittest.TestCase):
             self.assertAlmostEqual(new_score, score, places=3)
         for count in (0, 5, 1.5, True):
             with self.subTest(count=count), self.assertRaises(ValueError):
-                PatchCoreLite(threads=count)
+                stride8_model(threads=count)
 
     def test_insufficient_normal_frames_are_rejected(self):
-        model = PatchCoreLite()
+        model = stride8_model()
         with self.assertRaises(ValueError):
             model.fit([torch.zeros(784, 128)])
 
