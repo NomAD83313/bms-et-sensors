@@ -674,7 +674,8 @@ mode. Snapshot mode shares JPEG frames through `/snapshot.jpg` and encodes H.264
 saving clips. Native host libcamera/rpicam libraries avoid container/kernel mismatches.
 Pi 5 uses libx264 software encoding in Video mode; installation defaults are 1280×720,
 15 fps, 2 Mbit/s, with one-second keyframe intervals. Saved capture settings may override
-these defaults. See the
+these defaults. The installed module is a Sony IMX415 (`dtoverlay=imx415,cam0` in
+`/boot/firmware/config.txt`); its 16:9 presets go up to 3840×2160 at 15 fps. See the
 [Raspberry Pi camera software documentation](https://www.raspberrypi.com/documentation/accessories/camera-software.html).
 The host source starts capture on demand and releases the camera and encoder after the last
 consumer disconnects. Host source logs: `journalctl -u bms-pi-camera`. To stop the cameras

@@ -24,21 +24,53 @@ SETTINGS = Path(os.environ.get('PI_CAMERA_SETTINGS_FILE', '/var/lib/bms-pi-camer
 
 
 def sensor_mode():
-    """Keep sensor readout independent of output size (IMX219 by default)."""
-    return os.environ.get('PI_CAMERA_SENSOR_MODE', '3280:2464:10:P')
+    """Full sensor readout, independent of output size (Sony IMX415 by default)."""
+    return os.environ.get('PI_CAMERA_SENSOR_MODE', '3864:2192:10:P')
+
+
+# A sensor whose aspect ratio is this close to the output's is cropped to it instead of
+# padded: IMX415 (1.763) loses 0.8 % of its height for 16:9, avoiding a second encoder.
+MAX_ASPECT_CROP = .02
+_UNSUPPORTED_REPORTED = None
+
+
+def geometry(settings):
+    """Return (width, height, roi): the camera output size and the sensor area it shows.
+
+    A near-matching sensor is centre-cropped to the output aspect ratio. Otherwise the
+    full sensor image is fitted inside the output (even YUV420 sizes) and padded later.
+    """
+    sensor_width, sensor_height = map(int, sensor_mode().split(':')[:2])
+    width, height = settings['width'], settings['height']
+    ratio = (width / height) / (sensor_width / sensor_height)
+    if 1 <= ratio <= 1 + MAX_ASPECT_CROP:
+        crop = 1 / ratio
+        return width, height, f'0,{(1 - crop) / 2:.6f},1,{crop:.6f}'
+    if 1 - MAX_ASPECT_CROP <= ratio < 1:
+        return width, height, f'{(1 - ratio) / 2:.6f},0,{ratio:.6f},1'
+    scale = min(width / sensor_width, height / sensor_height)
+    return (max(2, 2 * round(sensor_width * scale / 2)),
+            max(2, 2 * round(sensor_height * scale / 2)), '0,0,1,1')
 
 
 def image_size(settings):
-    """Fit the full sensor image inside the output, using even YUV420 sizes."""
-    sensor_width, sensor_height = map(int, sensor_mode().split(':')[:2])
-    width, height = settings['width'], settings['height']
-    scale = min(width / sensor_width, height / sensor_height)
-    return (max(2, 2 * round(sensor_width * scale / 2)),
-            max(2, 2 * round(sensor_height * scale / 2)))
+    """Camera output size before padding."""
+    return geometry(settings)[:2]
 
 
 def mode():
+    """Saved capture settings plus the optional runtime override (which must be valid)."""
     data = json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {}
+    try:
+        data = validate(data)
+    except ValueError:
+        # Settings saved for another sensor (for example IMX219 4:3 sizes) must not stop capture.
+        # mode() runs for every snapshot request: report this once per file content.
+        global _UNSUPPORTED_REPORTED
+        if _UNSUPPORTED_REPORTED != data:
+            LOG.warning('Saved capture settings are not supported by this camera; using defaults')
+            _UNSUPPORTED_REPORTED = data
+        data = validate({})
     override = Path(os.environ.get('PI_CAMERA_MODE_FILE', '/run/bms-pi-camera-mode.json'))
     if override.exists():
         data.update(json.loads(override.read_text()))
@@ -55,10 +87,10 @@ def command(settings=None):
     settings = mode() if settings is None else settings
     snapshots = settings['capture_mode'] == 'snapshots'
     fps = frame_rate(settings)
-    width, height = image_size(settings)
+    width, height, roi = geometry(settings)
     padded = (width, height) != (settings['width'], settings['height'])
     args = ['rpicam-vid', '--nopreview', '--timeout', '0',
-            '--mode', sensor_mode(), '--roi', '0,0,1,1',
+            '--mode', sensor_mode(), '--roi', roi,
             '--width', str(width), '--height', str(height),
             '--framerate', str(float(fps))]
     if settings['shutter_us']:

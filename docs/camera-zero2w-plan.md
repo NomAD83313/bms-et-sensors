@@ -106,7 +106,7 @@ validated independently of output resolution for each camera module.
 A minimal capture-control agent can later expose node status, supported modes,
 exposure and capture start/stop through the central API. The current local
 `pi_source.py` is not ready to copy unchanged: it assumes a Pi 5 software encoder,
-a local loopback transport and a default IMX219 sensor mode. Remote settings
+a local loopback transport and a default IMX415 sensor mode. Remote settings
 controls must remain unavailable until the node advertises the capability.
 
 ## Changes needed for shared media

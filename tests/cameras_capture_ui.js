@@ -45,17 +45,17 @@ async function run(source) {
     await element('capture-apply').onclick();
     assert(requests.at(-1).shutter_us===Number(shutter),'Send short exposure in microseconds');
   }
-  change('capture-mode','video');change('capture-resolution','1640x1232');change('capture-fps','15');
+  change('capture-mode','video');change('capture-resolution','2560x1440');change('capture-fps','15');
   await element('capture-apply').onclick();
   let sent=requests.at(-1);
-  assert(sent.width===1640&&sent.height===1232&&sent.fps===15,'Send selected video resolution and FPS');
+  assert(sent.width===2560&&sent.height===1440&&sent.fps===15,'Send selected video resolution and FPS');
   assert(sent.shutter_us===0,'Video uses Auto exposure');
-  change('capture-resolution','3280x2464');
+  change('capture-resolution','3840x2160');
   assert(element('capture-fps').value==='15','Clamp full resolution to 15 FPS');
   assert(element('capture-fps').options.every(x=>Number(x.value)<=15),'Only offer rates supported by full sensor readout');
   await element('capture-apply').onclick();
   sent=requests.at(-1);
-  assert(sent.width===3280&&sent.height===2464&&sent.fps===15,'Send clamped FPS with full resolution');
+  assert(sent.width===3840&&sent.height===2160&&sent.fps===15,'Send clamped FPS with full resolution');
   change('capture-mode','snapshots');change('capture-resolution','1280x720');
   await element('capture-apply').onclick();
   sent=requests.at(-1);

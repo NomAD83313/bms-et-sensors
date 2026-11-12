@@ -17,7 +17,7 @@ class CaptureSettingsTests(unittest.TestCase):
     def test_high_fps_profiles_are_rejected(self):
         with self.assertRaises(ValueError):
             validate(dict(fps=42))
-        for width, height in ((640, 480), (1280, 720), (1920, 1080), (1640, 1232)):
+        for width, height in ((640, 360), (1280, 720), (1920, 1080), (2560, 1440)):
             with self.subTest(size=(width, height)), self.assertRaises(ValueError):
                 validate_update(validate({}), dict(width=width, height=height, fps=30))
 
@@ -35,11 +35,11 @@ class CaptureSettingsTests(unittest.TestCase):
     def test_video_update_validates_resolution_fps_and_numeric_types(self):
         current = validate({})
         for width, height, fps in ((1280, 720, 10), (1920, 1080, 15),
-                                   (1640, 1232, 15), (3280, 2464, 15)):
+                                   (2560, 1440, 15), (3840, 2160, 15)):
             update = dict(capture_mode='video', width=width, height=height, fps=fps, shutter_us=0)
             self.assertEqual(validate_update(current, update)['fps'], fps)
-        for update in (dict(width=3280, height=2464, fps=30), dict(width=1920, height=1080, fps=42),
-                       dict(width=1000, height=720), dict(fps=True), dict(fps='30'),
+        for update in (dict(width=3840, height=2160, fps=30), dict(width=1920, height=1080, fps=42),
+                       dict(width=1000, height=720), dict(width=1640, height=1232), dict(width=4096, height=2304), dict(fps=True), dict(fps='30'),
                        dict(fps=float('inf')), dict(bitrate=1000000), []):
             with self.subTest(update=update), self.assertRaises(ValueError):
                 validate_update(current, update)
@@ -51,11 +51,11 @@ class CaptureSettingsTests(unittest.TestCase):
             persistent.write_text(json.dumps(dict(capture_mode='snapshots', width=1920, height=1080, snapshot_interval_ms=200, shutter_us=10000)))
             with patch.object(pi_source, 'SETTINGS', persistent), patch.dict(os.environ, {'PI_CAMERA_MODE_FILE': str(override)}):
                 args = pi_source.command()
-            self.assertEqual(args[args.index('--libav-video-codec')+1], 'rawvideo')
+            self.assertEqual(args[args.index('--codec')+1], 'mjpeg')
             self.assertEqual(args[args.index('--framerate')+1], '5.0')
             self.assertEqual(args[args.index('--shutter')+1], '10000')
             self.assertNotIn('libx264', args)
-            self.assertEqual(args[args.index('--width')+1], '1438')
+            self.assertEqual(args[args.index('--width')+1], '1920')
             self.assertEqual(args[args.index('--height')+1], '1080')
 
 
@@ -144,7 +144,7 @@ class HostCaptureAPITests(unittest.TestCase):
                         applied=json.load(response)
                     self.assertEqual((applied['width'], applied['height'], applied['fps']), (1920,1080,15))
                     with self.assertRaises(HTTPError) as error:
-                        urlopen(Request(url,data=b'{"width":3280,"height":2464,"fps":30}',headers={'X-Camera-Control':'1'}),timeout=5)
+                        urlopen(Request(url,data=b'{"width":3840,"height":2160,"fps":30}',headers={'X-Camera-Control':'1'}),timeout=5)
                     self.assertEqual(error.exception.code,400)
                     self.assertEqual(json.loads(settings.read_text()),applied)
                     with self.assertRaises(HTTPError) as error:

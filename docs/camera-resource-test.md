@@ -113,7 +113,7 @@ Local raw samples and the detailed report are stored under the ignored directory
 `runtime/camera-benchmarks/isolated-20261106T191415/`. Both applications and the
 Pi source were restored to their initial states after the test.
 
-## IMX219 resolution/FPS matrix
+## Pi camera resolution/FPS matrix
 
 The former matrix runner restarted the per-camera Pi containers and was removed with
 them on 2026-11-12. To compare Pi capture modes now, change the capture settings in the

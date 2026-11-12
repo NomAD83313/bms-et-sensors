@@ -4,9 +4,11 @@ import math
 DEFAULTS = dict(capture_mode='video', width=1280, height=720, fps=15,
                 bitrate=2000000, snapshot_interval_ms=200, shutter_us=0)
 INTERVALS = (100, 200, 500, 1000)
-# Full-sensor readout preserves field of view at every output resolution.
-VIDEO_MAX_FPS = {(640, 480): 15, (1280, 720): 15, (1920, 1080): 15,
-                 (1640, 1232): 15, (3280, 2464): 15}
+# Sony IMX415 (3864x2192 full readout, at most 15.75 fps): 16:9 outputs that keep the
+# full sensor field of view. The largest output is the full-width 4K picture.
+MAX_WIDTH, MAX_HEIGHT = 3864, 2192
+VIDEO_MAX_FPS = {(640, 360): 15, (1280, 720): 15, (1920, 1080): 15,
+                 (2560, 1440): 15, (3840, 2160): 15}
 UPDATE_FIELDS = {'capture_mode', 'snapshot_interval_ms', 'shutter_us', 'width', 'height', 'fps'}
 SHUTTERS = (0, 200, 500, 1000, 2000, 4000, 8000, 10000, 20000, 40000)
 
@@ -19,7 +21,7 @@ def validate(data):
             raise ValueError('Capture settings must contain finite numeric values')
         result[key] = int(value)
     if (result['capture_mode'] not in ('video', 'snapshots')
-            or not 16 <= result['width'] <= 3280 or not 16 <= result['height'] <= 2464
+            or not 16 <= result['width'] <= MAX_WIDTH or not 16 <= result['height'] <= MAX_HEIGHT
             or result['width'] % 2 or result['height'] % 2
             or isinstance(result['fps'], bool) or not isinstance(result['fps'], (int, float))
             or not math.isfinite(result['fps']) or not 1 <= result['fps'] <= 240

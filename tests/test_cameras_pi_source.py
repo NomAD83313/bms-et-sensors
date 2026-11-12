@@ -7,6 +7,9 @@ from app.cameras.pi_source import Broadcast
 from app.cameras.recorder import command
 from app.cameras.event_recording import segment_command
 
+# A 4:3 sensor (Raspberry Pi Camera Module 2) exercises the padding path.
+IMX219 = '3280:2464:10:P'
+
 
 class InputTests(unittest.TestCase):
     def test_rtsp_options_preserved_and_pi_has_read_timeout(self):
@@ -120,7 +123,7 @@ class CaptureLifecycleTests(unittest.TestCase):
         process.stdout.read1.side_effect = read
         with patch.object(stream.stop, 'wait', side_effect=lambda _: stream.stop.set()), \
                 patch('app.cameras.pi_source.mode', return_value={
-                    'capture_mode': 'video', 'width': 3280, 'height': 2464,
+                    'capture_mode': 'video', 'width': 3840, 'height': 2160,
                     'fps': 10, 'bitrate': 2000000, 'shutter_us': 0}), \
                 patch('app.cameras.pi_source.subprocess.Popen', return_value=process) as spawn:
             stream.run()
@@ -144,7 +147,8 @@ class CaptureLifecycleTests(unittest.TestCase):
                 patch('app.cameras.pi_source.mode', return_value={
                     'capture_mode': 'video', 'width': 1280, 'height': 720,
                     'fps': 10, 'bitrate': 2000000, 'shutter_us': 0}), \
-                patch('app.cameras.pi_source.subprocess.Popen', side_effect=[capture, encoder]):
+                patch('app.cameras.pi_source.subprocess.Popen', side_effect=[capture, encoder]), \
+                patch.dict('os.environ', {'PI_CAMERA_SENSOR_MODE': IMX219}):
             stream.run()
         for child in (capture, encoder):
             child.terminate.assert_called_once()
@@ -170,63 +174,89 @@ class ModeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'mode.json'
             path.write_text('{"width":1920,"height":1080,"fps":15}')
-            with patch.dict(os.environ, {'PI_CAMERA_MODE_FILE': str(path)}):
+            with patch.dict(os.environ, {'PI_CAMERA_MODE_FILE': str(path), 'PI_CAMERA_SENSOR_MODE': IMX219}):
                 args = command()
+                from app.cameras.pi_source import padding_command
+                encoded = padding_command(dict(width=1920, height=1080, fps=15,
+                                                capture_mode='video', bitrate=2000000))
             self.assertEqual(args[args.index('--width') + 1], '1438')
             self.assertEqual(args[args.index('--height') + 1], '1080')
             self.assertEqual(args[args.index('--framerate') + 1], '15.0')
             self.assertEqual(args[args.index('--libav-video-codec') + 1], 'rawvideo')
             self.assertEqual(args[args.index('--mode') + 1], '3280:2464:10:P')
-            from app.cameras.pi_source import padding_command
-            encoded = padding_command(dict(width=1920, height=1080, fps=15,
-                                            capture_mode='video', bitrate=2000000))
             self.assertEqual(encoded[encoded.index('-g') + 1], '15')
 
     def test_native_video_uses_rpicam_low_latency_without_changing_snapshots(self):
         from app.cameras.capture_settings import validate
         from app.cameras.pi_source import command
-        video = command(validate(dict(capture_mode='video', width=3280, height=2464, fps=10)))
+        video = command(validate(dict(capture_mode='video', width=3840, height=2160, fps=10)))
         self.assertIn('--low-latency', video)
         self.assertEqual(video[video.index('--libav-video-codec') + 1], 'libx264')
         self.assertIn('g=10', video[video.index('--libav-video-codec-opts') + 1])
-        snapshots = command(validate(dict(capture_mode='snapshots', width=3280, height=2464)))
+        snapshots = command(validate(dict(capture_mode='snapshots', width=3840, height=2160)))
         self.assertNotIn('--low-latency', snapshots)
         self.assertEqual(snapshots[snapshots.index('--codec') + 1], 'mjpeg')
 
-    def test_all_output_sizes_keep_one_sensor_mode_and_fit_without_cropping(self):
-        from app.cameras.capture_settings import validate
-        from app.cameras.pi_source import command, image_size, padding_command
-        for width, height in ((640, 480), (1280, 720), (1920, 1080),
-                              (1640, 1232), (3280, 2464)):
+    def test_imx415_outputs_crop_the_sensor_slightly_instead_of_padding(self):
+        from app.cameras.capture_settings import VIDEO_MAX_FPS, validate
+        from app.cameras.pi_source import command, geometry, padding_command
+        for width, height in VIDEO_MAX_FPS:
             settings = validate(dict(width=width, height=height))
-            inner_width, inner_height = image_size(settings)
             with self.subTest(size=(width, height)):
-                self.assertLessEqual(inner_width, width)
-                self.assertLessEqual(inner_height, height)
-                self.assertEqual(inner_width % 2, 0)
-                self.assertEqual(inner_height % 2, 0)
-                self.assertLess(abs(inner_width - inner_height * 3280 / 2464), 2)
+                self.assertEqual(geometry(settings)[:2], (width, height))
+                self.assertIsNone(padding_command(settings), 'No second encoder for a near-matching sensor')
                 args = command(settings)
-                self.assertEqual(args[args.index('--mode') + 1], '3280:2464:10:P')
-                self.assertEqual(args[args.index('--roi') + 1], '0,0,1,1')
-        self.assertIsNone(padding_command(validate(dict(width=3280, height=2464))))
+                self.assertEqual(args[args.index('--mode') + 1], '3864:2192:10:P')
+                self.assertEqual(args[args.index('--width') + 1], str(width))
+                x, y, w, h = map(float, args[args.index('--roi') + 1].split(','))
+                # 16:9 out of 3864x2192: full width, 0.8 % of the height removed evenly.
+                self.assertEqual((x, w), (0, 1))
+                self.assertAlmostEqual(h, 3864 * 9 / 16 / 2192, places=5)
+                self.assertAlmostEqual(y, (1 - h) / 2, places=5)
+                self.assertEqual(args[args.index('--libav-video-codec') + 1], 'libx264')
+
+    def test_a_4_3_sensor_is_padded_to_16_9_without_cropping(self):
+        from unittest.mock import patch
+        from app.cameras.pi_source import geometry
+        with patch.dict('os.environ', {'PI_CAMERA_SENSOR_MODE': IMX219}):
+            for width, height in ((1280, 720), (1920, 1080), (3840, 2160)):
+                inner_width, inner_height, roi = geometry(dict(width=width, height=height))
+                with self.subTest(size=(width, height)):
+                    self.assertEqual(roi, '0,0,1,1')
+                    self.assertLessEqual(inner_width, width)
+                    self.assertEqual(inner_height, height)
+                    self.assertEqual(inner_width % 2, 0)
+                    self.assertLess(abs(inner_width - inner_height * 3280 / 2464), 2)
+
+    def test_settings_saved_for_another_sensor_fall_back_to_defaults(self):
+        from app.cameras import pi_source
+        from app.cameras.capture_settings import DEFAULTS
+        pi_source.SETTINGS.write_text('{"capture_mode": "video", "width": 1640, "height": 1232, "fps": 5}')
+        with self.assertLogs('pi-camera', level='WARNING') as logs:
+            self.assertEqual(pi_source.mode(), DEFAULTS)
+            self.assertEqual(pi_source.mode(), DEFAULTS)
+            pi_source.LOG.warning('end')
+        self.assertEqual(len(logs.records), 2, 'The fallback is reported once')
 
     def test_padding_encoder_keeps_edges_and_returns_requested_snapshot_size(self):
         import shutil
         import subprocess
         from app.cameras.capture_settings import validate
+        from unittest.mock import patch
         from app.cameras.pi_source import image_size, padding_command
         if not shutil.which('ffmpeg'):
             self.skipTest('Requires FFmpeg')
-        settings = validate(dict(capture_mode='snapshots', width=1280, height=720))
-        width, height = image_size(settings)
+        with patch.dict('os.environ', {'PI_CAMERA_SENSOR_MODE': IMX219}):
+            settings = validate(dict(capture_mode='snapshots', width=1280, height=720))
+            width, height = image_size(settings)
+            pad = padding_command(settings)
         # A bright, complete image must survive between the black side bars.
         raw = bytes([200]) * (width * height) + bytes([128]) * (width * height // 2)
         framed = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'rawvideo',
                                  '-pixel_format', 'yuv420p', '-video_size', f'{width}x{height}',
                                  '-i', 'pipe:0', '-c:v', 'rawvideo', '-f', 'nut', 'pipe:1'],
                                 input=raw, capture_output=True, timeout=15, check=True).stdout
-        output = subprocess.run(padding_command(settings), input=framed, capture_output=True,
+        output = subprocess.run(pad, input=framed, capture_output=True,
                                 timeout=15, check=True).stdout
         rgb = subprocess.run(['ffmpeg', '-v', 'error', '-i', 'pipe:0',
                               '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],

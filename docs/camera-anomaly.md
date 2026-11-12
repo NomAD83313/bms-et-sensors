@@ -87,7 +87,7 @@ sessions available for retry. History deletion does not delete learning sessions
 Event snapshots preserve the full-size JPEG corresponding to the analyzed frame
 without further resizing or recompression. Heatmap overlays use its full width and height;
 their effective detail still comes from the selected model's patch grid.
-Pi snapshot mode uses the selected capture resolution (including 3280x2464).
+Pi snapshot mode uses the selected capture resolution (including 3840x2160).
 The browser receives a separate 960x540 preview. Frames with other aspect ratios
 fit inside that canvas with black bars, preserving the complete field of view.
 Native Pi snapshot previews are resized lazily and cached; analysis and recording
@@ -561,10 +561,10 @@ trials are indicative and should be repeated for deployment-wide capacity planni
 
 The Pi camera page has **Pi camera capture** controls. Choose Video (the existing
 H.264 source) or Snapshots. Video shows resolution and FPS controls and applies
-automatic exposure. The IMX219 output presets are 640x480, 1280x720, 1920x1080,
-1640x1232 and 3280x2464. All use the same full-sensor readout to preserve the field
-of view. Video offers 5/10/15 FPS; older higher-rate video profiles are clamped to
-15 FPS. Cropped high-speed sensor modes are intentionally excluded.
+automatic exposure. The Sony IMX415 output presets are 16:9: 640x360, 1280x720,
+1920x1080, 2560x1440 and 3840x2160. All use the same full-sensor readout (the sensor has
+a single 3864x2192 mode at up to 15.75 FPS). Video offers 5/10/15 FPS; settings saved for
+another sensor (for example the former IMX219's 4:3 sizes) fall back to the defaults.
 Video preview remains capped at 10 FPS. Resolution is selectable in both modes.
 Snapshot mode shows resolution, a 100/200/500/1000 ms interval and Auto or a fixed exposure from 1/5000 s (0.2 ms) to 1/25 s (40 ms), including 1/2000 s (0.5 ms).
 The range applies to manual exposure; Auto remains available. Shutter values are
@@ -575,11 +575,14 @@ is a shared capture setting: it can be changed directly in either mode. Saved
 snapshot videos use the selected snapshot resolution. No settings change until
 Apply is clicked.
 
-The host fixes `rpicam-vid --mode 3280:2464:10:P --roi 0,0,1,1` for the installed
-IMX219, independently of output dimensions. To use another sensor, set
-`PI_CAMERA_SENSOR_MODE` in a systemd service override to its full-view mode.
-The ISP resizes the full image, with even-pixel rounding. Wide outputs contain
-black side bars to preserve aspect ratio. Direct full-aspect snapshots use native
+The host fixes `rpicam-vid --mode 3864:2192:10:P` for the installed IMX415,
+independently of output dimensions; `/boot/firmware/config.txt` loads it with
+`dtoverlay=imx415,cam0`. To use another sensor, set `PI_CAMERA_SENSOR_MODE` in a systemd
+service override to its full-view mode (and adjust the output presets in
+`capture_settings.py`). When the sensor's aspect ratio is within 2 % of the output's,
+`--roi` centre-crops the sensor to it: for 16:9 the IMX415 loses 0.8 % of its height and
+no second encoder is needed. Otherwise the ISP resizes the full image, with even-pixel
+rounding, and the output gets black side bars to preserve the aspect ratio. Direct (cropped or full-aspect) snapshots use native
 MJPEG; padded outputs pass uncompressed YUV in NUT through FFmpeg and encode once
 as JPEG (snapshots) or H.264 (video). NUT carries dimensions and timestamps and
 removes hardware row padding; bare YUV output must not be interpreted as tightly

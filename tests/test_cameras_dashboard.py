@@ -151,7 +151,7 @@ class RecordingControlTests(unittest.TestCase):
                         self.assertEqual(response.status,200)
                     dashboard.source.configure_capture.assert_called_with(video)
                     self.assertEqual(dashboard.anomaly_control.read_json(root/'anomaly/command.json')['action'], 'invalidate')
-                    invalid = dict(video, width=3280, height=2464, fps=30)
+                    invalid = dict(video, width=3840, height=2160, fps=30)
                     request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(invalid).encode())
                     with self.assertRaises(urllib.error.HTTPError) as error:
                         urllib.request.urlopen(request,timeout=3)
@@ -344,7 +344,7 @@ class PreviewFreshnessTests(unittest.TestCase):
 
 
     def test_pi_jpeg_encoding_is_parallel_without_decoder_frame_buffering(self):
-        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 3280, 'height': 2464}):
+        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 3840, 'height': 2160}):
             args, sized = dashboard.decoder_command('http://127.0.0.1:8084/stream.ts', False)
         self.assertFalse(sized)
         self.assertEqual(args[args.index('-threads') + 1], '1')
@@ -354,7 +354,7 @@ class PreviewFreshnessTests(unittest.TestCase):
         self.assertEqual(output[output.index('-thread_type') + 1], 'frame')
         self.assertEqual(output[output.index('-huffman') + 1], 'default')
         self.assertNotIn('scale=', output[output.index('-vf') + 1])
-        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 1640, 'height': 1232}):
+        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 1280, 'height': 720}):
             low, _ = dashboard.decoder_command('http://127.0.0.1:8084/stream.ts', False)
         low_output = low[low.index('-i') + 2:]
         self.assertEqual(low_output[low_output.index('-threads') + 1], '1')
