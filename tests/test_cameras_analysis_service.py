@@ -83,24 +83,6 @@ class CameraListTests(unittest.TestCase):
             self.service.load_cameras({})
 
 
-    def test_cameras_generated_from_the_registry_are_appended_and_cannot_reuse_an_id(self):
-        base = [camera('pi')]
-        with tempfile.TemporaryDirectory() as directory:
-            extra = Path(directory) / 'analysis-extra.json'
-            environment = {'CAMERA_ANALYSIS_CAMERAS': json.dumps(base), 'CAMERA_ANALYSIS_EXTRA_FILE': str(extra)}
-            self.assertEqual(self.service.load_cameras(environment), base, 'A missing file adds nothing')
-            extra.write_text('[]')
-            self.assertEqual(self.service.load_cameras(environment), base, 'An empty list adds nothing')
-            extra.write_text(json.dumps([camera('garage')]))
-            self.assertEqual([c['id'] for c in self.service.load_cameras(environment)], ['pi', 'garage'])
-            extra.write_text(json.dumps([camera('pi')]))
-            with self.assertRaises(ValueError):
-                self.service.load_cameras(environment)
-            extra.write_text('{')
-            with self.assertRaises(ValueError):
-                self.service.load_cameras(environment)
-
-
 class SchedulerTests(unittest.TestCase):
     def setUp(self):
         self.service = load_service()
@@ -290,32 +272,6 @@ class WorkerSettingsAndLockTests(unittest.TestCase):
             self.assertEqual((plain.interval, plain.confirmation_frames), (.5, 3))
             self.assertEqual((tuned.interval, tuned.confirmation_frames, tuned.sample_count), (.3, 1, 40))
             self.assertEqual(created, [{}, dict(top_k=5, jpeg_draft=1)])
-
-    def test_extra_camera_workers_inherit_the_same_global_recording_mode_as_media(self):
-        from app.cameras import camera_registry as registry
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            module = self.module(root, [])
-            service = load_service(module)
-            cameras = registry.validate_registry({'cameras': [
-                {'id': 'front', 'url_env': 'FRONT_URL'},
-                {'id': 'rear', 'url_env': 'REAR_URL', 'recording_mode': 'continuous'}]})
-            self.assertEqual(dict(registry.camera_environment(cameras[0]))['CAMERA_RECORDING_MODE'],
-                             '${CAMERA_RECORDING_MODE:-continuous}')
-            for global_mode in ('continuous', 'anomaly'):
-                entries = registry.analysis_entries(cameras)
-                for entry in entries:
-                    entry.update(data=str(root / global_mode / entry['id']),
-                                 control=str(root / global_mode / entry['id'] / 'control'))
-                with patch.dict(os.environ, {'CAMERA_RECORDING_MODE': global_mode}):
-                    workers, failed = service.build_workers(entries, factory=module.AnomalyWorker)
-                try:
-                    self.assertEqual(failed, [])
-                    self.assertEqual(workers['front'].recording_mode, global_mode)
-                    self.assertEqual(workers['rear'].recording_mode, 'continuous')
-                finally:
-                    for worker in workers.values():
-                        worker.close()
 
     def test_workers_log_under_their_camera_name(self):
         with tempfile.TemporaryDirectory() as directory:

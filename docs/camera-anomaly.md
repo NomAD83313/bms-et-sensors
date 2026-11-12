@@ -1,13 +1,11 @@
 # Camera unusual-view experiment
 
-The optional camera Compose profiles (`cameras`, `pi-camera`, `cameras-extra`) include the
-shared analysis worker `camera-analysis`, which analyses every camera in one process. Open
-`/cameras/` and use **Unusual view detection**. This is a visual appearance
-experiment, not a validated production-process alarm. Event-only recording
-is available with `CAMERA_RECORDING_MODE=anomaly`.
-In anomaly mode, **Start detection & recording** starts analysis and the video
-buffer together. **Pause detection & recording** stops both. Continuous recording
-keeps its separate recording controls; retention and live preview remain independent.
+The optional camera Compose profile `cameras` includes the shared analysis worker
+`camera-analysis`, which analyses every camera in one process. Open `/cameras/` and use
+**Unusual view detection**. This is a visual appearance experiment, not a validated
+production-process alarm. Cameras record event-only video:
+**Start detection & recording** starts analysis and the video buffer together, and
+**Pause detection & recording** stops both. Retention and live preview remain independent.
 
 ## Saved normal sessions
 
@@ -187,15 +185,15 @@ The CPU inference libraries, exported models and weights are installed during Do
 images are processed locally. Analysis does not receive the RTSP URL or Docker
 socket. Compose defaults to one CPU and requests a 768 MiB memory ceiling; local
 CPU settings can override the default, and effective limits depend on the host
-kernel/cgroup support. The workers are off in the default stack because they
-belong to the optional `cameras` and `pi-camera` profiles.
+kernel/cgroup support. The worker is off in the default stack because it
+belongs to the optional `cameras` profile.
 
 ## Runtime files and operations
 
-All learned data is local under `runtime/cameras/anomaly/`, ignored by Git:
+All learned data is local under each camera's `anomaly/` directory, ignored by Git:
 `baseline.npz`, `status.json`, `session.json`, `command.json`, `events/`, and `learning/`.
-Pi uses the same structure under `runtime/pi-camera/anomaly/`. Neither directory
-belongs in Git.
+The Pi camera uses `runtime/pi-camera/anomaly/`, every other camera
+`runtime/cameras-extra/<id>/anomaly/`. None of these belongs in Git.
 The pretrained backbone is in the image; normal-view memory is runtime state.
 A learned baseline and monitoring/paused selection survive worker restarts.
 Interrupted collection is cancelled rather than silently resuming with mixed views.
@@ -230,15 +228,14 @@ Settings in `.env.example`:
   `frames_skipped`, `frames_evaluated` and the recent `skip_ratio`.
 - `CAMERA_ANOMALY_NORMAL_FRAMES=60`: startup default, clamped to 20–120 successful
   frames. The 1–4 minute UI selection stores 30, 60, 90 or 120 frames for later runs.
-- `CAMERA_DASHBOARD_PORT=8082`: also configures the worker's internal preview URL.
 - `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: the only feature engine.
 - `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `numpy` (exact, slower fallback).
-- `CAMERA_ANOMALY_THREADS=1`: 1–4 worker threads. Pi can override this with
-  `PI_CAMERA_ANOMALY_THREADS`; both cameras share the analysis container's
+- `CAMERA_ANOMALY_THREADS=1`: 1–4 worker threads for cameras without their own model
+  settings in the registry; all cameras share the analysis container's
   `CAMERA_ANALYSIS_CPUS` quota (default 2 CPUs). More threads do not guarantee lower latency.
 - `CAMERA_ANOMALY_CPUSET=`: optional allowed CPUs for analysis containers.
-  `CAMERA_MEDIA_CPUSET=` applies to camera dashboards and recorders. Empty values
-  allow all available CPUs; Pi-specific overrides use the `PI_CAMERA_` prefix.
+  `CAMERA_MEDIA_CPUSET=` applies to camera-media (dashboards and recorders). Empty
+  values allow all available CPUs.
 - `CAMERA_ANOMALY_ONNX_PROVIDER=auto`: `auto`, `cpu`, or `xnnpack`. An explicitly
   requested unavailable XNNPACK provider fails instead of silently using CPU.
 - `CAMERA_ANOMALY_JPEG_DRAFT=0`: set to `1` to let Pillow decode a reduced JPEG
@@ -247,18 +244,18 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_TOP_K=1`: number of largest patch distances averaged into the
   frame score, from 1 to 20. Changing it invalidates the current baseline.
 - `CAMERA_ANOMALY_CORESET_SIZE=1024`: maximum normal-memory vectors, from 256 to
-  4096. Pi-only overrides use the `PI_CAMERA_ANOMALY_` prefix. A newly configured
-  coreset size takes effect at the next learning run.
+  4096. A camera's own model settings in the registry take precedence over
+  these defaults. A newly configured coreset size takes effect at the next learning run.
 - `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local` (installation template): ONNX
-  Runtime compiled with XNNPACK. `restart-cameras.sh` and `restart-pi-camera.sh`
-  build this wheel image automatically when it is missing; the one-time compile is
+  Runtime compiled with XNNPACK. `restart-cameras.sh`
+  builds this wheel image automatically when it is missing; the one-time compile is
   resource intensive on Pi. Set `onnx-cpu` to use the standard PyPI wheel instead
   (also the Compose default when the variable is unset). To force a rebuild, remove
   the image and rerun a camera start script. Manual equivalent:
 
 ```sh
 docker build -f Dockerfile.camera-onnx-xnnpack -t bms-onnx-xnnpack:local .
-CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose --profile pi-camera build camera-analysis
+CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose --profile cameras build camera-analysis
 ```
 
 Ordinary `CPUExecutionProvider` is not XNNPACK. See the
@@ -298,14 +295,13 @@ scene validation and representative production anomalies are still required.
 
 ## Event-only video recording
 
-Set `CAMERA_RECORDING_MODE=anomaly`, `CAMERA_EVENT_PRE_SEC=7` and
+Cameras record event-only video. Set `CAMERA_EVENT_PRE_SEC=7` and
 `CAMERA_EVENT_POST_SEC=10` in the private `.env`, then run
-`./scripts/restart-cameras.sh`. Continuous mode remains available as
-`CAMERA_RECORDING_MODE=continuous`.
+`./scripts/restart-cameras.sh`.
 
 The recorder uses one continuous RTSP connection and FFmpeg's segment muxer
 with a five-second target, without audio or transcoding. Completed segments
-are kept temporarily under `runtime/cameras/recordings/.buffer/`. Camera
+are kept temporarily under the camera's `recordings/.buffer/`. Camera
 keyframes determine actual segment boundaries and event videos may therefore
 include a few extra seconds. Reconnection and startup can still leave gaps;
 pre-event context is limited to footage already present in the buffer.
@@ -511,21 +507,18 @@ and lighting changes from the target scene.
 `CAMERA_ANOMALY_THREADS` selects 1–4 analysis threads (default 1), configuring
 FAISS and the selected ONNX provider. XNNPACK uses its own thread pool;
 the ONNX intra-operation pool stays at one thread when XNNPACK is selected.
-`CAMERA_ANOMALY_CPUS` sets the worker's Docker CPU quota (default 1.0).
-`PI_CAMERA_ANOMALY_THREADS` and `PI_CAMERA_ANOMALY_CPUS` override only the Pi worker.
+`CAMERA_ANOMALY_CPUS` sets the worker's Docker CPU quota (default 2.0).
+A camera's own `threads` model setting in the registry overrides the default thread count.
 Keep the CPU quota consistent with the thread count when benchmarking. More threads
 can add overhead and do not guarantee lower latency, especially with both cameras
 or other host workloads active. These settings do not require baseline learning.
 Worker status reports `inference_threads` alongside input size and cycle time.
 
 CPU affinity is separate from the CPU quota and library thread count.
-`CAMERA_ANOMALY_CPUSET` selects allowed CPUs for the Wi-Fi analysis worker;
-`CAMERA_MEDIA_CPUSET` selects allowed CPUs for its dashboard (including the live
-FFmpeg decoder) and recorder. The Pi services inherit these values unless
-`PI_CAMERA_ANOMALY_CPUSET` or `PI_CAMERA_MEDIA_CPUSET` is set. Defaults are empty
-to allow every available CPU, including on hosts with fewer cores.
-An unset or empty Pi override inherits the common mask. To bypass a nonempty
-common restriction for Pi only, explicitly list that host's available CPUs.
+`CAMERA_ANOMALY_CPUSET` selects allowed CPUs for the shared analysis worker;
+`CAMERA_MEDIA_CPUSET` selects allowed CPUs for camera-media (every camera's dashboard,
+including the live FFmpeg decoder, and recorder). Defaults are empty to allow every
+available CPU, including on hosts with fewer cores.
 
 For a four-core Pi 5, an optional starting point in the local `.env` is:
 
@@ -534,12 +527,12 @@ CAMERA_ANOMALY_CPUSET=2-3
 CAMERA_MEDIA_CPUSET=0-1
 ```
 
-This allows both detectors on cores 2–3 and both camera media pipelines on cores
-0–1. Both detectors still compete with each other. The masks do not reserve
+This keeps analysis on cores 2–3 and the camera media pipelines on cores
+0–1. All cameras' analysis still competes within the worker. The masks do not reserve
 exclusive cores: other host services and kernel work can still use them. Choose
 thread counts and quotas deliberately, then compare complete detection cycles
 under the same recording load; a split can slow media processing or analysis.
-Recreate the affected camera containers after changing affinity; no image rebuild
+Recreate the camera containers after changing affinity; no image rebuild
 or new baseline learning is needed.
 
 The native `bms-pi-camera.service` source and its `rpicam` children run outside
@@ -554,7 +547,7 @@ systemctl show bms-pi-camera.service -p AllowedCPUs -p EffectiveCPUs
 
 Check that `EffectiveCPUs=0-1`; parent cgroups can further restrict the requested
 mask. Without `--runtime`, systemd persists this property across reboots. It also
-survives `scripts/restart-pi-camera.sh`, which replaces the base unit but leaves
+survives `scripts/pi-camera-host-setup.sh`, which replaces the base unit but leaves
 systemd's property drop-ins intact. To clear this service-specific restriction,
 run `sudo systemctl set-property bms-pi-camera.service AllowedCPUs=` and check
 `EffectiveCPUs` again; the service then inherits the CPUs allowed by its parent.

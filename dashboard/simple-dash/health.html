@@ -359,7 +359,7 @@
       { id: 'cameras', name: 'Cameras', url: '/api/control/cameras', type: 'cameras', group: 'device', wide: true },
     ];
     const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana'];
-    // The controller supplies application controls or individual legacy camera controls.
+    // Camera control rows: the controller's application targets, or one row per camera.
     let cameraTargets = [];
     let cameraLabels = {};
     const targetDisplayNames = {
@@ -579,7 +579,7 @@
       if (id === 'messkluppe') {
         return `Mode: ${data.fake_mode ? 'fake' : 'real'} | Running: ${yn(!!data.collector_running)} | Influx: ${yn(!!data.influx_configured)} | Packets: ${data.packets_received ?? 0} | Writes: ${data.records_written ?? 0} | Errors: ${data.last_error || 'none'}`;
       }
-      if (id === 'cameras' || id === 'pi-camera' || id === 'camera') {
+      if (id === 'cameras' || id === 'camera') {
         const score = Number.isFinite(data.analysis_score) && Number.isFinite(data.analysis_threshold)
           ? ` | Score: ${data.analysis_score.toFixed(2)} / ${data.analysis_threshold.toFixed(2)}` : '';
         const quality = data.preview_quality;

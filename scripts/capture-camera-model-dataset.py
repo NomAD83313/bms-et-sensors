@@ -66,7 +66,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--phase', required=True, choices=('normal', 'challenge'))
-    parser.add_argument('--url', default='http://127.0.0.1:8082')
+    parser.add_argument('--url', default='http://127.0.0.1:8082/pi',
+                        help='Camera API base in camera-media: http://127.0.0.1:8082/<camera id>')
     parser.add_argument('--frames', type=int, required=True)
     parser.add_argument('--interval', type=float, default=.5)
     args = parser.parse_args()

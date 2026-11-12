@@ -3,7 +3,7 @@ services:
   camera-hub:
     container_name: camera-hub
     image: bluenviron/mediamtx:1.21.3
-    profiles: [camera-shared]
+    profiles: [cameras]
     network_mode: host
     restart: unless-stopped
     mem_limit: 128m

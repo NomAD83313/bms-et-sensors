@@ -559,232 +559,131 @@ Notes:
 
 ## Cameras (optional Docker profile)
 
-The shared camera workspace is available at `/cameras/`: add RTSP sources, select a
-camera, and start/stop its processes independently. Each camera keeps its own ROI,
-normal sessions, baseline and event recordings. Two camera containers serve the
-whole installation: `camera-media` and `camera-analysis`; adding cameras does not
-add containers. Separate per-camera dashboard/recorder processes remain inside
-`camera-media` for isolation, so this change alone is not a CPU/RAM optimization.
-System Health names the shared application **Cameras**; its Start/Stop/Restart
-controls the application containers. Use the Cameras workspace to control individual cameras.
+The camera workspace is available at `/cameras/`: add RTSP sources, select a camera, and
+start/stop it independently. Each camera keeps its own ROI, normal sessions, baseline and
+event recordings. Two containers serve the whole installation, in the Compose profile
+`cameras`; adding cameras does not add containers:
 
-Enable or restart the shared deployment with:
+- `camera-media` runs one recorder and one dashboard process per camera, serves the UI on
+  port 8082 (proxied by nginx at `/cameras/`) and owns the camera registry;
+- `camera-analysis` analyses every camera in one process.
+
+Build and start (or restart after an update) with:
 
 ```sh
-./scripts/restart-cameras-shared.sh
+./scripts/restart-cameras.sh
+./scripts/logs.sh camera-media
 ```
 
+The registry is the private runtime file `runtime/camera-manager/cameras.json` (mode 600;
+it holds RTSP credentials and is never tracked); `config/cameras.example.json` is its
+installer template. Cameras are added, edited and removed in the UI, and RTSP addresses
+never go into `.env`. Removing a camera keeps its data directory. Data lives under
+`runtime/pi-camera/` for the Pi camera and `runtime/cameras-extra/<id>/` for every other
+camera (ignored by Git). The script refuses to restart while a camera is learning, because
+a restart aborts learning.
+
+System Health shows one **Cameras** block with a line per camera. Its Start/Stop/Restart
+controls the application containers; individual cameras are started and stopped in the
+camera workspace (or as `cam-<id>` targets of service-controller). Start/Stop affects
+central processing, not a remote sensor's power. Stopping pauses detection; starting opens
+the camera workspace, where detection can be enabled again.
+
 To relay each remote RTSP source over one network connection, enable the optional
-shared MediaMTX hub:
+MediaMTX hub:
 
 ```sh
 ./scripts/restart-camera-hub.sh
 ```
 
-This adds one `camera-hub` container (three camera containers total). Recorder and
-preview read its local RTSP path, with no transcoding. The local CSI source bypasses
-the hub. Add cameras using their original RTSP URLs; the manager updates hub paths
-automatically. Managed RTSP sources produce at most five full-resolution analysis
-JPEGs per second, shared with browser preview; the original stream-copy recording
-keeps its source frame rate. This leaves CPU headroom for simultaneous event exports.
-The hub opens an upstream only while it has readers and closes it
-three seconds after the last reader leaves. Both RTSP and the management API bind
-to loopback. `config/camera-hub.example.json` is the tracked template; generated
-`runtime/camera-hub/mediamtx.yml` is private runtime state containing source credentials.
-The enabled marker makes camera lifecycle scripts retain the overlay, and Health's
-Cameras control starts/stops the hub with the media and analysis containers.
-
-The script preserves an existing Pi camera's data and running/stopped state. The
-private registry is `runtime/camera-manager/cameras.json`; the installer template
-is `config/cameras-shared.example.json`. Start/Stop affects central processing,
-not a remote sensor's power or publisher. Stopping pauses detection; starting opens
-the camera workspace, where detection can be enabled again. Capture controls are
-currently available only for the local CSI source. The old Thingino deployment
-is omitted from the new registry, with its saved files retained. See the
+This adds one `camera-hub` container. Recorder and preview read its local RTSP path, with
+no transcoding; the local CSI source bypasses the hub. Add cameras using their original
+RTSP URLs; the manager updates hub paths automatically. Managed RTSP sources produce at
+most five full-resolution analysis JPEGs per second, shared with browser preview; the
+original stream-copy recording keeps its source frame rate. The hub opens an upstream only
+while it has readers and closes it three seconds after the last reader leaves. Both RTSP
+and the management API bind to loopback. `config/camera-hub.example.json` is the tracked
+template; generated `runtime/camera-hub/mediamtx.yml` is private runtime state containing
+source credentials. The enabled marker `runtime/camera-hub/enabled` makes the camera
+scripts include the overlay, and Health's Cameras control starts/stops the hub with the
+media and analysis containers. See the
 [Zero 2 W migration and current implementation](docs/camera-zero2w-plan.md).
 
-The per-camera profiles below remain available for installations that have not
-enabled the shared workspace:
-
-The camera application from `bms-cameras` is included in `app/cameras`.
-`camera-recorder` records RTSP video with FFmpeg stream copy and no audio;
-`camera-dashboard` provides live preview, clip playback and downloads.
-Both services use the optional `cameras` profile and have no InfluxDB dependency.
-They use Linux host networking for direct access to cameras on the Pi AP;
-`CAMERA_DASHBOARD_PORT` controls the dashboard listening port.
-The image supports Raspberry Pi ARM64 and x86-64 through the Python/Debian base.
-
-Set `CAMERA_URL` in the private `.env` to your camera's RTSP URL, then run:
-
-```sh
-./scripts/restart-cameras.sh
-./scripts/logs.sh camera-recorder
-```
-
-Open `http://<host>/cameras/` or select Cameras under Services on the main dashboard.
-The main nginx proxies camera requests to the backend on port 8082.
-If changing `CAMERA_DASHBOARD_PORT`, also update both camera upstreams in
-`dashboard/nginx/default.conf` and reload nginx.
 The dashboard is available to reachable LAN clients without authentication.
 Credentials are never sent to the browser or application logs; local Docker
-administrators can inspect container environment and FFmpeg process arguments.
+administrators can inspect process arguments.
 
-Recordings default to `runtime/cameras/recordings` (ignored by Git).
-Set `CAMERA_RECORDING_DIR` to a dedicated SSD directory if available.
-The recorder writes video; the dashboard also has write access to delete
-completed recordings through its history controls. The analysis worker does not
-mount the recording directory.
-Defaults are 60-second clips, 24-hour retention and 10240 MiB of completed clips.
-Configure these with `CAMERA_CLIP_SECONDS`, `CAMERA_MAX_AGE_HOURS`, and
-`CAMERA_MAX_STORAGE_MB`. The current clip is additional to that budget.
-Limits are checked between clips. Connections restart between clips, so gaps
-are possible. Interrupted partial clips are discarded on recorder startup. Missing or empty
-segments in a recovered event are skipped; an expired event with no video is
-released so it cannot trap the recorder in a restart loop.
+### Recording
 
-Dashboard recording health combines the recorder heartbeat and newest completed
-clip (duration plus 60 seconds); a new session may initially wait for a clip. Container health checks verify
-HTTP availability separately from recording health.
-The main dashboard's Cameras link follows HTTP availability and remains active
-when recording or detection is paused; recorder health is shown inside Cameras.
-System Health also shows recording/detection state, baseline readiness, saved
-clip count and event windows. System Health shows one Cameras block with a line per
-camera and one control row per camera. Start/Stop/Restart of a camera manage its
-recorder and dashboard (`camera-recorder`, `camera-dashboard`) and make sure the shared
-analysis worker `camera-analysis` runs; Stop leaves that worker running because it also
-serves the other cameras. All controls are scoped to the controller's Compose project. They preserve the saved detection selection;
-routine detection/recording pause is managed on `/cameras/`. If the optional
-containers have not been created, run `./scripts/restart-cameras.sh` first.
+Recordings use FFmpeg stream copy without audio. Defaults are 60-second clips, 24-hour
+retention and 10240 MiB of completed clips per camera; configure these with
+`CAMERA_CLIP_SECONDS`, `CAMERA_MAX_AGE_HOURS` and `CAMERA_MAX_STORAGE_MB`.
+`PI_CAMERA_RECORDING_DIR` can move the Pi camera's recordings to a dedicated disk.
+Limits are checked between clips. Interrupted partial clips are discarded on recorder
+startup. Missing or empty segments in a recovered event are skipped; an expired event with
+no video is released so it cannot trap the recorder in a restart loop.
 
-When migrating from the standalone systemd installation, build the image first
-with `docker compose --profile cameras build camera-recorder camera-dashboard`.
-Then stop `bms-cameras` and `bms-camera-dashboard` before starting Docker on the
-same port or recording directory. Copy the RTSP URL privately into `.env`;
-existing clips can be retained by pointing `CAMERA_RECORDING_DIR` at their
-existing directory. Never run two recorders against the same directory.
-To stop the Docker camera services:
+Cameras record event-only video: normal video stays in a short buffer and is discarded;
+confirmed anomalies retain `CAMERA_EVENT_PRE_SEC=7` seconds before and
+`CAMERA_EVENT_POST_SEC=10` seconds after, rounded to camera keyframes. Repeated anomalies
+extend the event. Buffered video expires even if analysis is paused, learning or
+unavailable. **Start detection & recording** and **Pause detection & recording** control
+both analysis and the recording buffer. Learning stops the event buffer and restarts it
+with detection after success. Pausing finalizes any available event video without waiting
+for the remaining post-window. Recorder state uses a heartbeat; a missing heartbeat is shown
+as offline after 15 seconds, and after six seconds without video progress the recorder
+reports Connecting.
+
+Camera history controls provide Delete on video rows, Delete snapshot on event cards, and
+**Delete saved…** for all snapshots, all recordings, or both. Deletion requires
+confirmation and preserves the learned model, settings and active buffer.
+
+### Preview and detection
+
+Live preview uses a 960x540 browser canvas, with bars for other aspect ratios. The
+browser requests frames at up to 10 FPS, one request at a time, and pauses requests in
+hidden tabs. Learning and detection receive the full source JPEG and resize it directly to
+Model Input, so browser preview resolution does not limit analysis detail. Preview decoding
+rejects recognised corrupt packets/frames and suppresses analysis during decoder recovery;
+Cameras and System Health show decoder-error and excluded-preview-frame counters.
+
+**Unusual view detection** uses a lightweight PatchCore-style model (MobileNetV3 or
+MobileNetV4 ConvSmall ×0.5). Learn a normal view, then inspect anomaly scores and event
+snapshots. Applying a different model pauses detection/event recording and requires new
+normal-view learning. Visual analysis has a default minimum cycle interval of 0.2 seconds;
+the Confirmation menu selects 1–5 consecutive suspicious analysed frames (default 2).
+Normal-view learning collects 60 frames over approximately two minutes by default. All
+choices require scene-specific sensitivity validation. See
+[camera anomaly setup and limitations](docs/camera-anomaly.md).
+
+### Raspberry Pi CSI camera
+
+On Raspberry Pi OS with systemd, install the camera tools before running
+`restart-cameras.sh`; the script then registers the CSI camera as `pi` (on a new
+installation) and installs or updates its host source:
 
 ```sh
-docker compose --profile cameras stop camera-recorder camera-dashboard
+sudo apt-get install --no-install-recommends rpicam-apps-core rpicam-apps-encoder ffmpeg
+./scripts/restart-cameras.sh
 ```
 
-Local migration (2026-11-05): the Docker camera services use port 8082 and
-store recordings in `runtime/cameras/recordings` through the private `.env`.
-Existing clips were migrated from the standalone project, which has been removed.
-The former `bms-cameras` and `bms-camera-dashboard` systemd services are stopped
-and disabled; Docker `unless-stopped` now handles restart after host reboot.
-
-In continuous mode, Recording setup provides Start recording and Stop recording
-buttons. Stopping discards the unfinished continuous clip. In anomaly mode,
-**Start detection & recording** and **Pause detection & recording** control both
-analysis and the recording buffer; separate recording buttons are hidden.
-Learning stops the event buffer and restarts it with detection after success.
-Pausing finalizes any available event video without waiting for the remaining
-post-window. Saved clips and live preview remain available. Session settings
-survive restarts under `runtime/cameras/` (local runtime state). Recorder state uses a heartbeat;
-a missing heartbeat is shown as offline after 15 seconds.
-
-The recorder's text status refreshes every three seconds. After six seconds
-without video progress it reports Connecting. Pausing detection in anomaly mode
-shows the recorder as stopped. Live-preview connectivity is shown separately
-on the preview.
-
-Live preview uses a 960x540 browser canvas, with bars for other aspect ratios.
-Video preview generates 10 FPS JPEG. The browser requests frames
-at up to 10 FPS, one request at a time, and pauses requests in hidden tabs.
-Recording retains the original camera stream independently of preview FPS.
-Learning and detection receive the full source JPEG and resize it directly to
-Model Input. Browser preview resolution does not limit analysis detail. Upgrading
-from preview-based analysis requires one new normal-view learning run; old banks
-are kept on disk until successful learning replaces them.
-Preview decoding rejects recognised corrupt packets/frames and suppresses
-analysis during decoder recovery. Cameras and System Health show decoder-error
-and excluded-preview-frame counters. This adds about one preview frame of
-admission delay; correctly encoded camera-side visual artifacts can still trigger
-the detector. See the anomaly guide for diagnostics and filtering limits.
-
-The `cameras` profile also includes a local **Unusual view detection** experiment
-using a lightweight PatchCore-style model. Learn a normal view, inspect anomaly
-scores and event snapshots. In anomaly mode, analysis and event recording share
-one start/pause control.
-Both camera pages offer MobileNetV3 and MobileNetV4 ConvSmall ×0.5.
-Applying a different model pauses detection/event
-recording and requires new normal-view learning. Each camera keeps its own selection
-and strict baseline. All choices require scene-specific sensitivity validation.
-See [camera anomaly setup and limitations](docs/camera-anomaly.md).
-
-Event-only video is available with `CAMERA_RECORDING_MODE=anomaly` (enabled on
-this host). Normal video stays in a short buffer and is discarded; confirmed
-anomalies retain `CAMERA_EVENT_PRE_SEC=7` seconds before and
-`CAMERA_EVENT_POST_SEC=10` seconds after, rounded to camera keyframes. Repeated
-anomalies extend the event. Only confirmed anomaly windows are saved; other
-buffered video expires even if analysis is paused, learning or unavailable.
-Completed videos retain the existing video age/size limits.
-The library defaults to Events only; historical continuous footage is still
-accessible by clearing that filter. See the anomaly guide for operational details.
-
-Camera history controls provide Delete on video rows, Delete snapshot on event
-cards, and **Delete saved…** for all snapshots, all recordings, or both. Deletion
-requires confirmation and preserves the learned model, settings and active
-buffer. New events and pending video can appear after clearing saved history.
-
-Visual analysis has a default minimum cycle interval of 0.2 seconds; actual
-processing FPS depends on inference time and frame availability. The Confirmation
-menu selects 1–5 consecutive suspicious analyzed frames (initial default: 2).
-The analysis badge refreshes every 0.25 seconds; this is not the processing rate.
-Normal-view learning collects 60 frames over approximately two minutes by default.
-An isolated Pi 5 test at Model Input 1024×576 with XNNPACK and four threads measured
-2.24 processed FPS for Pi Camera and 2.10 for Wi-Fi; source configurations differed.
-See [the test conditions and results](docs/camera-resource-test.md#isolated-pi-5-measurement-2026-11-06).
-
-### Raspberry Pi CSI camera (second camera)
-
-A CSI camera can run alongside the existing RTSP camera, with its own preview,
-recordings, analysis baseline, controls and retention directory. On Raspberry Pi OS
-with systemd, install `rpicam-apps-core` and `rpicam-apps-encoder`, then run:
+`./scripts/pi-camera-host-setup.sh` installs or updates the host source alone; it restarts
+it only when its files changed. The host service `bms-pi-camera` opens the CSI camera once
+and shares a loopback-only MPEG-TS stream at `http://127.0.0.1:8084/stream.ts` in Video
+mode. Snapshot mode shares JPEG frames through `/snapshot.jpg` and encodes H.264 only when
+saving clips. Native host libcamera/rpicam libraries avoid container/kernel mismatches.
+Pi 5 uses libx264 software encoding in Video mode; installation defaults are 1280×720,
+15 fps, 2 Mbit/s, with one-second keyframe intervals. Saved capture settings may override
+these defaults. See the
+[Raspberry Pi camera software documentation](https://www.raspberrypi.com/documentation/accessories/camera-software.html).
+The host source starts capture on demand and releases the camera and encoder after the last
+consumer disconnects. Host source logs: `journalctl -u bms-pi-camera`. To stop the cameras
+completely:
 
 ```sh
-sudo apt-get install --no-install-recommends rpicam-apps-core rpicam-apps-encoder
-./scripts/restart-pi-camera.sh
-```
-
-Open `/cameras/` for the original camera and `/cameras/pi/` for the Pi camera;
-both pages have camera navigation links. The main dashboard also has a separate
-Raspberry Pi Camera tile with an HTTP availability indicator. The optional `pi-camera` Compose profile
-starts `pi-camera-recorder` and `pi-camera-dashboard`. One shared worker, `camera-analysis`
-(started by every camera profile), analyses all cameras.
-The existing camera services and `CAMERA_URL` are independent of this profile.
-
-The host service `bms-pi-camera` opens the CSI camera once and shares a loopback-only
-MPEG-TS stream at `http://127.0.0.1:8084/stream.ts` in Video mode. Snapshot mode
-shares JPEG frames through `/snapshot.jpg` and encodes H.264 only when saving clips.
-Native host libcamera/rpicam libraries avoid container/kernel mismatches. Pi 5
-uses libx264 software encoding in Video mode; installation defaults are
-1280×720, 15 fps, 2 Mbit/s, with one-second keyframe intervals. Saved capture
-settings may override these defaults. The current module label is Sony IMX219;
-set `PI_CAMERA_DESCRIPTION` when installing a different module.
-See the [Raspberry Pi camera software documentation](https://www.raspberrypi.com/documentation/accessories/camera-software.html).
-The recorder copies H.264 without encoding it again. Slow consumers disconnect
-and reconnect without holding up the camera or other consumers.
-
-Runtime data is isolated under `runtime/pi-camera/` (ignored by Git).
-`PI_CAMERA_RECORDING_DIR`, `PI_CAMERA_DASHBOARD_PORT` (8083) and
-`PI_CAMERA_RECORDING_MODE` (`continuous` or `anomaly`) configure the second camera.
-When unset or empty, the Pi camera follows `CAMERA_RECORDING_MODE`, so both
-cameras use the same recording controls in the shared frontend.
-Other recording and analysis limits use the existing `CAMERA_*` settings.
-If changing the dashboard port, update the `/cameras/pi/` nginx upstream too.
-System Health has independent Camera WiFI and Pi Camera Start/Stop/Restart
-controls. Each group controls only its own three containers. The Pi host source
-starts capture on demand and releases the camera and encoder after the last
-consumer disconnects; its lightweight systemd HTTP service remains available.
-Use the camera pages for recording/detection controls. Host source logs:
-`journalctl -u bms-pi-camera`. To stop the second camera completely:
-
-```sh
-docker compose --profile pi-camera stop pi-camera-recorder pi-camera-dashboard
+docker compose --profile cameras stop camera-media camera-analysis
 sudo systemctl disable --now bms-pi-camera
 ```
 
-Camera CPU/RAM comparison: see [the resource test procedure](docs/camera-resource-test.md)
+Camera CPU/RAM measurement: see [the resource test procedure](docs/camera-resource-test.md)
 and `./scripts/benchmark-cameras.py --help`.

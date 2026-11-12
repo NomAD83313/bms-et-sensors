@@ -22,9 +22,9 @@ try:
 except ImportError:
     from anomaly_worker import AnomalyWorker, WorkerLocked
 try:
-    from .camera_registry import CAMERA_ID
+    from .camera_manager import CAMERA_ID
 except ImportError:
-    from camera_registry import CAMERA_ID
+    from camera_manager import CAMERA_ID
 
 LOG = logging.getLogger('camera-analysis')
 OFFLINE_RETRY_SECONDS = 2.0
@@ -64,7 +64,7 @@ def parse_cameras(raw, allow_empty=False):
 
 
 def load_cameras(environment=None):
-    """The configured cameras plus those generated from the registry (CAMERA_ANALYSIS_EXTRA_FILE)."""
+    """The cameras from CAMERA_ANALYSIS_CONFIG (written by camera-media) or CAMERA_ANALYSIS_CAMERAS."""
     environment = os.environ if environment is None else environment
     path = environment.get('CAMERA_ANALYSIS_CONFIG')
     if path:
@@ -74,10 +74,6 @@ def load_cameras(environment=None):
         if not raw:
             raise ValueError('Set CAMERA_ANALYSIS_CAMERAS or CAMERA_ANALYSIS_CONFIG')
         cameras = parse_cameras(raw)
-    extra = environment.get('CAMERA_ANALYSIS_EXTRA_FILE')
-    if extra and Path(extra).is_file():
-        # Validate the union so an extra camera cannot reuse a configured id.
-        cameras = parse_cameras(cameras + parse_cameras(Path(extra).read_text(), allow_empty=True))
     return cameras
 
 

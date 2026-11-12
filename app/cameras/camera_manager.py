@@ -17,17 +17,19 @@ import uuid
 
 try:
     from .files import read_json, write_json
-    from .camera_registry import CAMERA_ID, MODEL_OPTIONS
     from .stream_hub import StreamHub
 except ImportError:
     from files import read_json, write_json
-    from camera_registry import CAMERA_ID, MODEL_OPTIONS
     from stream_hub import StreamHub
 
 LOG = logging.getLogger('camera-manager')
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / 'web'
+CAMERA_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,15}')
+# Camera IDs that would collide with routes of this server.
 RESERVED = {'api', 'view', 'manager', 'static'}
+# Per-camera PatchCoreLite options and their allowed ranges.
+MODEL_OPTIONS = {'jpeg_draft': (0, 1), 'top_k': (1, 20), 'coreset_size': (256, 4096), 'threads': (1, 4)}
 MAX_CAMERAS = 16
 ASSETS = {'fleet.js': 'application/javascript', 'fleet.css': 'text/css', 'style.css': 'text/css'}
 
@@ -112,7 +114,8 @@ class CameraRegistry:
         self.publish_analysis()
 
     def paths(self, identifier):
-        base = self.data_root / identifier if identifier in ('pi', 'wifi') else self.data_root / 'extra' / identifier
+        # The built-in Pi camera keeps its original directory; every other camera lives under extra/.
+        base = self.data_root / 'pi' if identifier == 'pi' else self.data_root / 'extra' / identifier
         return dict(base=base, control=base / 'control', anomaly=base / 'anomaly', recordings=base / 'recordings')
 
     def prepare(self, camera):
@@ -153,8 +156,8 @@ class CameraRegistry:
 
     def add(self, data):
         camera = validate_camera(data)
-        if camera['id'] == 'wifi' or (camera['id'] == 'pi' and not camera['capture_url']):
-            raise ValueError('This camera ID is reserved; choose another ID')
+        if camera['id'] == 'pi' and not camera['capture_url']:
+            raise ValueError('The ID pi is reserved for the built-in camera; choose another ID')
         with self.lock:
             if len(self.cameras) >= MAX_CAMERAS:
                 raise ValueError('Camera limit reached')

@@ -42,11 +42,10 @@ fi
 bms_ensure_camera_onnx_runtime
 
 echo ">>> Building camera images (no containers are started)..."
-"${COMPOSE[@]}" --profile cameras --profile pi-camera build \
-  camera-recorder camera-dashboard pi-camera-recorder pi-camera-dashboard camera-analysis
+"${COMPOSE[@]}" --profile cameras build camera-media camera-analysis
 
 echo "==========================================="
-echo " Camera setup finished. Start a camera with:"
-echo "   ./scripts/restart-cameras.sh      # RTSP camera (set CAMERA_URL in .env)"
-echo "   ./scripts/restart-pi-camera.sh    # Raspberry Pi CSI camera"
+echo " Camera setup finished. Start the cameras with:"
+echo "   ./scripts/restart-cameras.sh      # then add RTSP cameras at http://<host>/cameras/"
+echo "   (the Raspberry Pi CSI camera is registered automatically when rpicam-vid is installed)"
 echo "==========================================="

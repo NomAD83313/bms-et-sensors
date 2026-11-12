@@ -26,8 +26,8 @@ async function runCameraHealthTests(html) {
   // A fake network: the camera list plus each camera's dashboard status, by URL.
   const network = routes => url => (url in routes ? routes[url] : reply('', 404));
   const camera = (id, label, target, path) => ({id, label, target, path, status_url: path + 'api/status', services: {}});
-  const wifi = camera('wifi', 'Camera WiFi', 'cameras', '/cameras/');
-  const pi = camera('pi', 'Pi Camera', 'pi-camera', '/cameras/pi/');
+  const wifi = camera('wifi-camera', 'Camera WiFi', 'cam-wifi-camera', '/cameras/wifi-camera/');
+  const pi = camera('pi', 'Pi Camera', 'cam-pi', '/cameras/pi/');
   const garage = camera('garage', 'Garage', 'cam-garage', '/cameras/garage/');
   const listing = (cameras, extra = {}) => reply({success: true, cameras, manual_pauses: {}, ...extra});
   const base = {recording_mode: 'anomaly', baseline_ready: true, pre_seconds: 7, post_seconds: 10, clips: []};
@@ -54,7 +54,7 @@ async function runCameraHealthTests(html) {
     assert(element('st-cameras').textContent === badge, 'Incorrect camera badge for ' + recorder + '/' + detector);
     assert(element('st-cameras').className === 'status ' + level, 'Incorrect severity for ' + detector);
     const line = element('dt-cameras').children[0];
-    assert(line.children[0].textContent === 'Camera WiFi' && line.children[0].href === '/cameras/', 'Each camera links to its own application');
+    assert(line.children[0].textContent === 'Camera WiFi' && line.children[0].href === '/cameras/wifi-camera/', 'Each camera links to its own application');
     assert(line.children[1].textContent === badge && line.children[1].className === 'status ' + level, 'The camera line repeats its own badge');
     assert(line.children[1].tagName === 'A' && line.children[1].href === wifi.path, 'Every WiFi status opens the WiFi application');
     assert(line.children[1].attributes['aria-label'] === `Open Camera WiFi: ${badge}`, 'Status links identify the camera and state');
@@ -94,7 +94,7 @@ async function runCameraHealthTests(html) {
   // Service Control gets one row per camera, rebuilt when the camera list changes.
   const controlled = build(network({'/api/control/cameras': listing([wifi, pi, garage]), [wifi.status_url]: up, [pi.status_url]: up, [garage.status_url]: up}));
   await controlled.probe(card, new Map());
-  assert(controlled.cameraTargets().join() === 'cameras,pi-camera,cam-garage', 'Camera targets follow the list');
+  assert(controlled.cameraTargets().join() === 'cam-wifi-camera,cam-pi,cam-garage', 'Camera targets follow the list');
   const rows = element('controlRows').children;
   assert(rows.length === controlled.controllableTargets.length + 3, 'A control row for every camera');
   assert(rows[rows.length - 1].innerHTML.includes('data-target="cam-garage"') && rows[rows.length - 1].innerHTML.includes('>Garage<'), 'Extra cameras are controllable by label');
@@ -103,15 +103,15 @@ async function runCameraHealthTests(html) {
   assert(api.summarizeTargetState({recorder: 'running', dashboard: 'running', anomaly: 'exited'}, false).startsWith('partial'), 'Partial camera stacks must be visible');
 
   // Group status comes from /api/control/services; camera groups include the shared worker.
-  const payload = {services: {cameras: {'camera-recorder': 'running', 'camera-dashboard': 'running', 'camera-analysis': 'running'},
-    'pi-camera': {'pi-camera-recorder': 'exited', 'pi-camera-dashboard': 'exited', 'camera-analysis': 'running'},
+  const payload = {services: {'cam-wifi-camera': {'camera-media': 'running', 'camera-analysis': 'running'},
+    'cam-pi': {'camera-media': 'exited', 'camera-analysis': 'running'},
     redlab: {'redlab-collector': 'running'}}, manual_pauses: {}};
   const state = build(network({'/api/control/cameras': listing([wifi, pi]), [wifi.status_url]: up, [pi.status_url]: up,
     '/api/control/services': reply(payload)}));
   await state.probe(card, new Map());
   await state.refreshControlStates();
-  assert(element('ctrl-st-cameras').textContent.startsWith('state: running'), 'A fully running camera group is running');
-  assert(element('ctrl-st-pi-camera').textContent.startsWith('state: partial'), 'A stopped camera next to the running shared worker is partial');
+  assert(element('ctrl-st-cam-wifi-camera').textContent.startsWith('state: running'), 'A fully running camera is running');
+  assert(element('ctrl-st-cam-pi').textContent.startsWith('state: partial'), 'A stopped camera next to the running shared worker is partial');
   assert(!element('ctrl-st-redlab').textContent.includes('analysis'), 'Other targets never mention analysis');
 
   // Shared mode controls the application containers while retaining individual camera probes.

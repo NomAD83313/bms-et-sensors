@@ -4,15 +4,9 @@
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml)
-if [[ -f "${SCRIPT_DIR}/../runtime/camera-manager/enabled" ]]; then
-  COMPOSE+=(-f docker-compose.camera-shared.yml)
-fi
+# Optional RTSP relay for the cameras, enabled by scripts/restart-camera-hub.sh.
 if [[ -f "${SCRIPT_DIR}/../runtime/camera-hub/enabled" ]]; then
   COMPOSE+=(-f docker-compose.camera-hub.yml)
-fi
-# Extra cameras: recorder and dashboard services generated from runtime/cameras.json.
-if [[ -f "${SCRIPT_DIR}/../runtime/docker-compose.cameras.yml" ]]; then
-  COMPOSE+=(-f runtime/docker-compose.cameras.yml)
 fi
 DEFAULT_APP_BUILD_SERVICES=(mscl-collector redlab-collector graf-lite service-controller almemo-collector pyrometer-collector ap-control)
 OPTIONAL_APP_BUILD_SERVICES=(matter-collector)
@@ -24,7 +18,7 @@ source "${SCRIPT_DIR}/lib/setup-common.sh"
 bms_cd_project() {
   cd "${PROJECT_ROOT}"
   # Bind-mounted by Compose: create them as the current user, not as root.
-  mkdir -p runtime/camera-registry/nginx
+  mkdir -p runtime/camera-manager runtime/cameras-extra runtime/pi-camera
 }
 
 bms_build_services() {

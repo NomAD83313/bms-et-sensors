@@ -1,6 +1,7 @@
-"""Camera selection and aggregation must preserve comparable CPU totals."""
+"""The camera stack is measured as a whole: comparable CPU and memory totals per sample."""
 import importlib.util
 from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,18 +12,33 @@ spec.loader.exec_module(benchmark)
 
 
 class BenchmarkTests(unittest.TestCase):
-    def test_single_camera_summary_sums_simultaneous_components(self):
-        rows = [dict(camera='pi', sample=sample, cpu_percent=cpu, rss_mib=memory)
-                for sample, cpu, memory in [(0, 10, 20), (0, 30, 40), (1, 50, 60), (1, 5, 10)]]
+    def test_summary_sums_simultaneous_components(self):
+        rows = [dict(component=name, sample=sample, cpu_percent=cpu, rss_mib=memory)
+                for name, sample, cpu, memory in [('camera-media', 0, 10, 20), ('camera-analysis', 0, 30, 40),
+                                                  ('camera-media', 1, 50, 60), ('camera-analysis', 1, 5, 10)]]
         result = benchmark.summarize(rows)
-        self.assertEqual(set(result), {'pi'})
-        self.assertEqual(result['pi']['cpu_mean_percent'], 47.5)
-        self.assertEqual(result['pi']['cpu_peak_percent'], 55)
-        self.assertEqual(result['pi']['rss_mean_mib'], 65)
+        self.assertEqual(result['cpu_mean_percent'], 47.5)
+        self.assertEqual(result['cpu_peak_percent'], 55)
+        self.assertEqual(result['rss_mean_mib'], 65)
 
-    def test_wifi_selection_never_queries_pi_or_systemd(self):
-        with patch.object(benchmark, 'run', side_effect=['container', '123'] * 3) as run, \
-                patch.object(Path, 'read_text', return_value='0::/example\n'):
-            targets = benchmark.discover(['wifi'])
-        self.assertEqual([target[1] for target in targets], benchmark.SERVICES['wifi'])
-        self.assertTrue(all(call.args[0] == 'docker' for call in run.call_args_list))
+    def test_required_services_must_run_and_the_relay_is_optional(self):
+        def inspect(args, **_):
+            state = {'camera-media': 'true 11', 'camera-analysis': 'true 12'}.get(args[-1], '')
+            return subprocess.CompletedProcess(args, 0 if state else 1, stdout=state)
+
+        with patch.object(benchmark.subprocess, 'run', side_effect=inspect), \
+                patch.object(benchmark, 'cgroup_of', side_effect=lambda pid: Path(f'/cg/{pid}')), \
+                patch.object(benchmark, 'run') as host:
+            targets = benchmark.discover(include_pi_source=False)
+        self.assertEqual(targets, [('camera-media', Path('/cg/11')), ('camera-analysis', Path('/cg/12'))])
+        host.assert_not_called()
+
+        def stopped(args, **_):
+            return subprocess.CompletedProcess(args, 0, stdout='false 0')
+
+        with patch.object(benchmark.subprocess, 'run', side_effect=stopped), self.assertRaises(RuntimeError):
+            benchmark.discover(include_pi_source=False)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -4,13 +4,18 @@ Status: shared UI and two-container supervisor implemented, 2026-11-12. The opti
 MediaMTX relay is implemented in `docker-compose.camera-hub.yml`; enable it with
 `scripts/restart-camera-hub.sh`. It automatically relays registered RTSP cameras
 over one upstream per camera and leaves the local CSI source direct. The generated
-private runtime config reloads on camera additions. Enable the shared supervisor
-with `scripts/restart-cameras-shared.sh`. One page supports adding/selecting cameras
+private runtime config reloads on camera additions. Start the cameras with
+`scripts/restart-cameras.sh`. One page supports adding/selecting cameras
 and independently starting/stopping their processes. The hub is deployed for the
 current Thingino camera; no physical Zero node is deployed yet. The target is two
 or three remote CSI cameras on Zero 2 W nodes,
 with analysis and event storage on the current Pi 5. Thingino is not a future
 deployment requirement; generic RTSP input remains useful for the new nodes.
+
+The former layout (a recorder and a dashboard container per camera, the `cameras` and
+`pi-camera` profiles and the generated `runtime/cameras.json` registry) was removed on
+2026-11-12; `camera-media` and `camera-analysis` are the only camera deployment. The
+readiness table below records the state before that change.
 
 ## Current readiness
 
