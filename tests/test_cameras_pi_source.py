@@ -35,11 +35,14 @@ class InputTests(unittest.TestCase):
         self.assertNotIn('-err_detect', args)
         self.assertEqual(input_args('rtsp://camera/ch0')[1], 'tcp')
 
-    def test_pi_preview_keeps_buffered_loopback_input(self):
+    def test_pi_preview_bounds_decoder_frame_delay_and_keeps_short_probe(self):
         url = 'http://127.0.0.1:8084/stream.ts'
         args = preview_input_args(url)
         self.assertEqual(args[args.index('-fflags') + 1], '+discardcorrupt')
         self.assertNotIn('-max_delay', args)
+        self.assertEqual(args[args.index('-flags') + 1], 'low_delay')
+        self.assertEqual(args[args.index('-threads') + 1], '1')
+        self.assertLess(args.index('-threads'), args.index('-i'), 'Limit the input decoder, not just the JPEG encoder')
         # A short probe keeps first-frame latency below the preview watchdog timeout.
         self.assertEqual(args[args.index('-analyzeduration') + 1], '0')
         self.assertEqual(args[args.index('-probesize') + 1], '32768')
@@ -178,6 +181,17 @@ class ModeTests(unittest.TestCase):
             encoded = padding_command(dict(width=1920, height=1080, fps=15,
                                             capture_mode='video', bitrate=2000000))
             self.assertEqual(encoded[encoded.index('-g') + 1], '15')
+
+    def test_native_video_uses_rpicam_low_latency_without_changing_snapshots(self):
+        from app.cameras.capture_settings import validate
+        from app.cameras.pi_source import command
+        video = command(validate(dict(capture_mode='video', width=3280, height=2464, fps=10)))
+        self.assertIn('--low-latency', video)
+        self.assertEqual(video[video.index('--libav-video-codec') + 1], 'libx264')
+        self.assertIn('g=10', video[video.index('--libav-video-codec-opts') + 1])
+        snapshots = command(validate(dict(capture_mode='snapshots', width=3280, height=2464)))
+        self.assertNotIn('--low-latency', snapshots)
+        self.assertEqual(snapshots[snapshots.index('--codec') + 1], 'mjpeg')
 
     def test_all_output_sizes_keep_one_sensor_mode_and_fit_without_cropping(self):
         from app.cameras.capture_settings import validate

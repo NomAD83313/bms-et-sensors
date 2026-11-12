@@ -1,6 +1,6 @@
 # Camera instances: design for 3+ cameras
 
-Status: P1 is implemented; P2-P5 are planned. The two existing cameras (`cameras`
+Status: P1-P5 are implemented. The two existing cameras (`cameras`
 profile: RTSP/Wi-Fi, `pi-camera` profile: CSI on the host) must keep working unchanged
 at every step.
 
@@ -54,13 +54,19 @@ Everything else is already per instance through environment variables (`CAMERA_U
    proves two instances in one process keep separate files, commands, flags and preview
    URLs. The dashboard stays one process per camera.
 3. **One shared analysis worker.** A new service runs one process with one
-   `AnomalyWorker` per camera, scheduled round-robin. Each camera keeps its own
+   `AnomalyWorker` per camera, with at most one step in flight for each camera. Steps run
+   on a stable thread per camera: waiting for HTTP or rebuilding one baseline does not
+   stop another camera or the service heartbeat. Each camera keeps its own
    baseline, sessions, status and command files, so no data migration is needed: the
    existing `runtime/cameras/anomaly` and `runtime/pi-camera/anomaly` directories are
-   mounted side by side (`/anomaly/wifi`, `/anomaly/pi`). ONNX sessions are cached per
-   (encoder, input shape, provider, threads) so equal shapes share memory.
-   - Frame fetching uses short timeouts (2 s) so one unreachable camera cannot stall the
-     others; a failed camera reports `unavailable` exactly as today.
+   mounted side by side (`/anomaly/wifi`, `/anomaly/pi`). Each model retains its ONNX
+   session; the process shares the imported NumPy, ONNX and FAISS libraries.
+   - Frame fetching has a five-second timeout in a camera's own step. A failed camera
+     reports `unavailable`; other cameras keep running. Pending worker initialization
+     is also dispatched outside the scheduler's heartbeat thread.
+   - The container keeps the shared 2-CPU quota and cores 2-3. FAISS thread limits are
+     applied in the calling thread before each search. Concurrent heavy operations
+     still compete for that fixed CPU budget.
    - Per-camera `try/except` isolates failures; the loop never exits on a camera error.
 4. **Extra cameras are recorder + dashboard only.** A script
    (`scripts/add-camera.sh`) reads the registry and writes `runtime/docker-compose.cameras.yml`
@@ -90,9 +96,13 @@ Everything else is already per instance through environment variables (`CAMERA_U
    ```
 
    `id` is 1-16 lowercase letters, digits or dashes (not `wifi`, `pi`, `cameras`, `api`...).
-   `port` is optional (8085-8199, assigned automatically). `preview_path` is the optional
+   `port` is optional (8085-8199, assigned automatically; 8086 is reserved for InfluxDB).
+   Explicit reserved ports are rejected too. `preview_path` is the optional
    low-resolution substream used by the browser preview; `recording_mode` and `settings`
-   fall back to the global values.
+   fall back to the global values. Without a per-camera `recording_mode`, recorder,
+   dashboard and analysis worker all inherit `CAMERA_RECORDING_MODE` at container start.
+   The generated analysis list leaves that optional field unset instead of forcing
+   `continuous`; explicit camera overrides take priority.
 3. Run `scripts/cameras-apply.sh`. It validates the registry, writes
    `runtime/docker-compose.cameras.yml` (recorder and dashboard services
    `cam-<id>-recorder` / `cam-<id>-dashboard`, same image and options as the Wi-Fi camera),
@@ -147,7 +157,7 @@ per-camera cost further; it should land before the third camera.
 - Optional stream hub (go2rtc or MediaMTX) in front of the sources, so each camera is
   pulled once instead of by recorder, preview and analysis separately; it would be one
   more registry field (`url`) pointing at the hub.
-- The shared worker stretches the interval automatically when the round-robin cycle
-  exceeds the target.
+- A camera's effective interval is bounded by its own processing time and the shared
+  CPU budget; another camera's network timeout does not extend it.
 - Camera sources: RTSP (H.264 over Wi-Fi) for remote nodes; JPEG snapshots stay a
   local-CSI-only path.

@@ -1,18 +1,20 @@
 """Analysis for several cameras in one process (one NumPy/ONNX/FAISS runtime).
 
 Each camera keeps its own AnomalyWorker: own data and control directories, baseline,
-sessions, status and commands. Cameras are stepped round-robin by due time; an
-unreachable camera is retried slowly so it cannot starve the others.
+sessions, status and commands. Each camera has at most one step in flight; blocking
+network requests and training run independently from the other cameras.
 
 The cameras come from CAMERA_ANALYSIS_CAMERAS (a JSON list) or the file named by
 CAMERA_ANALYSIS_CONFIG. Every entry has: id, data, control, preview and optionally
 recording_mode and settings (interval_sec, confirm_frames, normal_frames, model).
 """
 import json
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 from pathlib import Path
 import sys
+import threading
 import time
 
 try:
@@ -28,6 +30,7 @@ LOG = logging.getLogger('camera-analysis')
 OFFLINE_RETRY_SECONDS = 2.0
 FAILURE_RETRY_SECONDS = 5.0
 START_RETRY_SECONDS = 10.0
+POLL_SECONDS = .05
 ALIVE_FILE = Path(os.environ.get('CAMERA_ANALYSIS_ALIVE_FILE', '/tmp/camera-analysis.alive'))
 
 
@@ -103,51 +106,104 @@ def build_workers(cameras, factory=AnomalyWorker, quiet=False):
 class Scheduler:
     """Step each worker when it is due; never let one camera delay or break the others."""
 
-    def __init__(self, workers, pending=(), factory=AnomalyWorker, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, workers, pending=(), factory=AnomalyWorker, clock=time.monotonic, sleep=time.sleep,
+                 executor=None):
         self.workers = dict(workers)
         self.pending, self.factory = list(pending), factory
-        self.clock, self.sleep = clock, sleep
+        self.clock = clock
+        self.wakeup = threading.Event()
+        self.sleep = self.wakeup.wait if sleep is time.sleep else sleep
         self.due = {name: 0.0 for name in self.workers}
         self.next_start = clock() + START_RETRY_SECONDS
+        # Keep a stable thread per camera so native allocator caches are reused.
+        # A separate initializer cannot consume an active camera's thread.
+        self.executor = executor
+        self.executors = {}
+        self.in_flight = {}
+        self.starting = None
+
+    def submit(self, name, function, *args, **kwargs):
+        if self.executor is not None:
+            executor = self.executor
+        else:
+            if name not in self.executors:
+                self.executors[name] = ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix=f'camera-analysis-{name or "init"}')
+            executor = self.executors[name]
+        future = executor.submit(function, *args, **kwargs)
+        future.add_done_callback(lambda _: self.wakeup.set())
+        return future
 
     def start_pending(self, now):
         """Retry cameras that were owned by another worker (for example a per-camera container)."""
+        if self.starting is not None:
+            if not self.starting.done():
+                return
+            started, self.pending = self.starting.result()
+            self.starting = None
+            for name, worker in started.items():
+                self.workers[name] = worker
+                self.due[name] = 0.0
+                LOG.info('Camera %s is now analysed by this service', name)
+            return
         if not self.pending or now < self.next_start:
             return
         self.next_start = now + START_RETRY_SECONDS
-        started, self.pending = build_workers(self.pending, self.factory, quiet=True)
-        for name, worker in started.items():
-            self.workers[name] = worker
-            self.due[name] = 0.0
-            LOG.info('Camera %s is now analysed by this service', name)
+        self.starting = self.submit(None, build_workers, self.pending, self.factory, quiet=True)
+        if self.starting.done():
+            self.start_pending(now)
+
+    def step_worker(self, name, worker):
+        """Run only on a pool thread; record the completion time for retry scheduling."""
+        try:
+            wait = worker.step()
+            if worker.state.get('state') == 'unavailable':
+                wait = max(wait, OFFLINE_RETRY_SECONDS)
+        except Exception:
+            LOG.exception('Camera %s failed; retrying', name)
+            wait = FAILURE_RETRY_SECONDS
+        return max(0.0, wait), self.clock()
+
+    def collect_steps(self):
+        for name, future in list(self.in_flight.items()):
+            if future.done():
+                wait, finished = future.result()
+                self.due[name] = finished + wait
+                del self.in_flight[name]
 
     def run_once(self):
-        """Step every due camera once; return how long to sleep until the next one is due."""
+        """Dispatch due cameras without waiting for network or model execution."""
         now = self.clock()
         self.start_pending(now)
+        self.collect_steps()
         for name in sorted(self.due, key=self.due.get):
-            if self.due[name] > now:
+            if name in self.in_flight or self.due[name] > now:
                 continue
-            worker = self.workers[name]
-            try:
-                wait = worker.step()
-                if worker.state.get('state') == 'unavailable':
-                    wait = max(wait, OFFLINE_RETRY_SECONDS)
-            except Exception:
-                LOG.exception('Camera %s failed; retrying', name)
-                wait = FAILURE_RETRY_SECONDS
-            self.due[name] = self.clock() + wait
-        if not self.due:
-            return START_RETRY_SECONDS
-        return max(0.0, min(self.due.values()) - self.clock())
+            self.in_flight[name] = self.submit(name, self.step_worker, name, self.workers[name])
+        self.collect_steps()
+        now = self.clock()
+        deadlines = [due for name, due in self.due.items() if name not in self.in_flight]
+        if self.in_flight or self.starting is not None:
+            deadlines.append(now + POLL_SECONDS)
+        elif self.pending:
+            deadlines.append(self.next_start)
+        return max(0.0, min(deadlines) - now) if deadlines else START_RETRY_SECONDS
+
+    def close(self):
+        for executor in ([self.executor] if self.executor is not None else self.executors.values()):
+            executor.shutdown(wait=True, cancel_futures=True)
 
     def run(self):
-        while True:
-            try:
-                ALIVE_FILE.touch()
-            except OSError:
-                pass
-            self.sleep(self.run_once())
+        try:
+            while True:
+                self.wakeup.clear()
+                try:
+                    ALIVE_FILE.touch()
+                except OSError:
+                    pass
+                self.sleep(self.run_once())
+        finally:
+            self.close()
 
 
 def main():

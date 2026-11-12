@@ -162,10 +162,27 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
 - A separate CPU worker reuses the existing preview decoder over local HTTP.
   It requires a JPEG less than 0.2 seconds old and reports unavailable on errors.
   Missing status heartbeats are reported offline instead of normal.
+- Pi Video uses one H.264 decoder shared by analysis and browser requests. Native
+  JPEGs retain source dimensions at up to 10 FPS. Above 1920x1080, JPEG encoding uses
+  two frame workers; smaller modes retain one worker to minimize delay. Pi JPEGs use
+  default Huffman tables: one encoder worker falls behind 8 MP capture,
+  while optimal per-frame Huffman tables add work without changing decoded pixels.
+  The browser's 960x540 resize runs outside the native-frame condition so it cannot
+  block the decoder or analysis. A decoder error during resizing rejects the result.
+  H.264 recording retains the selected source resolution and FPS; snapshot capture
+  and analysis pixel geometry are unchanged.
 - Preview decoding uses FFmpeg's `discardcorrupt` and strict `err_detect=explode`.
-  Recognised decoder/transport errors clear the cached JPEG and suppress preview
-  frames until one second without another recognised error. A one-frame admission
-  delay (about 100 ms at 10 FPS) lets diagnostics invalidate queued images.
+  The loopback Pi video decoder uses one input thread and `low_delay`, avoiding the
+  frame queue introduced by automatic H.264 frame threading. Native H.264 capture
+  also enables rpicam's `--low-latency` preset; padded outputs already use the
+  separate FFmpeg encoder with `tune=zerolatency`.
+  Pi preview selects at most one source frame per 100 ms timestamp bucket, avoiding
+  the `fps` filter's lookahead and duplication of low-rate camera frames.
+  Recognised decoder/transport errors clear the cached JPEG and suppress analysis
+  frames until one second without another recognised error. RTSP has a
+  one-frame admission delay (about 100 ms at 10 FPS). Pi uses a 20 ms settling
+  window, checked every 20 ms, so diagnostics can invalidate pending images without
+  holding the last full-size JPEG until the next low-rate frame arrives.
   Analysis validates the frame's decoder token after inference, before adding a
   learning sample, updating confirmation, or creating an event marker.
   Errors reset the confirmation streak. Existing confirmed video windows remain
@@ -209,11 +226,15 @@ Settings in `.env.example`:
   by inference and decoder availability.
 - `CAMERA_ANOMALY_CONFIRM_FRAMES=2`: consecutive suspicious frames to confirm, clamped to 1–5.
 - `CAMERA_ANOMALY_FRAME_GATE=1`: skip the model while the analysed area is unchanged
-  (`0` disables it). A grayscale thumbnail of the ROI is compared with the last fully
+  (`0` disables it). A thumbnail in the selected RGB or grayscale mode is compared with the last fully
   evaluated frame; the previous score and heatmap are reused when the largest 8×8 block
-  difference is below `CAMERA_ANOMALY_GATE_BLOCK_DIFF=3.0` grey levels and the mean
+  difference is below `CAMERA_ANOMALY_GATE_BLOCK_DIFF=3.0` intensity units and the mean
   difference below `CAMERA_ANOMALY_GATE_MEAN_DIFF=1.2`. Blocks are used because a small
-  object barely moves a global average. A full evaluation is forced when the result is
+  object barely moves a global average. RGB compares the largest absolute channel
+  difference per pixel, so equal-luminance color changes remain visible. Partial blocks
+  at every ROI edge use their actual area. Reused scores require a valid decoder token
+  before confirmation or event handling, just like fully evaluated frames.
+  A full evaluation is forced when the result is
   older than `CAMERA_ANOMALY_GATE_MAX_AGE_SEC=2.0` seconds, after any command, on a
   source-geometry change, and for every frame while learning. Changes outside the ROI
   are ignored. Thresholds were measured on static Pi frames (consecutive block maxima
@@ -226,8 +247,8 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: the only feature engine.
 - `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `numpy` (exact, slower fallback).
 - `CAMERA_ANOMALY_THREADS=1`: 1–4 worker threads. Pi can override this with
-  `PI_CAMERA_ANOMALY_THREADS`; its CPU quota is controlled separately by
-  `PI_CAMERA_ANOMALY_CPUS`. More threads do not guarantee lower latency.
+  `PI_CAMERA_ANOMALY_THREADS`; both cameras share the analysis container's
+  `CAMERA_ANALYSIS_CPUS` quota (default 2 CPUs). More threads do not guarantee lower latency.
 - `CAMERA_ANOMALY_CPUSET=`: optional allowed CPUs for analysis containers.
   `CAMERA_MEDIA_CPUSET=` applies to camera dashboards and recorders. Empty values
   allow all available CPUs; Pi-specific overrides use the `PI_CAMERA_` prefix.

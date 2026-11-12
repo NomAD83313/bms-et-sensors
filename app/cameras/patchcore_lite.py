@@ -363,6 +363,9 @@ class PatchCoreLite:
             raise ValueError('Learn a normal view first')
         patches = np.ascontiguousarray(patches, dtype=np.float32)
         if self.distance_engine == 'faiss':
+            # OpenMP's thread limit belongs to the calling thread. Workers can run
+            # in scheduler threads, separate from the thread that constructed us.
+            self._faiss.omp_set_num_threads(self.inference_threads)
             if self._index is None or self._indexed_memory is not self.memory:
                 self._index = self._faiss.IndexFlatL2(self.feature_dimensions)
                 self._index.add(self.memory)

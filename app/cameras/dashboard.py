@@ -149,11 +149,20 @@ class LivePreview:
             if frame is None:
                 return (None, None) if with_token else None
             if not full_resolution and self.frame is self.original_frame:
-                if self.preview_source is not self.frame:
-                    self.preview_frame = browser_preview(self.frame)
-                    self.preview_source = self.frame
-                frame = self.preview_frame
-            return (frame, self.frame_token) if with_token else frame
+                if self.preview_source is self.frame:
+                    frame = self.preview_frame
+            token, generation = self.frame_token, self.guard.token
+            if full_resolution or self.frame is not self.original_frame or self.preview_source is self.frame:
+                return (frame, token) if with_token else frame
+        # Do not hold the decoder/analysis condition during a full-JPEG resize.
+        # A browser request must never stall the native frame reader.
+        resized = browser_preview(frame)
+        with self.condition:
+            if self.guard.token != generation or self.frame is None:
+                return (None, None) if with_token else None
+            if self.frame is frame:
+                self.preview_source, self.preview_frame = frame, resized
+            return (resized, token) if with_token else resized
 
     def quality(self):
         with self.condition:
@@ -231,7 +240,15 @@ class LivePreview:
         main_url = os.environ.get('CAMERA_URL')
         if not main_url:
             return
-        args, browser_substream = decoder_command(main_url, self.browser)
+        args, browser_sized = decoder_command(main_url, self.browser)
+        pi_video = source.is_pi_stream(main_url)
+
+        def admit(accepted):
+            # Called with the condition held, also by the Pi settling timer.
+            if accepted is not None:
+                self.frame, self.updated, self.frame_token = accepted
+                self.original_frame = None if browser_sized else self.frame
+                self.condition.notify_all()
 
         try:
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -239,12 +256,16 @@ class LivePreview:
             progress = [time.monotonic()]
             first_frame = [False]
             def watchdog():
-                while not watchdog_stop.wait(.25):
+                while not watchdog_stop.wait(.02 if pi_video else .25):
+                    now = time.monotonic()
+                    if pi_video:
+                        with self.condition:
+                            admit(self.guard.release(now))
                     # RTSP negotiation can take longer than a normal frame gap.
                     # Once frames arrive, stop a stalled decoder before its queue
                     # can turn into a multi-second browser delay.
                     timeout = 2 if first_frame[0] else 5
-                    if time.monotonic() - progress[0] > timeout:
+                    if now - progress[0] > timeout:
                         process.kill()
                         return
             errors = threading.Thread(target=self.read_errors, args=(process.stderr,), daemon=True)
@@ -258,11 +279,7 @@ class LivePreview:
                     if time.monotonic()-self.last_request >= 30 or source.capture_signature() != signature:
                         break
                     with self.condition:
-                        accepted = self.guard.feed(frame, time.monotonic())
-                        if accepted is not None:
-                            self.frame, self.updated, self.frame_token = accepted
-                            self.original_frame = None if browser_substream else self.frame
-                            self.condition.notify_all()
+                        admit(self.guard.feed(frame, time.monotonic()))
                 else:
                     self.decoder_error('stream_error')
             finally:
@@ -284,10 +301,23 @@ def decoder_command(main_url, browser):
     frame_filter = ('fps=10,scale=960:540:force_original_aspect_ratio=decrease:'
                     'force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
                     if browser_substream else 'fps=5' if separate_analysis_stream else 'fps=10')
+    pi_video = source.is_pi_stream(url)
+    jpeg_threads = '1'
+    if pi_video:
+        settings = source.capture_settings()
+        if settings['width'] * settings['height'] > 1920 * 1080:
+            jpeg_threads = '2'
+        # Select the first frame in each 100 ms bucket without fps's lookahead.
+        # Keep low-rate input sparse instead of duplicating stale camera frames.
+        frame_filter = (r'select=isnan(prev_selected_t)+'
+                        r'gt(floor(t*10+0.000001)\,floor(prev_selected_t*10+0.000001))')
     args = [*FFMPEG, '-loglevel', 'warning',
             *preview_input_args(url, transport='tcp', strict=not browser_substream),
             '-map', '0:v:0', '-an', '-vf', frame_filter,
-            '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3', '-threads', '1',
+            '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3',
+            '-threads', jpeg_threads,
+            *(['-thread_type', 'frame', '-huffman', 'default'] if pi_video else []),
+            *(['-fps_mode', 'vfr'] if pi_video else []),
             '-f', 'image2pipe', 'pipe:1']
     return args, browser_substream
 

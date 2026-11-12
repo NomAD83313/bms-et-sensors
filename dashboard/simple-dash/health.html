@@ -380,6 +380,7 @@
       almemo: '/almemo/',
       pyrometer: '/pyrometer/',
       messkluppe: '/messkluppe/',
+      cameras: '/cameras/',
     };
 
     const platformGrid = document.getElementById('platformGrid');
@@ -661,6 +662,10 @@
       const overall = overallCameraState(results);
       st.className = `status ${overall.level}`;
       st.textContent = overall.badge;
+      const activeCamera = results.find((result) => result.level === overall.level && result.badge === overall.badge)?.camera;
+      st.href = activeCamera?.path || '/cameras/';
+      st.title = `Open ${activeCamera?.label || activeCamera?.id || 'Cameras'}`;
+      st.setAttribute('aria-label', `${st.title}: ${overall.badge}`);
       dt.textContent = '';
       results.forEach((result) => {
         const line = document.createElement('div');
@@ -669,9 +674,12 @@
         name.className = 'cam-name';
         name.href = result.camera.path;
         name.textContent = result.camera.label || result.camera.id;
-        const badge = document.createElement('span');
+        const badge = document.createElement('a');
         badge.className = `status ${result.level}`;
         badge.textContent = result.badge;
+        badge.href = result.camera.path;
+        badge.title = `Open ${name.textContent}`;
+        badge.setAttribute('aria-label', `${badge.title}: ${result.badge}`);
         const text = document.createElement('span');
         text.className = 'cam-text';
         text.textContent = result.details;

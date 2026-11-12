@@ -9,8 +9,10 @@ commit `runtime/` or secrets).
 
 Per camera: `camera-recorder` (`recorder.py`) + `camera-dashboard` (`dashboard.py`, Flask
 UI in `web/`). All cameras share **one** analysis worker, `camera-analysis`
-(`analysis_service.py`), which round-robins the cameras through `AnomalyWorker`
-(`anomaly_worker.py`).
+(`analysis_service.py`), which schedules the cameras through `AnomalyWorker`
+(`anomaly_worker.py`). Each camera has at most one step in flight on its own pool
+thread, kept stable for native allocator reuse; network waits and training do not block
+the scheduler heartbeat or other cameras.
 
 | Camera | Compose services | Dashboard | Source |
 | --- | --- | --- | --- |
@@ -30,7 +32,8 @@ Design and decisions for multi-camera: `docs/camera-instances.md`. Detection det
 - `patchcore_lite.py` — PatchCore-style detector: NumPy + ONNX Runtime (XNNPACK) + FAISS.
   Baseline is `baseline.npz` (version-tagged; bump on format change). **No PyTorch at
   runtime** — it exists only in the `exporter` and `test` Docker stages.
-- `frame_gate.py` — skips analysis of unchanged frames (ROI thumbnail block diff). Imports
+- `frame_gate.py` — skips analysis of unchanged frames (RGB/grayscale ROI thumbnail block diff,
+  including partial edge blocks). Imports
   numpy/PIL lazily so host tests keep running.
 - `anomaly_worker.py` — one camera's analysis loop; exclusive `.worker.lock` per data dir
   (`WorkerLocked`), error log throttled to once per minute, legacy baseline migration.

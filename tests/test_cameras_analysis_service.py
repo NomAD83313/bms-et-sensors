@@ -1,9 +1,12 @@
 """Shared analysis service: camera list validation, scheduling and per-camera isolation."""
 import json
+from concurrent.futures import Future
 import logging
 import os
 from pathlib import Path
 import tempfile
+import threading
+import time
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -25,6 +28,20 @@ def load_service(worker_module=None):
 def camera(identifier='pi', **extra):
     return dict(id=identifier, data=f'/anomaly/{identifier}', control=f'/control/{identifier}',
                 preview='http://127.0.0.1:8083/api/live.jpg', **extra)
+
+
+class InlineExecutor:
+    """Deterministic execution for the scheduler's deadline and retry tests."""
+    def submit(self, function, *args, **kwargs):
+        future = Future()
+        try:
+            future.set_result(function(*args, **kwargs))
+        except Exception as error:
+            future.set_exception(error)
+        return future
+
+    def shutdown(self, **kwargs):
+        pass
 
 
 class CameraListTests(unittest.TestCase):
@@ -100,7 +117,7 @@ class SchedulerTests(unittest.TestCase):
         return types.SimpleNamespace(step=step, state=dict(state=state))
 
     def scheduler(self, **workers):
-        return self.service.Scheduler(workers, clock=lambda: self.now[0], sleep=Mock())
+        return self.service.Scheduler(workers, clock=lambda: self.now[0], sleep=Mock(), executor=InlineExecutor())
 
     def test_each_camera_is_stepped_when_due_and_the_sleep_reaches_the_next_one(self):
         scheduler = self.scheduler(a=self.worker('a', wait=.2, duration=.1), b=self.worker('b', wait=.1, duration=.05))
@@ -141,7 +158,8 @@ class SchedulerTests(unittest.TestCase):
             return self.worker(kwargs['name'], wait=.2)
 
         pending = [camera('late')]
-        scheduler = self.service.Scheduler({}, pending=pending, factory=factory, clock=lambda: self.now[0], sleep=Mock())
+        scheduler = self.service.Scheduler({}, pending=pending, factory=factory, clock=lambda: self.now[0],
+                                           sleep=Mock(), executor=InlineExecutor())
         self.assertEqual(scheduler.run_once(), self.service.START_RETRY_SECONDS)
         self.assertEqual(started, [])
         self.now[0] += self.service.START_RETRY_SECONDS + .1
@@ -158,7 +176,7 @@ class SchedulerTests(unittest.TestCase):
             raise self.service.WorkerLocked('owned elsewhere')
 
         scheduler = self.service.Scheduler({}, pending=[camera('busy')], factory=factory,
-                                           clock=lambda: self.now[0], sleep=Mock())
+                                           clock=lambda: self.now[0], sleep=Mock(), executor=InlineExecutor())
         for _ in range(3):
             self.now[0] += 4
             scheduler.run_once()
@@ -172,6 +190,70 @@ class SchedulerTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 scheduler.run()
         scheduler.sleep.assert_called_once_with(.2)
+
+
+class ConcurrentSchedulerTests(unittest.TestCase):
+    def test_blocked_training_or_network_step_does_not_stall_or_overlap_cameras(self):
+        for state in ('training', 'unavailable'):
+            with self.subTest(state=state):
+                service = load_service()
+                entered, release, healthy_ran = threading.Event(), threading.Event(), threading.Event()
+                calls = []
+                healthy_threads = set()
+
+                def blocked_step():
+                    calls.append('blocked')
+                    entered.set()
+                    if not release.wait(5):
+                        raise RuntimeError('Test did not release the camera')
+                    return .2
+
+                def healthy_step():
+                    calls.append('healthy')
+                    healthy_threads.add(threading.get_ident())
+                    healthy_ran.set()
+                    return .01
+
+                scheduler = service.Scheduler(dict(
+                    blocked=types.SimpleNamespace(step=blocked_step, state={'state': state}),
+                    healthy=types.SimpleNamespace(step=healthy_step, state={'state': 'normal'})))
+                try:
+                    scheduler.run_once()
+                    self.assertTrue(entered.wait(3))
+                    self.assertTrue(healthy_ran.wait(3), 'A blocked camera must not hold the healthy one')
+                    for _ in range(3):
+                        healthy_ran.clear()
+                        deadline = time.monotonic() + 3
+                        while not healthy_ran.is_set() and time.monotonic() < deadline:
+                            scheduler.run_once()
+                            healthy_ran.wait(.01)
+                        self.assertTrue(healthy_ran.is_set())
+                    self.assertEqual(calls.count('blocked'), 1, 'A camera must never have overlapping steps')
+                    self.assertEqual(len(healthy_threads), 1, 'Reuse the camera thread and its native allocator cache')
+                finally:
+                    release.set()
+                    scheduler.close()
+
+    def test_slow_pending_initialization_does_not_block_active_cameras(self):
+        service = load_service()
+        entered, release, healthy_ran = threading.Event(), threading.Event(), threading.Event()
+
+        def factory(**kwargs):
+            entered.set()
+            release.wait(5)
+            return types.SimpleNamespace(step=lambda: .2, state={'state': 'normal'})
+
+        scheduler = service.Scheduler(dict(healthy=types.SimpleNamespace(
+            step=lambda: healthy_ran.set() or .2, state={'state': 'normal'})),
+            pending=[camera('late')], factory=factory)
+        scheduler.next_start = 0
+        try:
+            scheduler.run_once()
+            self.assertTrue(entered.wait(3))
+            self.assertTrue(healthy_ran.wait(3))
+        finally:
+            release.set()
+            scheduler.close()
 
 
 class WorkerSettingsAndLockTests(unittest.TestCase):
@@ -208,6 +290,32 @@ class WorkerSettingsAndLockTests(unittest.TestCase):
             self.assertEqual((plain.interval, plain.confirmation_frames), (.5, 3))
             self.assertEqual((tuned.interval, tuned.confirmation_frames, tuned.sample_count), (.3, 1, 40))
             self.assertEqual(created, [{}, dict(top_k=5, jpeg_draft=1)])
+
+    def test_extra_camera_workers_inherit_the_same_global_recording_mode_as_media(self):
+        from app.cameras import camera_registry as registry
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = self.module(root, [])
+            service = load_service(module)
+            cameras = registry.validate_registry({'cameras': [
+                {'id': 'front', 'url_env': 'FRONT_URL'},
+                {'id': 'rear', 'url_env': 'REAR_URL', 'recording_mode': 'continuous'}]})
+            self.assertEqual(dict(registry.camera_environment(cameras[0]))['CAMERA_RECORDING_MODE'],
+                             '${CAMERA_RECORDING_MODE:-continuous}')
+            for global_mode in ('continuous', 'anomaly'):
+                entries = registry.analysis_entries(cameras)
+                for entry in entries:
+                    entry.update(data=str(root / global_mode / entry['id']),
+                                 control=str(root / global_mode / entry['id'] / 'control'))
+                with patch.dict(os.environ, {'CAMERA_RECORDING_MODE': global_mode}):
+                    workers, failed = service.build_workers(entries, factory=module.AnomalyWorker)
+                try:
+                    self.assertEqual(failed, [])
+                    self.assertEqual(workers['front'].recording_mode, global_mode)
+                    self.assertEqual(workers['rear'].recording_mode, 'continuous')
+                finally:
+                    for worker in workers.values():
+                        worker.close()
 
     def test_workers_log_under_their_camera_name(self):
         with tempfile.TemporaryDirectory() as directory:

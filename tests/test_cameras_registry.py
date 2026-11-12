@@ -20,7 +20,7 @@ class ValidationTests(unittest.TestCase):
             entry('garage'), entry('yard', port=8090, recording_mode='anomaly', preview_path='/ch1',
                                   settings=dict(interval_sec=.3, model=dict(top_k=5, jpeg_draft=1))),
             dict(id='shed', url_env='CAMERA_SHED_URL')]))
-        self.assertEqual([c['port'] for c in cameras], [8085, 8090, 8086])
+        self.assertEqual([c['port'] for c in cameras], [8085, 8090, 8087])
         self.assertEqual(cameras[2]['label'], 'shed')
         self.assertEqual(cameras[1]['settings']['model'], dict(top_k=5, jpeg_draft=1))
         self.assertEqual(registry.validate_registry(dict(cameras=[])), [])
@@ -41,6 +41,7 @@ class ValidationTests(unittest.TestCase):
             'url instead of variable': dict(cameras=[dict(id='garage', url_env='rtsp://user:pw@10.0.0.2/ch0')]),
             'port too low': dict(cameras=[entry(port=8083)]),
             'port used by the stack': dict(cameras=[entry(port=8082)]),
+            'port used by influxdb': dict(cameras=[entry(port=8086)]),
             'duplicate port': dict(cameras=[entry('a', port=8090), entry('b', port=8090)]),
             'bad preview path': dict(cameras=[entry(preview_path='ch1')]),
             'bad recording mode': dict(cameras=[entry(recording_mode='always')]),
@@ -56,7 +57,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_automatic_ports_skip_ports_chosen_by_later_entries(self):
         cameras = registry.validate_registry(dict(cameras=[entry('a'), entry('b', port=8085)]))
-        self.assertEqual([c['port'] for c in cameras], [8086, 8085])
+        self.assertEqual([c['port'] for c in cameras], [8087, 8085])
 
 
 class RenderingTests(unittest.TestCase):
@@ -96,7 +97,7 @@ class RenderingTests(unittest.TestCase):
         listed = registry.analysis_entries(cameras)
         self.assertEqual(listed[1], dict(id='yard', data='/anomaly/yard', control='/control/yard',
                                          preview='http://127.0.0.1:8090/api/live.jpg', recording_mode='anomaly'))
-        self.assertEqual(listed[0]['recording_mode'], 'continuous')
+        self.assertNotIn('recording_mode', listed[0], 'Inherit the same runtime global as the recorder')
         conf = registry.render_nginx(cameras)
         self.assertIn('location /cameras/garage/ {', conf)
         self.assertIn('proxy_pass http://host.docker.internal:8085;', conf)

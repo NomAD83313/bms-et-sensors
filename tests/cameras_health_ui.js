@@ -2,9 +2,10 @@
 async function runCameraHealthTests(html) {
   const assert = (condition, message) => { if (!condition) throw Error(message); };
   const elements = new Map();
-  const makeElement = () => {
-    const el = {className: '', href: '', children: [], _text: '', _html: '',
+  const makeElement = (tag = 'div') => {
+    const el = {tagName: tag.toUpperCase(), className: '', href: '', children: [], attributes: {}, _text: '', _html: '',
       appendChild(child) { this.children.push(child); return child; },
+      setAttribute(name, value) { this.attributes[name] = String(value); },
       addEventListener() {}, querySelectorAll() { return []; }};
     Object.defineProperty(el, 'textContent', {get() { return this._text; }, set(value) { this._text = String(value); this.children = []; }});
     Object.defineProperty(el, 'innerHTML', {get() { return this._html; }, set(value) { this._html = String(value); this.children = []; }});
@@ -14,7 +15,7 @@ async function runCameraHealthTests(html) {
     if (!elements.has(id)) elements.set(id, makeElement());
     return elements.get(id);
   };
-  const document = {getElementById: element, createElement: () => makeElement()};
+  const document = {getElementById: element, createElement: tag => makeElement(tag)};
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const build = fetchImplementation => new Function('document', 'window', 'fetch', 'setTimeout', 'clearTimeout', 'setInterval', 'AbortController',
     script + '\nreturn {services, controllableTargets, probe, summarizeTargetState, refreshControlStates, cameraTargets: () => cameraTargets};')(
@@ -55,6 +56,8 @@ async function runCameraHealthTests(html) {
     const line = element('dt-cameras').children[0];
     assert(line.children[0].textContent === 'Camera WiFi' && line.children[0].href === '/cameras/', 'Each camera links to its own application');
     assert(line.children[1].textContent === badge && line.children[1].className === 'status ' + level, 'The camera line repeats its own badge');
+    assert(line.children[1].tagName === 'A' && line.children[1].href === wifi.path, 'Every WiFi status opens the WiFi application');
+    assert(line.children[1].attributes['aria-label'] === `Open Camera WiFi: ${badge}`, 'Status links identify the camera and state');
     assert(line.children[2].textContent.includes('7s before / 10s after'), 'Event windows must appear in the camera line');
   }
 
@@ -66,12 +69,15 @@ async function runCameraHealthTests(html) {
   const lines = element('dt-cameras').children;
   assert(lines.length === 4, 'One line per camera plus the analysis note');
   assert(lines.slice(0, 3).map(line => line.children[0].textContent).join() === 'Camera WiFi,Pi Camera,Garage', 'Cameras keep the controller order');
+  assert(lines.slice(0, 3).every((line, index) => line.children[1].tagName === 'A' && line.children[1].href === [wifi, pi, garage][index].path), 'Each colored badge opens its own camera');
   assert(element('dt-cameras').children[3].textContent === 'Analysis: one shared worker for all cameras', 'The shared analysis worker is named');
 
   await build(network({...routes, [pi.status_url]: status('saving_event', 'anomaly')})).probe(card, new Map());
   assert(element('st-cameras').textContent === 'anomaly' && element('st-cameras').className === 'status warn', 'An anomaly on any camera is the group state');
+  assert(element('st-cameras').href === pi.path, 'The group badge opens the camera responsible for its state');
   await build(network({...routes, [garage.status_url]: reply('', 502)})).probe(card, new Map());
   assert(element('st-cameras').textContent === 'down' && element('st-cameras').className === 'status err', 'A failed camera makes the group down');
+  assert(element('st-cameras').href === garage.path, 'A failed camera is the group badge destination');
   assert(element('dt-cameras').children[2].children[1].textContent === 'down' && element('dt-cameras').children[0].children[1].textContent === 'up', 'Other cameras keep their own badge');
   await build(network({...routes, '/api/control/cameras': listing([wifi, pi, garage], {manual_pauses: {'cam-garage': {reason: 'manual_stop'}}})})).probe(card, new Map());
   assert(element('st-cameras').textContent === 'paused' && element('st-cameras').className === 'status warn', 'A user-stopped camera is shown as paused, not as a failure');

@@ -71,7 +71,7 @@ def command(settings=None):
     elif snapshots:
         args += ['--codec', 'mjpeg', '--quality', '85']
     else:
-        args += ['--codec', 'libav', '--libav-video-codec', 'libx264',
+        args += ['--codec', 'libav', '--low-latency', '--libav-video-codec', 'libx264',
                  '--libav-video-codec-opts',
                  'preset=ultrafast;tune=zerolatency;g=' + str(math.ceil(fps)),
                  '--libav-format', 'mpegts', '--bitrate', str(settings['bitrate'])]

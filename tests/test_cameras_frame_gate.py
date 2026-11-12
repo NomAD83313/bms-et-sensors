@@ -51,7 +51,7 @@ class FrameGateTests(unittest.TestCase):
         return thumbnail
 
     def test_thumbnail_is_a_small_grayscale_view_of_the_roi_only(self):
-        thumbnail, source = FrameGate.thumbnail(scene(), ROI)
+        thumbnail, source = FrameGate.thumbnail(scene(), ROI, 'grayscale')
         self.assertEqual(source, (640, 480))
         self.assertEqual(thumbnail.dtype, np.uint8)
         self.assertEqual(thumbnail.shape[1], 192)
@@ -59,6 +59,39 @@ class FrameGateTests(unittest.TestCase):
         outside_changed = scene(box=(0, 0, 100, 480, 150))
         np.testing.assert_array_equal(FrameGate.thumbnail(outside_changed, ROI)[0],
                                       FrameGate.thumbnail(scene(box=(0, 0, 100, 480, 0)), ROI)[0])
+
+    def test_equal_luminance_color_changes_are_evaluated_in_rgb(self):
+        def jpeg(color):
+            stream = io.BytesIO()
+            Image.new('RGB', (256, 256), color).save(stream, format='JPEG', quality=100, subsampling=0)
+            return stream.getvalue()
+        red, green = jpeg((255, 0, 0)), jpeg((0, 130, 0))
+        gate = self.gate()
+        self.remember(gate, red, roi=None)
+        self.assertIsNone(gate.reusable(gate.thumbnail(green, None)))
+        np.testing.assert_array_equal(gate.thumbnail(red, None, 'grayscale')[0],
+                                      gate.thumbnail(green, None, 'grayscale')[0])
+
+    def test_partial_edge_blocks_keep_their_actual_area(self):
+        for height, width in [(108, 192), (108, 191), (4, 3)]:
+            for color in (False, True):
+                with self.subTest(size=(height, width), rgb=color):
+                    shape = (height, width, 3) if color else (height, width)
+                    base = np.zeros(shape, dtype=np.uint8)
+                    changed = base.copy()
+                    changed[-1, -1] = 255
+                    mean, largest = block_metrics(base, changed)
+                    edge_area = ((height - 1) % BLOCK + 1) * ((width - 1) % BLOCK + 1)
+                    self.assertAlmostEqual(mean, 255 / (height * width))
+                    self.assertAlmostEqual(largest, 255 / edge_area)
+
+    def test_bottom_strip_anomaly_forces_a_new_evaluation(self):
+        base = np.zeros((108, 192), dtype=np.uint8)
+        changed = base.copy()
+        changed[104:108, 80:88] = 255
+        gate = self.gate()
+        gate.remember((base, (1920, 1080)), ('score', 'heatmap'))
+        self.assertIsNone(gate.reusable((changed, (1920, 1080))))
 
     def test_undecodable_or_missing_frames_have_no_thumbnail(self):
         self.assertIsNone(FrameGate.thumbnail(b'not a jpeg', ROI))
@@ -251,6 +284,21 @@ class WorkerFrameGateTests(unittest.TestCase):
                 self.analyze(worker)
             worker.validate_frame_token = Mock()
             self.assertFalse(self.analyze(worker)['frame_skipped'])
+
+    def test_invalid_tokens_cannot_reuse_scores_or_advance_event_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker, calls, frames = self.build(Path(directory))
+            frames.append(scene())
+            self.analyze(worker)
+            worker.validate_frame_token = Mock(side_effect=ValueError('Preview frame invalidated'))
+            worker.monitor_frame = Mock()
+            before = worker.gate.skipped
+            with self.assertRaises(ValueError):
+                self.analyze(worker)
+            worker.validate_frame_token.assert_called_once()
+            worker.monitor_frame.assert_not_called()
+            self.assertEqual(worker.gate.skipped, before)
+            self.assertEqual(calls, ['features', 'score'])
 
 
 if __name__ == '__main__':

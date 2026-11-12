@@ -28,7 +28,7 @@ ENVIRONMENT_NAME = re.compile(r'[A-Z][A-Z0-9_]{0,63}')
 # Names taken by the hand-written cameras and by routes of the stack.
 RESERVED_IDS = frozenset({'wifi', 'pi', 'cameras', 'pi-camera', 'analysis', 'api', 'probe'})
 FIRST_PORT, LAST_PORT = 8085, 8199
-RESERVED_PORTS = frozenset({8082, 8083, 8084})
+RESERVED_PORTS = frozenset({8082, 8083, 8084, 8086})  # InfluxDB also publishes a host port.
 RECORDING_MODES = ('continuous', 'anomaly')
 MODEL_OPTIONS = {'jpeg_draft': (0, 1), 'top_k': (1, 20), 'coreset_size': (256, 4096), 'threads': (1, 4)}
 ENTRY_KEYS = {'id', 'label', 'url_env', 'port', 'preview_path', 'recording_mode', 'settings'}
@@ -169,8 +169,9 @@ def analysis_entries(cameras):
     result = []
     for entry in cameras:
         item = dict(id=entry['id'], data=f'/anomaly/{entry["id"]}', control=f'/control/{entry["id"]}',
-                    preview=f'http://127.0.0.1:{entry["port"]}/api/live.jpg',
-                    recording_mode=entry.get('recording_mode') or 'continuous')
+                    preview=f'http://127.0.0.1:{entry["port"]}/api/live.jpg')
+        if entry.get('recording_mode'):
+            item['recording_mode'] = entry['recording_mode']
         if entry.get('settings'):
             item['settings'] = entry['settings']
         result.append(item)

@@ -598,9 +598,10 @@ class AnomalyWorker:
         state['fetch_ms'] = fetch_ms
         thumbnail = None
         if self.monitoring and not self.learning and self.gate.enabled:
-            thumbnail = self.gate.thumbnail(jpeg, self.selected_roi)
+            thumbnail = self.gate.thumbnail(jpeg, self.selected_roi, self.model.color_mode)
             reused = self.gate.reusable(thumbnail)
             if reused is not None:
+                self.validate_frame_token(token)
                 self.gate.count(skipped=True)
                 state.update(self.last_metrics, frame_skipped=True)
                 self.monitor_frame(state, jpeg, *reused)

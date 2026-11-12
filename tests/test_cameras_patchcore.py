@@ -166,6 +166,25 @@ class PatchMemoryTests(unittest.TestCase):
             np.testing.assert_allclose(actual_heatmap, expected_heatmap, rtol=1e-5, atol=1e-5)
             self.assertAlmostEqual(actual_score, expected_score, places=4)
 
+    def test_faiss_thread_limit_applies_in_the_thread_running_the_search(self):
+        from concurrent.futures import ThreadPoolExecutor
+        try:
+            import faiss
+        except ImportError:
+            self.skipTest('Requires faiss-cpu')
+        model = PatchCoreLite(distance_engine='faiss', threads=1)
+        model.memory = np.zeros((4, model.feature_dimensions), dtype=np.float32)
+        width, height = heatmap_dimensions(*input_dimensions(model.input_size), model.model_key)
+        patches = np.zeros((width * height, model.feature_dimensions), dtype=np.float32)
+
+        def search():
+            faiss.omp_set_num_threads(3)
+            model.score(patches)
+            return faiss.omp_get_max_threads()
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            self.assertEqual(executor.submit(search).result(timeout=5), 1)
+
     def test_grayscale_decodes_luminance_and_separates_baselines(self):
         jpeg = roi_jpeg()
         roi = dict(x=.25, y=.25, width=.5, height=.5)

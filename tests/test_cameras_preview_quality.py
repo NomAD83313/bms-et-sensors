@@ -43,11 +43,50 @@ class DecodeGuardTests(unittest.TestCase):
         self.assertTrue(guard.recovering(11.5))
         self.assertFalse(guard.recovering(11.9))
 
+    def test_timed_admission_does_not_wait_for_the_next_low_rate_frame(self):
+        guard = DecodeGuard()
+        self.assertIsNone(guard.feed(b'first', 10))
+        self.assertIsNone(guard.release(10.01))
+        self.assertEqual(guard.release(10.03), (b'first', 10, guard.token))
+        self.assertIsNone(guard.release(10.04), 'A settled frame is admitted only once')
+
+    def test_decoder_error_cancels_pending_timed_admission(self):
+        guard = DecodeGuard()
+        guard.feed(b'damaged', 10)
+        guard.note_error('decode_error', 10.01, 100)
+        self.assertIsNone(guard.release(10.03))
+        self.assertIsNone(guard.release(11.5))
+
     def test_separate_dashboard_instances_never_accept_each_others_tickets(self):
         self.assertNotEqual(DecodeGuard().token, DecodeGuard().token)
 
 
 class PreviewQualityTests(unittest.TestCase):
+    def test_pi_preview_publishes_a_settled_frame_before_the_next_frame_arrives(self):
+        preview = dashboard.LivePreview()
+        release = threading.Event()
+        process = Mock()
+        process.stderr.readline.return_value = b''
+
+        def frames(_):
+            yield b'native-jpeg'
+            release.wait(3)
+
+        with patch.dict(os.environ, {'CAMERA_URL': 'http://127.0.0.1:8084/stream.ts'}), \
+                patch.object(dashboard.source, 'capture_settings', return_value={'capture_mode': 'video', 'width': 1280, 'height': 720}), \
+                patch.object(dashboard.source, 'capture_signature', return_value='video'), \
+                patch.object(dashboard, 'jpeg_frames', side_effect=frames), \
+                patch.object(dashboard.subprocess, 'Popen', return_value=process), \
+                patch.object(dashboard, 'stop_process'), patch.object(preview, 'decoder_error'):
+            try:
+                self.assertEqual(preview.get(wait_seconds=1, full_resolution=True), b'native-jpeg')
+                self.assertIsNone(preview.guard.pending)
+            finally:
+                release.set()
+                if preview.worker is not None:
+                    preview.worker.join(timeout=3)
+                self.assertFalse(preview.worker.is_alive())
+
     def test_errors_invalidate_cached_frame_and_old_analysis_ticket(self):
         preview = dashboard.LivePreview()
         preview.worker = Mock()
@@ -87,8 +126,50 @@ class PreviewQualityTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which('ffmpeg'), 'Requires FFmpeg in the camera-dashboard image')
+class PiPreviewRateTests(unittest.TestCase):
+    def test_fast_jpeg_entropy_coding_preserves_decoded_pixels(self):
+        try:
+            from PIL import Image, ImageChops
+        except ImportError:
+            self.skipTest('Requires Pillow in the camera-dashboard image')
+        images = []
+        for options in [['-threads', '1'], ['-threads', '2', '-thread_type', 'frame', '-huffman', 'default']]:
+            result = subprocess.run([
+                'ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+                '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=1',
+                '-frames:v', '1', '-c:v', 'mjpeg', '-q:v', '3', *options,
+                '-f', 'image2pipe', 'pipe:1'], capture_output=True, check=True, timeout=10)
+            images.append(Image.open(io.BytesIO(result.stdout)).convert('RGB'))
+        self.assertIsNone(ImageChops.difference(*images).getbbox())
+
+    def test_pi_frame_selection_caps_rate_without_duplicating_slow_input(self):
+        for browser in (False,):
+            args, sized = dashboard.decoder_command('http://127.0.0.1:8084/stream.ts', browser)
+            frame_filter = args[args.index('-vf') + 1]
+            self.assertFalse(sized)
+            self.assertEqual(args[args.index('-fps_mode') + 1], 'vfr')
+            for fps in (1, 5, 10, 15, 30):
+                with self.subTest(fps=fps, browser=browser):
+                    result = subprocess.run([
+                        'ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+                        '-f', 'lavfi', '-i', f'testsrc2=size=64x48:rate={fps}:duration=2',
+                        '-vf', frame_filter, '-fps_mode', 'vfr', '-threads', '1',
+                        '-f', 'framemd5', 'pipe:1'], capture_output=True, check=True, timeout=10)
+                    frames = [line for line in result.stdout.splitlines() if line and not line.startswith(b'#')]
+                    self.assertEqual(len(frames), min(fps, 10) * 2)
+                    header = b'#dimensions 0: 960x540' if browser else b'#dimensions 0: 64x48'
+                    self.assertIn(header, result.stdout)
+
+
+@unittest.skipUnless(shutil.which('ffmpeg'), 'Requires FFmpeg in the camera-dashboard image')
 class CorruptedStreamTests(unittest.TestCase):
     def test_real_h264_error_blocks_analysis_and_recovers_on_clean_video(self):
+        self.check_corrupt_stream('rtsp://camera/fixture')
+
+    def test_pi_timed_admission_blocks_corruption_and_recovers_on_clean_video(self):
+        self.check_corrupt_stream('http://127.0.0.1:8084/stream.ts')
+
+    def check_corrupt_stream(self, url):
         with tempfile.TemporaryDirectory() as directory:
             clean = Path(directory) / 'clean.h264'
             damaged = Path(directory) / 'damaged.h264'
@@ -119,9 +200,10 @@ class CorruptedStreamTests(unittest.TestCase):
                 # before FFmpeg has exposed its first decoded frame.
                 for option in ['-fflags', '-flags', '-err_detect', '-analyzeduration',
                                '-probesize', '-max_delay', '-reorder_queue_size',
-                               '-rtsp_transport', '-timeout']:
-                    index = args.index(option)
-                    del args[index:index + 2]
+                               '-rtsp_transport', '-timeout', '-rw_timeout']:
+                    if option in args:
+                        index = args.index(option)
+                        del args[index:index + 2]
                 args[args.index('-i') + 1] = str(damaged)
                 args.insert(args.index('-i'), '-re')
                 args[args.index('-i'):args.index('-i')] = ['-fflags', '+discardcorrupt',
@@ -131,7 +213,7 @@ class CorruptedStreamTests(unittest.TestCase):
             preview.last_request = time.monotonic()
             preview.worker = threading.Thread(target=preview.run, daemon=True)
             saw_clean = saw_error = recovered = False
-            with patch.dict(os.environ, {'CAMERA_URL': 'rtsp://camera/fixture'}), patch.object(dashboard.subprocess, 'Popen', side_effect=spawn), self.assertLogs('camera-preview', level='WARNING'):
+            with patch.dict(os.environ, {'CAMERA_URL': url}), patch.object(dashboard.subprocess, 'Popen', side_effect=spawn), self.assertLogs('camera-preview', level='WARNING'):
                 preview.worker.start()
                 deadline = time.monotonic() + 10
                 while preview.worker.is_alive() and time.monotonic() < deadline:

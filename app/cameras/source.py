@@ -38,11 +38,16 @@ def stop_process(process, timeout=3, signal=None):
         process.wait()
 
 
+def is_pi_stream(url):
+    parsed = urlsplit(url)
+    return parsed.scheme == 'http' and parsed.hostname == '127.0.0.1' and parsed.path == '/stream.ts'
+
+
 def input_args(url):
     parsed = urlsplit(url)
     if parsed.scheme == 'rtsp' and parsed.hostname:
         return ['-rtsp_transport', 'tcp', '-timeout', '15000000', '-i', url]
-    if parsed.scheme == 'http' and parsed.hostname == '127.0.0.1' and parsed.path == '/stream.ts':
+    if is_pi_stream(url):
         return ['-rw_timeout', '15000000', '-i', url]
     raise ValueError('Use an RTSP camera URL or the loopback Pi camera /stream.ts endpoint')
 
@@ -70,7 +75,10 @@ def preview_input_args(url, transport='tcp', strict=True):
         ]
     # Probe briefly: the default five-second probe delays the first frame of the Pi
     # stream (measured 6-7 s at 3280x2464) past the preview watchdog, causing a restart loop.
-    return ['-fflags', '+discardcorrupt', '-err_detect', 'explode',
+    # Automatic H.264 frame threading buffers multiple source frames. At camera frame
+    # rates this creates seconds of delay even when JPEGs arrive regularly afterward.
+    return ['-fflags', '+discardcorrupt', '-flags', 'low_delay', '-threads', '1',
+            '-err_detect', 'explode',
             '-analyzeduration', '0', '-probesize', '32768', *input_args(url)]
 
 

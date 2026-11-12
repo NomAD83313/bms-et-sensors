@@ -148,6 +148,7 @@ services:
       CAMERA_ANOMALY_GATE_MEAN_DIFF: ${CAMERA_ANOMALY_GATE_MEAN_DIFF:-1.2}
       CAMERA_ANOMALY_GATE_MAX_AGE_SEC: ${CAMERA_ANOMALY_GATE_MAX_AGE_SEC:-2.0}
       CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
+      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
       CAMERA_ANALYSIS_EXTRA_FILE: /registry/analysis-extra.json
       CAMERA_ANALYSIS_CAMERAS: >-
         [{"id": "wifi", "data": "/anomaly/wifi", "control": "/control/wifi",

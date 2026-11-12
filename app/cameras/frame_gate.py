@@ -1,7 +1,7 @@
 """Skip full analysis while the analysed area of the scene has not changed.
 
-A small grayscale thumbnail of the region of interest is compared with the thumbnail of
-the last frame that was fully evaluated. Small objects barely move a global average, so
+A small thumbnail of the region of interest, in the model's color mode, is compared
+with the last frame that was fully evaluated. Small objects barely move a global average, so
 the difference is judged per 8x8 block (the largest block difference) next to the overall
 mean difference, which catches lighting drift. An unchanged frame reuses the previous
 score and heatmap; any change, a source-geometry change, or a result older than
@@ -45,9 +45,14 @@ def block_metrics(first, second):
     """Return (mean difference, largest 8x8 block mean difference) of two thumbnails."""
     import numpy as np
     difference = np.abs(first.astype(np.int16) - second.astype(np.int16))
+    if difference.ndim == 3:
+        # Keep changes in any RGB channel visible, even at equal luminance.
+        difference = difference.max(axis=2)
     height, width = difference.shape
-    rows, columns = height // BLOCK * BLOCK, width // BLOCK * BLOCK
-    blocks = difference[:rows, :columns].reshape(rows // BLOCK, BLOCK, columns // BLOCK, BLOCK).mean(axis=(1, 3))
+    rows, columns = np.arange(0, height, BLOCK), np.arange(0, width, BLOCK)
+    sums = np.add.reduceat(np.add.reduceat(difference, rows, axis=0), columns, axis=1)
+    areas = np.minimum(BLOCK, height - rows)[:, None] * np.minimum(BLOCK, width - columns)
+    blocks = sums / areas
     return float(difference.mean()), float(blocks.max())
 
 
@@ -78,15 +83,16 @@ class FrameGate:
         self._evaluated_at = float('-inf')
 
     @staticmethod
-    def thumbnail(jpeg, roi):
-        """Grayscale thumbnail of the analysed area and the source size; None if undecodable."""
+    def thumbnail(jpeg, roi, color_mode='rgb'):
+        """Thumbnail in the model's color mode and source size; None if undecodable."""
         try:
             import numpy as np
             from PIL import Image
             with Image.open(io.BytesIO(jpeg)) as image:
                 source = image.size
                 # JPEG DCT scaling decodes only 1/64 of the pixels.
-                image.draft('L', (math.ceil(source[0] / 8), math.ceil(source[1] / 8)))
+                mode = 'L' if color_mode == 'grayscale' else 'RGB'
+                image.draft(mode, (math.ceil(source[0] / 8), math.ceil(source[1] / 8)))
                 image.load()
                 width, height = image.size
                 bounds = roi_bounds(*source, validate_roi(roi))
@@ -95,7 +101,7 @@ class FrameGate:
                        max(round(bounds[3] * height / source[1]), round(bounds[1] * height / source[1]) + 1))
                 crop = image.crop(box)
                 size = (THUMBNAIL_WIDTH, max(BLOCK, round(THUMBNAIL_WIDTH * crop.height / crop.width)))
-                return np.asarray(crop.convert('L').resize(size, Image.BOX), dtype=np.uint8), source
+                return np.asarray(crop.convert(mode).resize(size, Image.BOX), dtype=np.uint8), source
         except Exception:
             # The gate only saves work: any failure falls back to a full evaluation.
             return None
