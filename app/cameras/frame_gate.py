@@ -1,6 +1,6 @@
 """Skip full analysis while the analysed area of the scene has not changed.
 
-A small thumbnail of the region of interest, in the model's color mode, is compared
+A small RGB thumbnail of the region of interest is compared
 with the last frame that was fully evaluated. Small objects barely move a global average, so
 the difference is judged per 8x8 block (the largest block difference) next to the overall
 mean difference, which catches lighting drift. An unchanged frame reuses the previous
@@ -83,15 +83,15 @@ class FrameGate:
         self._evaluated_at = float('-inf')
 
     @staticmethod
-    def thumbnail(jpeg, roi, color_mode='rgb'):
-        """Thumbnail in the model's color mode and source size; None if undecodable."""
+    def thumbnail(jpeg, roi):
+        """RGB thumbnail and source size; None if undecodable."""
         try:
             import numpy as np
             from PIL import Image
             with Image.open(io.BytesIO(jpeg)) as image:
                 source = image.size
                 # JPEG DCT scaling decodes only 1/64 of the pixels.
-                mode = 'L' if color_mode == 'grayscale' else 'RGB'
+                mode = 'RGB'
                 image.draft(mode, (math.ceil(source[0] / 8), math.ceil(source[1] / 8)))
                 image.load()
                 width, height = image.size

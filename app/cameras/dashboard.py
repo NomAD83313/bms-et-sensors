@@ -307,17 +307,24 @@ def decoder_command(main_url, browser):
         settings = source.capture_settings()
         if settings['width'] * settings['height'] > 1920 * 1080:
             jpeg_threads = '2'
-        # Select the first frame in each 100 ms bucket without fps's lookahead.
-        # Keep low-rate input sparse instead of duplicating stale camera frames.
-        frame_filter = (r'select=isnan(prev_selected_t)+'
-                        r'gt(floor(t*10+0.000001)\,floor(prev_selected_t*10+0.000001))')
+    sparse = pi_video or os.environ.get('CAMERA_SPARSE_PREVIEW') == '1'
+    if sparse:
+        # Keep slow camera input sparse instead of manufacturing duplicate JPEGs.
+        # Full-resolution RTSP JPEG encoding competes with event exports. Match
+        # the analysis cadence instead of allowing a compressed-video backlog.
+        full_rtsp = not pi_video and not browser_substream
+        rate = 5 if full_rtsp or (separate_analysis_stream and not browser_substream) else 10
+        frame_filter = (f'select=isnan(prev_selected_t)+'
+                        rf'gt(floor(t*{rate}+0.000001)\,floor(prev_selected_t*{rate}+0.000001))')
+        if browser_substream:
+            frame_filter += ',scale=960:540:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
     args = [*FFMPEG, '-loglevel', 'warning',
             *preview_input_args(url, transport='tcp', strict=not browser_substream),
             '-map', '0:v:0', '-an', '-vf', frame_filter,
             '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3',
             '-threads', jpeg_threads,
             *(['-thread_type', 'frame', '-huffman', 'default'] if pi_video else []),
-            *(['-fps_mode', 'vfr'] if pi_video else []),
+            *(['-fps_mode', 'vfr'] if sparse else []),
             '-f', 'image2pipe', 'pipe:1']
     return args, browser_substream
 
@@ -435,8 +442,7 @@ class Handler(BaseHTTPRequestHandler):
             confirmation_frames=body.get('confirmation_frames'),
             model_key=body.get('model_key'), roi=body.get('roi'),
             learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
-            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''),
-            color_mode=body.get('color_mode'))
+            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''))
         if recording_mode() == 'anomaly' and action in anomaly_control.MONITORING_STOPPING_ACTIONS:
             # Stopping the buffer must also work while the worker is offline.
             control.set_enabled(False)
@@ -515,7 +521,7 @@ class Handler(BaseHTTPRequestHandler):
         return (state.get('model_key') == config['model_key']
                 and state.get('input_size') == config['input_size']
                 and state.get('roi') == config['roi']
-                and state.get('color_mode', 'rgb') == config['color_mode'])
+                and config['color_mode'] == 'rgb')
 
     def learning_thumbnail(self, identifier):
         from PIL import Image, ImageDraw
@@ -626,5 +632,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     RECORDINGS.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((os.environ.get('DASHBOARD_HOST', '0.0.0.0'), int(os.environ.get('DASHBOARD_PORT', '8082'))), Handler)
+    if os.environ.get('DASHBOARD_PORT_FILE'):
+        control.write_json(Path(os.environ['DASHBOARD_PORT_FILE']), dict(port=server.server_port, pid=os.getpid()))
     print('Camera dashboard listening on port', server.server_port, flush=True)
     server.serve_forever()

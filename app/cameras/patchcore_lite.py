@@ -19,12 +19,12 @@ from PIL import Image
 
 try:
     from .model_profiles import (ANALYSIS_SOURCE, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, IMAGENET_MEAN, IMAGENET_STD,
-                                 MODELS, heatmap_dimensions, input_dimensions, validate_color_mode,
+                                 MODELS, heatmap_dimensions, input_dimensions,
                                  validate_input_size, validate_model)
     from .roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 except ImportError:
     from model_profiles import (ANALYSIS_SOURCE, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, IMAGENET_MEAN, IMAGENET_STD,
-                                MODELS, heatmap_dimensions, input_dimensions, validate_color_mode,
+                                MODELS, heatmap_dimensions, input_dimensions,
                                 validate_input_size, validate_model)
     from roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 
@@ -99,8 +99,7 @@ def bounded_int(value, low, high, message):
 class PatchCoreLite:
     def __init__(self, input_size=DEFAULT_INPUT_SIZE, threads=None, feature_engine=None,
                  distance_engine=None, model_key=DEFAULT_MODEL, jpeg_draft=None, top_k=None,
-                 coreset_size=None, color_mode='rgb'):
-        self.color_mode = validate_color_mode(color_mode)
+                 coreset_size=None):
         requested_threads = os.environ.get('CAMERA_ANOMALY_THREADS', '1') if threads is None else threads
         self.inference_threads = bounded_int(
             requested_threads, 1, 4, 'Analysis CPU threads must be between 1 and 4')
@@ -182,11 +181,6 @@ class PatchCoreLite:
         self.roi = roi
         self.set_input_size(self.input_size)
 
-    def set_color_mode(self, color_mode):
-        color_mode = validate_color_mode(color_mode)
-        if color_mode != self.color_mode:
-            self.color_mode = color_mode
-            self.set_input_size(self.input_size)
 
     def inspect_geometry(self, jpeg):
         """Inspect a JPEG header and reject a mixed-geometry ROI learning bank."""
@@ -220,7 +214,7 @@ class PatchCoreLite:
         decode_started = time.perf_counter()
         image = Image.open(io.BytesIO(jpeg))
         source_width, source_height = image.size
-        decode_mode = 'L' if self.color_mode == 'grayscale' else 'RGB'
+        decode_mode = 'RGB'
         draft_size = image.size
         if self.jpeg_draft:
             width, height = self.effective_input_size
@@ -229,7 +223,7 @@ class PatchCoreLite:
             else:
                 draft_size = (math.ceil(width / self.roi['width']),
                               math.ceil(height / self.roi['height']))
-        if self.jpeg_draft or self.color_mode == 'grayscale':
+        if self.jpeg_draft:
             image.draft(decode_mode, draft_size)
         decoded_width, decoded_height = image.size
         decoded_mode = image.mode
@@ -250,9 +244,7 @@ class PatchCoreLite:
         transform_ms = (time.perf_counter() - transform_started) * 1000
         tensor_started = time.perf_counter()
         pixels = np.asarray(image)
-        # Grayscale is broadcast to three channels so the ufunc output shape matches.
-        pixels = (np.broadcast_to(pixels[None], (3, height, width)) if self.color_mode == 'grayscale'
-                  else pixels.transpose(2, 0, 1))
+        pixels = pixels.transpose(2, 0, 1)
         # Write directly into one owned CHW buffer, preserving the FP32 operation order.
         normalized = np.empty((3, height, width), dtype=np.float32)
         np.divide(pixels, np.float32(255), out=normalized, dtype=np.float32)
@@ -384,7 +376,7 @@ class PatchCoreLite:
         if self.source_size is None or self.effective_input_size is None:
             raise ValueError('Source geometry is required before saving a baseline')
         metadata = dict(version=BASELINE_VERSION, analysis_source=ANALYSIS_SOURCE,
-                        learning_revision=self.learning_revision, color_mode=self.color_mode,
+                        learning_revision=self.learning_revision, color_mode='rgb',
                         encoder=self.encoder_id, input_size=self.input_size,
                         roi=self.roi, roi_preprocessing=ROI_PREPROCESSING,
                         source_size=list(self.source_size),
@@ -414,8 +406,8 @@ class PatchCoreLite:
             raise ValueError('Unsupported visual baseline')
         if model.get('input_size') != self.input_size:
             raise ValueError('Baseline input size changed; learn a normal view again')
-        if validate_color_mode(model.get('color_mode', 'rgb')) != self.color_mode:
-            raise ValueError('Analysis color mode changed; learn a normal view again')
+        if model.get('color_mode') != 'rgb':
+            raise ValueError('Unsupported baseline preprocessing; learn a normal view again')
         saved_draft = model['jpeg_draft']
         if not isinstance(saved_draft, bool) or saved_draft != self.jpeg_draft:
             raise ValueError('JPEG preprocessing changed; learn the normal view again')

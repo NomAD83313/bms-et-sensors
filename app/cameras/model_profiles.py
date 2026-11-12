@@ -4,7 +4,6 @@ INPUT_SIZES = ('768x432', '1024x576', '1280x720', '1536x864', '1920x1080')
 DEFAULT_INPUT_SIZE = INPUT_SIZES[0]
 DEFAULT_MODEL = 'mobilenetv3'
 ANALYSIS_SOURCE = 'original-v1'
-COLOR_MODES = ('rgb', 'grayscale')
 IMAGENET_MEAN = (.485, .456, .406)
 IMAGENET_STD = (.229, .224, .225)
 MODELS = {
@@ -32,10 +31,6 @@ def validate_model(value):
     return value
 
 
-def validate_color_mode(value):
-    if not isinstance(value, str) or value not in COLOR_MODES:
-        raise ValueError('Select color or grayscale analysis')
-    return value
 
 
 def heatmap_dimensions(width, height, model_key=DEFAULT_MODEL):

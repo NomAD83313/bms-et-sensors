@@ -19,7 +19,7 @@ from anomaly_control import (
     CONFIGURATION_ACTIONS, DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, DEFAULT_MULTIPLIER, MODELS,
     SESSION_ACTIONS, command_mode, input_dimensions, read_json,
     validate_confirmation_frames, validate_input_size, validate_model,
-    validate_learning_seconds, validate_multiplier, validate_color_mode, write_json,
+    validate_learning_seconds, validate_multiplier, write_json,
 )
 from patchcore_lite import PatchCoreLite, overlay
 try:
@@ -120,7 +120,6 @@ class AnomalyWorker:
         selected_input_size = saved_setting(validate_input_size, 'input_size', DEFAULT_INPUT_SIZE)
         selected_model = saved_setting(validate_model, 'model_key', DEFAULT_MODEL)
         self.selected_roi = saved_setting(validate_roi, 'roi', None)
-        selected_color = saved_setting(validate_color_mode, 'color_mode', 'rgb')
         self.baseline_invalidated = self.baseline_invalidated or configuration_reset
 
         self.model = PatchCoreLite(**settings.get('model', {}))
@@ -130,8 +129,6 @@ class AnomalyWorker:
             self.model.set_model(selected_model)
         if self.selected_roi is not None:
             self.model.set_roi(self.selected_roi)
-        if selected_color != self.model.color_mode:
-            self.model.set_color_mode(selected_color)
 
         self.model_path = self.data / 'baseline.npz'
         # A rebuilt baseline is staged, then swapped in while the previous one is kept as backup.
@@ -252,7 +249,6 @@ class AnomalyWorker:
             last_request=self.last_request, monitoring=self.monitoring,
             multiplier=self.multiplier, input_size=self.model.input_size,
             model_key=self.model.model_key,
-            color_mode=self.model.color_mode,
             roi=self.selected_roi, learning_seconds=self.learning_seconds,
             baseline_invalidated=self.baseline_invalidated,
             confirmation_frames=self.confirmation_frames,
@@ -268,15 +264,13 @@ class AnomalyWorker:
         state.update(geometry_fields(width, height, self.model.model_key))
 
     def configuration_change(self, action, command):
-        """Return whether a resize/model/roi/color command differs from the current setting."""
+        """Return whether a resize/model/roi command differs from the current setting."""
         if action == 'resize':
             return validate_input_size(command.get('input_size')) != self.model.input_size
         if action == 'model':
             return validate_model(command.get('model_key')) != self.model.model_key
         if action == 'roi':
             return validate_roi(command.get('roi')) != self.selected_roi
-        if action == 'color':
-            return validate_color_mode(command.get('color_mode')) != self.model.color_mode
         return False
 
     def apply_configuration(self, action, command):
@@ -287,8 +281,6 @@ class AnomalyWorker:
         elif action == 'roi':
             self.selected_roi = validate_roi(command['roi'])
             self.model.set_roi(self.selected_roi)
-        elif action == 'color':
-            self.model.set_color_mode(command['color_mode'])
 
     def apply_pending_command(self):
         command = read_json(self.data / 'command.json', {})
@@ -385,7 +377,6 @@ class AnomalyWorker:
         state = dict(
             updated=time.time(), model='PatchCore-style / ' + MODELS[model_key]['label'],
             model_key=model_key, model_label=MODELS[model_key]['label'],
-            color_mode=self.model.color_mode,
             baseline_ready=self.model.memory is not None,
             baseline_frames=self.model.baseline_frames,
             monitoring_enabled=self.monitoring, input_size=self.model.input_size,
@@ -598,7 +589,7 @@ class AnomalyWorker:
         state['fetch_ms'] = fetch_ms
         thumbnail = None
         if self.monitoring and not self.learning and self.gate.enabled:
-            thumbnail = self.gate.thumbnail(jpeg, self.selected_roi, self.model.color_mode)
+            thumbnail = self.gate.thumbnail(jpeg, self.selected_roi)
             reused = self.gate.reusable(thumbnail)
             if reused is not None:
                 self.validate_frame_token(token)
@@ -692,13 +683,20 @@ class AnomalyWorker:
 
     def step(self):
         started = time.monotonic()
+        stopped = False
         try:
-            if self.pending_migration:
+            stopped = self.control_dir is not None and (self.control_dir / 'camera-stopped').exists()
+            if stopped and (self.learning or self.monitoring):
+                write_json(self.data / 'command.json', dict(id=uuid.uuid4().hex, action='pause',
+                           multiplier=self.multiplier))
+            if self.pending_migration and not stopped:
                 self.migrate_legacy_baseline()
             self.apply_pending_command()
             control.follow_detection(self.monitoring, self.recording_mode, self.control_dir)
             self.state = self.status_snapshot()
-            if self.learning or self.monitoring:
+            if stopped:
+                self.state['message'] = 'Camera stopped; saved learning is kept'
+            elif self.learning or self.monitoring:
                 self.analyze_frame(self.state, started)
             self.state['updated'] = time.time()
             self.publish_status()
@@ -706,7 +704,7 @@ class AnomalyWorker:
             self.handle_geometry_change()
         except Exception as error:
             self.handle_error(error)
-        return max(0, self.effective_interval() - (time.monotonic() - started))
+        return max(1 if stopped else 0, self.effective_interval() - (time.monotonic() - started))
 
     def run(self):
         while True:

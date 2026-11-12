@@ -559,6 +559,53 @@ Notes:
 
 ## Cameras (optional Docker profile)
 
+The shared camera workspace is available at `/cameras/`: add RTSP sources, select a
+camera, and start/stop its processes independently. Each camera keeps its own ROI,
+normal sessions, baseline and event recordings. Two camera containers serve the
+whole installation: `camera-media` and `camera-analysis`; adding cameras does not
+add containers. Separate per-camera dashboard/recorder processes remain inside
+`camera-media` for isolation, so this change alone is not a CPU/RAM optimization.
+System Health names the shared application **Cameras**; its Start/Stop/Restart
+controls the application containers. Use the Cameras workspace to control individual cameras.
+
+Enable or restart the shared deployment with:
+
+```sh
+./scripts/restart-cameras-shared.sh
+```
+
+To relay each remote RTSP source over one network connection, enable the optional
+shared MediaMTX hub:
+
+```sh
+./scripts/restart-camera-hub.sh
+```
+
+This adds one `camera-hub` container (three camera containers total). Recorder and
+preview read its local RTSP path, with no transcoding. The local CSI source bypasses
+the hub. Add cameras using their original RTSP URLs; the manager updates hub paths
+automatically. Managed RTSP sources produce at most five full-resolution analysis
+JPEGs per second, shared with browser preview; the original stream-copy recording
+keeps its source frame rate. This leaves CPU headroom for simultaneous event exports.
+The hub opens an upstream only while it has readers and closes it
+three seconds after the last reader leaves. Both RTSP and the management API bind
+to loopback. `config/camera-hub.example.json` is the tracked template; generated
+`runtime/camera-hub/mediamtx.yml` is private runtime state containing source credentials.
+The enabled marker makes camera lifecycle scripts retain the overlay, and Health's
+Cameras control starts/stops the hub with the media and analysis containers.
+
+The script preserves an existing Pi camera's data and running/stopped state. The
+private registry is `runtime/camera-manager/cameras.json`; the installer template
+is `config/cameras-shared.example.json`. Start/Stop affects central processing,
+not a remote sensor's power or publisher. Stopping pauses detection; starting opens
+the camera workspace, where detection can be enabled again. Capture controls are
+currently available only for the local CSI source. The old Thingino deployment
+is omitted from the new registry, with its saved files retained. See the
+[Zero 2 W migration and current implementation](docs/camera-zero2w-plan.md).
+
+The per-camera profiles below remain available for installations that have not
+enabled the shared workspace:
+
 The camera application from `bms-cameras` is included in `app/cameras`.
 `camera-recorder` records RTSP video with FFmpeg stream copy and no audio;
 `camera-dashboard` provides live preview, clip playback and downloads.

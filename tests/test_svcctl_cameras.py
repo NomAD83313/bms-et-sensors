@@ -90,3 +90,52 @@ class ExtraCameraTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SharedCameraTests(unittest.TestCase):
+    def test_shared_application_includes_optional_hub_first(self):
+        mod = _load_module()
+        with patch.object(mod, 'CAMERA_MEDIA_CONTROL_URL', 'http://127.0.0.1:8082'), \
+                patch.object(mod, '_shared_cameras', return_value=None), \
+                patch.dict(mod.os.environ, {'CAMERA_HUB_ENABLED': '1'}):
+            self.assertEqual(mod._all_targets()['cameras'], ['camera-hub', 'camera-media', 'camera-analysis'])
+
+    def test_shared_controls_route_to_one_camera_without_docker_operations(self):
+        mod = _load_module()
+        snapshot = {'success':True,'cameras':[dict(id='pi',target='cam-pi',label='Pi Camera',
+                     path='/cameras/pi/',services={'camera-media':'running','camera-analysis':'running'})],
+                    'manual_pauses':{}}
+        def upstream(path,body=None):
+            return snapshot if body is None else {'id':'pi','enabled':False}
+        with patch.object(mod,'CAMERA_MEDIA_CONTROL_URL','http://127.0.0.1:8082'), \
+                patch.object(mod,'_shared_camera_request',side_effect=upstream) as request, \
+                patch.object(mod,'_set_container_running') as docker_action:
+            client = mod.app.test_client()
+            self.assertEqual(client.get('/cameras').get_json(),
+                             dict(snapshot, control_targets=[{'target':'cameras','label':'Cameras'}]))
+            snapshot['manual_pauses']={'cam-pi':True}
+            self.assertTrue(client.get('/services').get_json()['manual_pauses']['cam-pi'])
+            self.assertEqual(client.post('/services/cam-pi/stop').status_code,200)
+            self.assertIn((('/api/cameras/pi/stop',{}),),[(c.args,) for c in request.call_args_list])
+            docker_action.assert_not_called()
+            self.assertEqual(client.post('/services/cam-nope/stop').status_code,404)
+
+    def test_shared_application_can_restart_even_when_manager_is_stopped(self):
+        mod = _load_module()
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(mod, 'MANUAL_PAUSE_FILE', Path(directory) / 'pauses.json'), \
+                patch.object(mod, 'CAMERA_MEDIA_CONTROL_URL', 'http://127.0.0.1:8082'), \
+                patch.object(mod, '_shared_cameras', return_value=None), \
+                patch.object(mod, '_set_container_running', return_value='done') as action:
+            client = mod.app.test_client()
+            listing = client.get('/cameras')
+            self.assertEqual(listing.status_code, 200)
+            self.assertFalse(listing.get_json()['success'])
+            self.assertEqual(listing.get_json()['control_targets'], [{'target':'cameras','label':'Cameras'}])
+            self.assertEqual(client.post('/services/cameras/start').status_code, 200)
+            self.assertEqual(action.call_args_list, [
+                unittest.mock.call('camera-media', True), unittest.mock.call('camera-analysis', True)])
+            action.reset_mock()
+            self.assertEqual(client.post('/services/cameras/stop').status_code, 200)
+            self.assertEqual(action.call_args_list, [
+                unittest.mock.call('camera-analysis', False), unittest.mock.call('camera-media', False)])

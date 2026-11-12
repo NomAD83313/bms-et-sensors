@@ -11,25 +11,12 @@ keeps its separate recording controls; retention and live preview remain indepen
 
 ## Saved normal sessions
 
-The **Analysis image** radio buttons select **Color** (default RGB) or **Grayscale**
-independently for each camera. This affects learning and detection only: live preview,
-stored session JPEGs, event snapshots, heatmaps and video retain their original color.
-Grayscale JPEG decoding requests luminance directly, then crops and resizes one
-channel. Normalization broadcasts that channel into three, preserving compatibility
-with the current RGB ONNX input. Both modes write directly into one owned contiguous
-FP32 CHW buffer, using the same divide-by-255, subtract-mean, divide-by-standard-deviation
-order as the torchvision reference. NumPy performs normalization in place and ONNX
-Runtime reads the buffer without copying it. Each frame owns its buffer, so later frames
-cannot overwrite arrays already in use. This implementation change preserves
-normalized values and does not require rebuilding saved normal sessions. The CNN
-and nearest-neighbor workloads remain unchanged; compare preparation and total
-cycle time to measure the benefit. Color-only anomalies may become less visible.
-
-Changing the analysis color mode pauses detection and event recording, removes the
-incompatible baseline and normal sessions, and requires new learning. Selecting the
-already active mode is a no-op. The selection persists across worker restarts and
-is validated in saved baselines and session configuration. Existing baselines and
-session catalogs without this setting are interpreted as RGB.
+Analysis uses RGB for both learning and detection. JPEG preparation crops the analysis
+area, resizes it and normalizes into one owned contiguous FP32 CHW buffer. NumPy
+normalizes in place in the same order as the torchvision reference; ONNX Runtime
+reads the buffer without copying it. Each frame owns its buffer. Saved baselines
+and session configuration retain a fixed RGB preprocessing marker to reject
+incompatible training data. Existing RGB training remains valid.
 
 Both cameras support up to eight independently named normal sessions. Names are
 optional and default to `Session 1`, `Session 2`, etc.; an optional comment can
@@ -226,7 +213,7 @@ Settings in `.env.example`:
   by inference and decoder availability.
 - `CAMERA_ANOMALY_CONFIRM_FRAMES=2`: consecutive suspicious frames to confirm, clamped to 1–5.
 - `CAMERA_ANOMALY_FRAME_GATE=1`: skip the model while the analysed area is unchanged
-  (`0` disables it). A thumbnail in the selected RGB or grayscale mode is compared with the last fully
+  (`0` disables it). A thumbnail in the RGB mode is compared with the last fully
   evaluated frame; the previous score and heatmap are reused when the largest 8×8 block
   difference is below `CAMERA_ANOMALY_GATE_BLOCK_DIFF=3.0` intensity units and the mean
   difference below `CAMERA_ANOMALY_GATE_MEAN_DIFF=1.2`. Blocks are used because a small
@@ -583,7 +570,7 @@ The Pi camera page has **Pi camera capture** controls. Choose Video (the existin
 H.264 source) or Snapshots. Video shows resolution and FPS controls and applies
 automatic exposure. The IMX219 output presets are 640x480, 1280x720, 1920x1080,
 1640x1232 and 3280x2464. All use the same full-sensor readout to preserve the field
-of view. Video offers 10/15 FPS; older higher-rate video profiles are clamped to
+of view. Video offers 5/10/15 FPS; older higher-rate video profiles are clamped to
 15 FPS. Cropped high-speed sensor modes are intentionally excluded.
 Video preview remains capped at 10 FPS. Resolution is selectable in both modes.
 Snapshot mode shows resolution, a 100/200/500/1000 ms interval and Auto or a fixed exposure from 1/5000 s (0.2 ms) to 1/25 s (40 ms), including 1/2000 s (0.5 ms).

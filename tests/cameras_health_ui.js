@@ -113,6 +113,18 @@ async function runCameraHealthTests(html) {
   assert(element('ctrl-st-cameras').textContent.startsWith('state: running'), 'A fully running camera group is running');
   assert(element('ctrl-st-pi-camera').textContent.startsWith('state: partial'), 'A stopped camera next to the running shared worker is partial');
   assert(!element('ctrl-st-redlab').textContent.includes('analysis'), 'Other targets never mention analysis');
+
+  // Shared mode controls the application containers while retaining individual camera probes.
+  const shared = build(network({'/api/control/cameras': listing([pi], {
+    control_targets: [{target: 'cameras', label: 'Cameras'}]}), [pi.status_url]: up}));
+  await shared.probe(card, new Map());
+  assert(shared.cameraTargets().join() === 'cameras', 'Shared mode has one application control');
+  assert(element('controlRows').children.at(-1).innerHTML.includes('>Cameras<'), 'The application is named Cameras');
+  const stopped = build(network({'/api/control/cameras': listing([], {success: false,
+    control_targets: [{target: 'cameras', label: 'Cameras'}]})}));
+  await stopped.probe(card, new Map());
+  assert(stopped.cameraTargets().join() === 'cameras', 'Controls remain available when the application is stopped');
+  assert(element('st-cameras').textContent === 'down', 'A stopped application is shown as down');
   return 'System Health camera states, navigation and group controls passed.';
 }
 

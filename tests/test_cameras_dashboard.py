@@ -330,6 +330,16 @@ class PreviewFreshnessTests(unittest.TestCase):
         self.assertFalse(substream)
         self.assertEqual(args[args.index('-vf') + 1], 'fps=10')
 
+    def test_shared_rtsp_preview_does_not_duplicate_slow_camera_frames(self):
+        with patch.dict(os.environ, {'CAMERA_SPARSE_PREVIEW': '1', 'CAMERA_PREVIEW_PATH': ''}):
+            args, sized = dashboard.decoder_command('rtsp://camera/live', False)
+        self.assertFalse(sized)
+        self.assertIn('select=isnan', args[args.index('-vf') + 1])
+        self.assertIn('floor(t*5+', args[args.index('-vf') + 1])
+        self.assertNotIn('fps=10', args[args.index('-vf') + 1])
+        self.assertEqual(args[args.index('-fps_mode') + 1], 'vfr')
+        self.assertLess(args.index('-threads'), args.index('-i'))
+
 
 
 

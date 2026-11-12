@@ -185,52 +185,22 @@ class PatchMemoryTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=1) as executor:
             self.assertEqual(executor.submit(search).result(timeout=5), 1)
 
-    def test_grayscale_decodes_luminance_and_separates_baselines(self):
-        jpeg = roi_jpeg()
-        roi = dict(x=.25, y=.25, width=.5, height=.5)
-        color = PatchCoreLite(model_key='mobilenetv3')
-        gray = PatchCoreLite(model_key='mobilenetv3', color_mode='grayscale')
-        for model in (color, gray):
-            model.set_roi(roi)
-        color_tensor, gray_tensor = color._image(jpeg), gray._image(jpeg)
-        self.assertEqual(gray_tensor.shape, color_tensor.shape)
-        self.assertEqual(tuple(gray_tensor.shape), (1, 3, 120, 160))
-        self.assertEqual(gray.preparation_metrics['decoded_mode'], 'L')
-        mean = np.array((.485, .456, .406), dtype=np.float32)[None, :, None, None]
-        std = np.array((.229, .224, .225), dtype=np.float32)[None, :, None, None]
-        luminance = gray_tensor * std + mean
-        np.testing.assert_allclose(luminance[:, 0], luminance[:, 1], rtol=0, atol=1e-6)
-        np.testing.assert_allclose(luminance[:, 0], luminance[:, 2], rtol=0, atol=1e-6)
-        self.assertGreater(float(np.abs(gray_tensor - color_tensor).mean()), .01)
-        features = gray.features(jpeg)
-        gray.memory = np.ascontiguousarray(features[:64])
-        gray.threshold, gray.baseline_frames = 1, 20
+
+    def test_rgb_baseline_requires_matching_preprocessing(self):
+        model = PatchCoreLite(model_key='mobilenetv3')
+        features = model.features(roi_jpeg())
+        model.memory = np.ascontiguousarray(features[:64])
+        model.threshold, model.baseline_frames = 1, 20
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'baseline.npz'
-            gray.save(path)
-            restored = PatchCoreLite(model_key='mobilenetv3', color_mode='grayscale')
-            restored.set_roi(roi)
-            restored.load(path)
-            np.testing.assert_allclose(restored.features(jpeg), features)
-            with self.assertRaises(ValueError):
-                color.load(path)
-            gray.set_color_mode('grayscale')
-            self.assertIsNotNone(gray.memory)
-            gray.set_color_mode('rgb')
-            self.assertIsNone(gray.memory)
-            self.assertEqual(gray.roi, roi)
-            color.inspect_geometry(jpeg)
-            color.memory, color.threshold, color.baseline_frames = features[:64], 1, 20
-            color.save(path)
+            model.save(path)
+            model.load(path)
             metadata, memory = read_baseline(path)
-            metadata.pop('color_mode')
+            self.assertEqual(metadata['color_mode'], 'rgb')
+            metadata['color_mode'] = 'unsupported'
             write_baseline(path, metadata, memory)
-            color.load(path)
-            with self.assertRaises(ValueError):
-                restored.load(path)
-        for invalid in (None, True, 'gray'):
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                gray.set_color_mode(invalid)
+            with self.assertRaisesRegex(ValueError, 'Unsupported baseline preprocessing'):
+                model.load(path)
 
     def test_saved_sessions_stream_balanced_candidates_and_hold_out_whole_frames(self):
         model = PatchCoreLite(model_key='mobilenetv3', coreset_size=1024)
@@ -653,43 +623,40 @@ class PytorchReferenceTests(unittest.TestCase):
         jpeg = stream.getvalue()
         region = dict(x=.123, y=.111, width=.631, height=.733)
         for key, profile in MODELS.items():
-            for mode in ('rgb', 'grayscale'):
-                for draft in (False, True):
-                    for roi in (None, region):
-                        with self.subTest(model=key, mode=mode, draft=draft, roi=roi):
-                            model = PatchCoreLite(model_key=key, input_size='768x432',
-                                                  color_mode=mode, jpeg_draft=draft)
-                            model.set_roi(roi)
-                            actual = model._image(jpeg)
-                            width, height = model.effective_input_size
-                            image = Image.open(io.BytesIO(jpeg))
-                            source_width, source_height = image.size
-                            decode_mode = 'L' if mode == 'grayscale' else 'RGB'
-                            target = image.size
-                            if draft:
-                                target = ((width, height) if roi is None else
-                                          (math.ceil(width / roi['width']), math.ceil(height / roi['height'])))
-                            if draft or mode == 'grayscale':
-                                image.draft(decode_mode, target)
-                            decoded_width, decoded_height = image.size
-                            image = image.convert(decode_mode)
-                            if roi is not None:
-                                bounds = roi_bounds(source_width, source_height, roi)
-                                image = image.crop((round(bounds[0] * decoded_width / source_width),
-                                                    round(bounds[1] * decoded_height / source_height),
-                                                    round(bounds[2] * decoded_width / source_width),
-                                                    round(bounds[3] * decoded_height / source_height)))
-                            image = TF.resize(image, [height, width])
-                            expected = TF.to_tensor(image)
-                            if mode == 'grayscale':
-                                expected = expected.expand(3, -1, -1)
-                            expected = TF.normalize(expected, profile.get('mean', (.485, .456, .406)),
-                                                    profile.get('std', (.229, .224, .225))).unsqueeze(0).numpy()
-                            np.testing.assert_array_equal(actual, expected)
-                            self.assertTrue(actual.flags['C_CONTIGUOUS'])
-                            self.assertEqual(actual.dtype, np.float32)
-                            model._image(roi_jpeg(size=(1280, 960)))
-                            np.testing.assert_array_equal(actual, expected)
+            for draft in (False, True):
+                for roi in (None, region):
+                    with self.subTest(model=key, draft=draft, roi=roi):
+                        model = PatchCoreLite(model_key=key, input_size='768x432',
+                                              jpeg_draft=draft)
+                        model.set_roi(roi)
+                        actual = model._image(jpeg)
+                        width, height = model.effective_input_size
+                        image = Image.open(io.BytesIO(jpeg))
+                        source_width, source_height = image.size
+                        decode_mode = 'RGB'
+                        target = image.size
+                        if draft:
+                            target = ((width, height) if roi is None else
+                                      (math.ceil(width / roi['width']), math.ceil(height / roi['height'])))
+                        if draft:
+                            image.draft(decode_mode, target)
+                        decoded_width, decoded_height = image.size
+                        image = image.convert(decode_mode)
+                        if roi is not None:
+                            bounds = roi_bounds(source_width, source_height, roi)
+                            image = image.crop((round(bounds[0] * decoded_width / source_width),
+                                                round(bounds[1] * decoded_height / source_height),
+                                                round(bounds[2] * decoded_width / source_width),
+                                                round(bounds[3] * decoded_height / source_height)))
+                        image = TF.resize(image, [height, width])
+                        expected = TF.to_tensor(image)
+                        expected = TF.normalize(expected, profile.get('mean', (.485, .456, .406)),
+                                                profile.get('std', (.229, .224, .225))).unsqueeze(0).numpy()
+                        np.testing.assert_array_equal(actual, expected)
+                        self.assertTrue(actual.flags['C_CONTIGUOUS'])
+                        self.assertEqual(actual.dtype, np.float32)
+                        model._image(roi_jpeg(size=(1280, 960)))
+                        np.testing.assert_array_equal(actual, expected)
 
     def test_onnx_encoders_match_pytorch_on_three_nonconstant_jpegs(self):
         for key in MODELS:

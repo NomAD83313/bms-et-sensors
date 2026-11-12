@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/compose-common.sh"
 bms_cd_project
+if [[ -f runtime/camera-manager/enabled ]]; then
+  exec "${SCRIPT_DIR}/restart-cameras-shared.sh"
+fi
 
 command -v ffmpeg >/dev/null || { echo "Install ffmpeg for full-view capture padding first." >&2; exit 1; }
 command -v rpicam-vid >/dev/null || { echo "Install rpicam-apps-core and rpicam-apps-encoder first." >&2; exit 1; }

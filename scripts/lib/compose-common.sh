@@ -4,6 +4,12 @@
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml)
+if [[ -f "${SCRIPT_DIR}/../runtime/camera-manager/enabled" ]]; then
+  COMPOSE+=(-f docker-compose.camera-shared.yml)
+fi
+if [[ -f "${SCRIPT_DIR}/../runtime/camera-hub/enabled" ]]; then
+  COMPOSE+=(-f docker-compose.camera-hub.yml)
+fi
 # Extra cameras: recorder and dashboard services generated from runtime/cameras.json.
 if [[ -f "${SCRIPT_DIR}/../runtime/docker-compose.cameras.yml" ]]; then
   COMPOSE+=(-f runtime/docker-compose.cameras.yml)

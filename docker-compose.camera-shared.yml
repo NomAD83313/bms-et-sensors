@@ -1,0 +1,53 @@
+# Shared camera deployment. Enabled by scripts/restart-cameras-shared.sh.
+services:
+  camera-media:
+    container_name: camera-media
+    image: bms-cameras:local
+    build:
+      context: .
+      dockerfile: Dockerfile.cameras
+    profiles: [camera-shared]
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 40s
+    cpuset: ${CAMERA_MEDIA_CPUSET:-}
+    mem_limit: 768m
+    command: [python, camera_manager.py]
+    environment:
+      CAMERA_MEDIA_PORT: 8082
+      CAMERA_MEDIA_REGISTRY: /registry
+      CAMERA_MEDIA_DATA: /data
+      CAMERA_EVENT_PRE_SEC: ${CAMERA_EVENT_PRE_SEC:-7}
+      CAMERA_EVENT_POST_SEC: ${CAMERA_EVENT_POST_SEC:-10}
+      MAX_STORAGE_MB: ${CAMERA_MAX_STORAGE_MB:-10240}
+      MAX_AGE_HOURS: ${CAMERA_MAX_AGE_HOURS:-24}
+      CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
+    volumes:
+      - ./runtime/camera-manager:/registry
+      - ./runtime/pi-camera:/data/pi
+      - ${PI_CAMERA_RECORDING_DIR:-./runtime/pi-camera/recordings}:/data/pi/recordings
+      - ./runtime/cameras:/data/wifi
+      - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/data/wifi/recordings
+      - ./runtime/cameras-extra:/data/extra
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/api/cameras', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  camera-analysis:
+    profiles: [cameras, pi-camera, cameras-extra, camera-shared]
+    environment:
+      CAMERA_ANALYSIS_CONFIG: /registry/analysis.json
+      CAMERA_ANALYSIS_EXTRA_FILE: ''
+      CAMERA_ANOMALY_THREADS: ${CAMERA_ANOMALY_THREADS:-1}
+    volumes:
+      - ./runtime/camera-manager:/registry:ro
+      - ./runtime/pi-camera:/data/pi
+      - ./runtime/cameras:/data/wifi
+      - ./runtime/cameras-extra:/data/extra
+
+  service-controller:
+    environment:
+      CAMERA_MEDIA_CONTROL_URL: http://127.0.0.1:8082

@@ -62,6 +62,8 @@ def preview_input_args(url, transport='tcp', strict=True):
             '-fflags', '+discardcorrupt+nobuffer',
             '-flags', 'low_delay',
         ]
+        if os.environ.get('CAMERA_SPARSE_PREVIEW') == '1':
+            args += ['-threads', '1']
         if strict:
             args += ['-err_detect', 'explode']
         return args + [

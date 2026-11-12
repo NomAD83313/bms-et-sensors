@@ -1,0 +1,14 @@
+{
+  "logLevel": "warn",
+  "rtspAddress": "127.0.0.1:8554",
+  "rtspTransports": ["tcp"],
+  "api": true,
+  "apiAddress": "127.0.0.1:9997",
+  "rtmp": false,
+  "hls": false,
+  "webrtc": false,
+  "srt": false,
+  "moq": false,
+  "playback": false,
+  "paths": {}
+}

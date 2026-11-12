@@ -50,11 +50,11 @@ class FrameGateTests(unittest.TestCase):
         gate.remember(thumbnail, ('score', 'heatmap'))
         return thumbnail
 
-    def test_thumbnail_is_a_small_grayscale_view_of_the_roi_only(self):
-        thumbnail, source = FrameGate.thumbnail(scene(), ROI, 'grayscale')
+    def test_thumbnail_is_a_small_rgb_view_of_the_roi_only(self):
+        thumbnail, source = FrameGate.thumbnail(scene(), ROI)
         self.assertEqual(source, (640, 480))
         self.assertEqual(thumbnail.dtype, np.uint8)
-        self.assertEqual(thumbnail.shape[1], 192)
+        self.assertEqual(thumbnail.shape, (144, 192, 3))
         self.assertEqual(thumbnail.shape[0], 144)
         outside_changed = scene(box=(0, 0, 100, 480, 150))
         np.testing.assert_array_equal(FrameGate.thumbnail(outside_changed, ROI)[0],
@@ -69,8 +69,6 @@ class FrameGateTests(unittest.TestCase):
         gate = self.gate()
         self.remember(gate, red, roi=None)
         self.assertIsNone(gate.reusable(gate.thumbnail(green, None)))
-        np.testing.assert_array_equal(gate.thumbnail(red, None, 'grayscale')[0],
-                                      gate.thumbnail(green, None, 'grayscale')[0])
 
     def test_partial_edge_blocks_keep_their_actual_area(self):
         for height, width in [(108, 192), (108, 191), (4, 3)]:

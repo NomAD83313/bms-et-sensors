@@ -20,7 +20,6 @@ class FakeModelGeometry:
     """Minimal PatchCoreLite stand-in exposing every attribute the worker reads."""
     input_size = anomaly_control.DEFAULT_INPUT_SIZE
     model_key = anomaly_control.DEFAULT_MODEL
-    color_mode = 'rgb'
     roi = None
     memory = None
     threshold = None

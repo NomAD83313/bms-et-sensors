@@ -6,7 +6,7 @@ import docker
 COMPOSE_SERVICES = {
     "camera-recorder", "camera-dashboard",
     "pi-camera-recorder", "pi-camera-dashboard",
-    "camera-analysis",
+    "camera-analysis", "camera-media", "camera-hub",
 }
 
 

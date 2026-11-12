@@ -337,7 +337,7 @@
       <h2>Service Control</h2>
       <p class="controls-sub">Use manual actions sparingly. This area is for focused recovery, not for routine operation when guard logic is already healthy.</p>
       <div id="controlRows"></div>
-      <div class="ctrl-note" id="ctrlNote">Use controls only when needed to reduce resource usage. Each camera row controls its own application. Pi Camera also releases capture and encoding when its consumers stop; use the camera pages to pause detection and recording.</div>
+      <div class="ctrl-note" id="ctrlNote">Cameras controls the shared camera application. Use the Cameras page to start or stop individual cameras and manage detection and recording.</div>
     </div>
 
     <p class="footer-note"><a href="/">Back to Dashboard</a> · <button type="button" class="refresh-btn" id="refreshNow">Refresh now</button></p>
@@ -359,7 +359,7 @@
       { id: 'cameras', name: 'Cameras', url: '/api/control/cameras', type: 'cameras', group: 'device', wide: true },
     ];
     const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana'];
-    // Camera groups come from the service controller (/api/control/cameras), one row per camera.
+    // The controller supplies application controls or individual legacy camera controls.
     let cameraTargets = [];
     let cameraLabels = {};
     const targetDisplayNames = {
@@ -437,8 +437,8 @@
       const targets = cameras.map((camera) => camera.target);
       const labels = {};
       cameras.forEach((camera) => { labels[camera.target] = camera.label || camera.id; });
+      if (JSON.stringify(targets) === JSON.stringify(cameraTargets) && JSON.stringify(labels) === JSON.stringify(cameraLabels)) return;
       cameraLabels = labels;
-      if (JSON.stringify(targets) === JSON.stringify(cameraTargets)) return;
       cameraTargets = targets;
       mkControlRows();
     }
@@ -703,7 +703,11 @@
         }
         const list = await res.json();
         const cameras = Array.isArray(list.cameras) ? list.cameras : [];
-        syncCameraControlRows(cameras);
+        syncCameraControlRows(list.control_targets || cameras);
+        if (list.success === false) {
+          setState(s.id, 'err', 'down', 'Camera application is stopped or unavailable');
+          return;
+        }
         const pauses = list.manual_pauses || {};
         const results = await Promise.all(cameras.map((camera) => probeOneCamera(camera, pauses)));
         renderCameraList(results);
@@ -777,11 +781,12 @@
       if (!btn) return;
       const target = btn.getAttribute('data-target');
       const action = btn.getAttribute('data-action');
+      const label = targetDisplayNames[target] || cameraLabels[target] || target;
       try {
-        setCtrlNote(`Executing: ${action} ${target}...`);
+        setCtrlNote(`Executing: ${action} ${label}...`);
         await controlFetch(`/api/control/services/${target}/${action}`, { method: 'POST' });
         await refreshAll();
-        setCtrlNote(`Done: ${action} ${target}`);
+        setCtrlNote(`Done: ${action} ${label}`);
       } catch (err) {
         setCtrlNote(`Error: ${err.message || err}`);
       }

@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, List
+from urllib.request import Request, urlopen
 
 import docker
 from flask import Flask, jsonify
@@ -20,6 +21,31 @@ from svcctl_host import cpu_percent, memory_stats, serial_devices_by_id, usb_dev
 from svcctl_usb import build_usb_guard_state, usb_device_present
 
 app = Flask(__name__)
+CAMERA_MEDIA_CONTROL_URL = os.environ.get('CAMERA_MEDIA_CONTROL_URL', '').rstrip('/')
+
+
+def _shared_camera_request(path, body=None):
+    request = Request(CAMERA_MEDIA_CONTROL_URL + path,
+                      data=json.dumps(body).encode() if body is not None else None,
+                      headers={'Content-Type': 'application/json', 'X-Camera-Control': '1'})
+    with urlopen(request, timeout=20 if body is not None else 2) as response:
+        return json.load(response)
+
+
+def _shared_cameras():
+    try:
+        return _shared_camera_request('/api/cameras')
+    except (OSError, ValueError):
+        return None
+
+
+def _service_states():
+    result = status_payload(DOCKER_CLIENT, _effective_target_map())
+    if CAMERA_MEDIA_CONTROL_URL:
+        snapshot = _shared_cameras()
+        for camera in (snapshot or {}).get('cameras', []):
+            result[camera['target']] = camera['services']
+    return result
 SVCCTL_PORT = 3020
 MSCL_GUARD_ENABLED = True
 MSCL_GUARD_INTERVAL_SEC = 5.0
@@ -158,6 +184,12 @@ def _extra_targets(cameras: List[dict] | None = None) -> Dict[str, List[str]]:
 
 
 def _all_targets() -> Dict[str, List[str]]:
+    if CAMERA_MEDIA_CONTROL_URL:
+        snapshot = _shared_cameras() or {}
+        targets = {key: value for key, value in TARGET_MAP.items() if key not in CAMERA_TARGETS}
+        targets['cameras'] = (['camera-hub'] if os.environ.get('CAMERA_HUB_ENABLED') == '1' else []) + ['camera-media', 'camera-analysis']
+        targets.update({camera['target']: list(camera['services']) for camera in snapshot.get('cameras', [])})
+        return targets
     return {**TARGET_MAP, **_extra_targets()}
 
 
@@ -168,7 +200,7 @@ def _is_camera_target(target: str) -> bool:
 def _camera_start_names(target: str, targets: Dict[str, List[str]] | None = None) -> List[str]:
     """Services to start for a camera group: its recorder and dashboard, then the shared worker."""
     names = (targets or TARGET_MAP)[target]
-    return names + [SHARED_ANALYSIS_SERVICE] if _is_camera_target(target) else names
+    return names + [SHARED_ANALYSIS_SERVICE] if _is_camera_target(target) and not CAMERA_MEDIA_CONTROL_URL else names
 
 
 def _camera_stop_names(target: str, targets: Dict[str, List[str]] | None = None) -> List[str]:
@@ -593,10 +625,13 @@ def host_metrics():
 
 @app.route("/services", methods=["GET"])
 def services():
+    pauses = _manual_pause_snapshot()
+    if CAMERA_MEDIA_CONTROL_URL:
+        pauses.update((_shared_cameras() or {}).get('manual_pauses', {}))
     return jsonify(
         success=True,
-        services=status_payload(DOCKER_CLIENT, _effective_target_map()),
-        manual_pauses=_manual_pause_snapshot(),
+        services=_service_states(),
+        manual_pauses=pauses,
         serial_devices_by_id=serial_devices_by_id(),
         usb_devices=usb_devices(),
     )
@@ -605,6 +640,12 @@ def services():
 @app.route("/cameras", methods=["GET"])
 def cameras():
     """All cameras (the two original ones and those generated from the registry) with their services."""
+    if CAMERA_MEDIA_CONTROL_URL:
+        snapshot = _shared_cameras()
+        # Keep application controls available even when the media container is stopped.
+        snapshot = dict(snapshot or {'success': False, 'cameras': [], 'manual_pauses': {}})
+        snapshot['control_targets'] = [{'target': 'cameras', 'label': 'Cameras'}]
+        return jsonify(snapshot)
     extra = _extra_cameras()
     entries = [
         {"id": "wifi", "target": "cameras", "label": "Camera WiFi", "path": "/cameras/"},
@@ -637,6 +678,23 @@ def almemo_health():
 
 @app.route("/services/<target>/<action>", methods=["POST"])
 def service_action(target: str, action: str):
+    if CAMERA_MEDIA_CONTROL_URL and target.startswith('cam-'):
+        if action not in {'start', 'stop', 'restart'}:
+            return jsonify(error='unknown action'), 400
+        snapshot = _shared_cameras()
+        if snapshot is None:
+            return jsonify(error='Camera manager unavailable'), 503
+        camera = next((c for c in snapshot['cameras'] if c['target'] == target), None)
+        if camera is None:
+            return jsonify(error='unknown target'), 404
+        try:
+            with ACTION_LOCK:
+                _shared_camera_request('/api/cameras/' + camera['id'] + '/' + action, {})
+            return jsonify(success=True, target=target, action=action, steps=[],
+                           manual_pauses=(_shared_cameras() or {}).get('manual_pauses', {}),
+                           services=_service_states())
+        except (OSError, ValueError):
+            return jsonify(error='Camera action could not be completed'), 503
     targets = _all_targets()
     if target not in targets:
         return jsonify(error="unknown target"), 404

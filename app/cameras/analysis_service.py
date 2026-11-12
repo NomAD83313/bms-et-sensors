@@ -68,7 +68,7 @@ def load_cameras(environment=None):
     environment = os.environ if environment is None else environment
     path = environment.get('CAMERA_ANALYSIS_CONFIG')
     if path:
-        cameras = parse_cameras(Path(path).read_text())
+        cameras = parse_cameras(Path(path).read_text(), allow_empty=True)
     else:
         raw = environment.get('CAMERA_ANALYSIS_CAMERAS')
         if not raw:
@@ -107,7 +107,7 @@ class Scheduler:
     """Step each worker when it is due; never let one camera delay or break the others."""
 
     def __init__(self, workers, pending=(), factory=AnomalyWorker, clock=time.monotonic, sleep=time.sleep,
-                 executor=None):
+                 executor=None, camera_loader=None):
         self.workers = dict(workers)
         self.pending, self.factory = list(pending), factory
         self.clock = clock
@@ -121,6 +121,29 @@ class Scheduler:
         self.executors = {}
         self.in_flight = {}
         self.starting = None
+        self.camera_loader = camera_loader
+        self.known_ids = set(workers) | {c['id'] for c in pending}
+        self.desired_ids = set(self.known_ids)
+        self.next_refresh = 0
+
+    def refresh_cameras(self, now):
+        """Discover changes without interrupting other cameras or their learning sessions."""
+        if self.camera_loader is None or now < self.next_refresh:
+            return
+        self.next_refresh = now + 2
+        try:
+            cameras = self.camera_loader()
+        except (OSError, ValueError):
+            LOG.warning('Camera registry could not be refreshed; keeping current workers')
+            return
+        self.desired_ids = {camera['id'] for camera in cameras}
+        self.pending = [entry for entry in self.pending if entry['id'] in self.desired_ids]
+        self.known_ids.intersection_update(self.desired_ids | set(self.workers))
+        for camera in cameras:
+            if camera['id'] not in self.known_ids:
+                self.known_ids.add(camera['id'])
+                self.pending.append(camera)
+                self.next_start = now
 
     def submit(self, name, function, *args, **kwargs):
         if self.executor is not None:
@@ -139,9 +162,14 @@ class Scheduler:
         if self.starting is not None:
             if not self.starting.done():
                 return
-            started, self.pending = self.starting.result()
+            started, failed = self.starting.result()
+            self.pending = [entry for entry in failed if entry['id'] in self.desired_ids] + self.pending
             self.starting = None
             for name, worker in started.items():
+                if name not in self.desired_ids:
+                    worker.close()
+                    self.known_ids.discard(name)
+                    continue
                 self.workers[name] = worker
                 self.due[name] = 0.0
                 LOG.info('Camera %s is now analysed by this service', name)
@@ -149,7 +177,8 @@ class Scheduler:
         if not self.pending or now < self.next_start:
             return
         self.next_start = now + START_RETRY_SECONDS
-        self.starting = self.submit(None, build_workers, self.pending, self.factory, quiet=True)
+        pending, self.pending = self.pending, []
+        self.starting = self.submit(None, build_workers, pending, self.factory, quiet=True)
         if self.starting.done():
             self.start_pending(now)
 
@@ -171,13 +200,27 @@ class Scheduler:
                 self.due[name] = finished + wait
                 del self.in_flight[name]
 
+    def retire_workers(self):
+        """Release deleted cameras only after their current frame has finished."""
+        for name in set(self.workers) - self.desired_ids:
+            if name in self.in_flight:
+                continue
+            self.workers.pop(name).close()
+            self.due.pop(name, None)
+            self.known_ids.discard(name)
+            executor = self.executors.pop(name, None)
+            if executor is not None:
+                executor.shutdown(wait=False, cancel_futures=True)
+
     def run_once(self):
         """Dispatch due cameras without waiting for network or model execution."""
         now = self.clock()
+        self.refresh_cameras(now)
         self.start_pending(now)
         self.collect_steps()
+        self.retire_workers()
         for name in sorted(self.due, key=self.due.get):
-            if name in self.in_flight or self.due[name] > now:
+            if name not in self.desired_ids or name in self.in_flight or self.due[name] > now:
                 continue
             self.in_flight[name] = self.submit(name, self.step_worker, name, self.workers[name])
         self.collect_steps()
@@ -187,6 +230,8 @@ class Scheduler:
             deadlines.append(now + POLL_SECONDS)
         elif self.pending:
             deadlines.append(self.next_start)
+        if self.camera_loader is not None:
+            deadlines.append(self.next_refresh)
         return max(0.0, min(deadlines) - now) if deadlines else START_RETRY_SECONDS
 
     def close(self):
@@ -216,7 +261,7 @@ def main():
     workers, pending = build_workers(cameras)
     LOG.info('Analysing %d camera(s): %s%s', len(workers), ', '.join(sorted(workers)) or '-',
              f'; waiting for {", ".join(entry["id"] for entry in pending)}' if pending else '')
-    Scheduler(workers, pending).run()
+    Scheduler(workers, pending, camera_loader=load_cameras if os.environ.get('CAMERA_ANALYSIS_CONFIG') else None).run()
 
 
 if __name__ == '__main__':

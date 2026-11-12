@@ -1,0 +1,30 @@
+# Optional shared RTSP relay. Keeps one network reader per remote camera.
+services:
+  camera-hub:
+    container_name: camera-hub
+    image: bluenviron/mediamtx:1.21.3
+    profiles: [camera-shared]
+    network_mode: host
+    restart: unless-stopped
+    mem_limit: 128m
+    command: [/hub/mediamtx.yml]
+    volumes:
+      - ./runtime/camera-hub:/hub:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'
+
+  camera-media:
+    environment:
+      CAMERA_HUB_CONFIG: /hub/mediamtx.yml
+      CAMERA_HUB_TEMPLATE: /hub-template.json
+      CAMERA_HUB_URL: rtsp://127.0.0.1:8554
+    volumes:
+      - ./runtime/camera-hub:/hub
+      - ./config/camera-hub.example.json:/hub-template.json:ro
+
+  service-controller:
+    environment:
+      CAMERA_HUB_ENABLED: '1'

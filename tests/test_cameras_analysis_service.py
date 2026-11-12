@@ -401,3 +401,66 @@ class WorkerSettingsAndLockTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RegistryReloadTests(unittest.TestCase):
+    def test_delete_waits_for_current_frame_then_releases_only_that_worker(self):
+        service = load_service()
+        removed = types.SimpleNamespace(step=Mock(return_value=.2), state={'state': 'normal'}, close=Mock())
+        kept = types.SimpleNamespace(step=Mock(return_value=.2), state={'state': 'learning'}, close=Mock())
+        entries = [camera('second')]
+        future = Future()
+        scheduler = service.Scheduler({'first': removed, 'second': kept}, executor=InlineExecutor(),
+                                      clock=lambda: 0, camera_loader=lambda: entries)
+        scheduler.in_flight['first'] = future
+        scheduler.run_once()
+        removed.close.assert_not_called()
+        removed.step.assert_not_called()
+        kept.step.assert_called_once()
+        future.set_result((.2, 0))
+        scheduler.run_once()
+        removed.close.assert_called_once()
+        kept.close.assert_not_called()
+        self.assertNotIn('first', scheduler.workers)
+        self.assertNotIn('first', scheduler.known_ids)
+        self.assertNotIn('first', scheduler.due)
+
+    def test_delete_during_initialization_releases_the_new_worker(self):
+        service = load_service()
+        created = types.SimpleNamespace(close=Mock())
+        future = Future()
+        scheduler = service.Scheduler({}, [camera('first')], executor=InlineExecutor(),
+                                      camera_loader=lambda: [])
+        scheduler.starting = future
+        future.set_result(({'first': created}, [camera('second')]))
+        scheduler.run_once()
+        created.close.assert_called_once()
+        self.assertEqual(scheduler.workers, {})
+        self.assertEqual(scheduler.pending, [])
+
+    def test_adding_camera_keeps_the_existing_worker_and_learning_state(self):
+        service = load_service()
+        original = types.SimpleNamespace(step=Mock(return_value=.2), state={'state':'learning'})
+        created = types.SimpleNamespace(step=Mock(return_value=.2), state={'state':'untrained'})
+        entries = [camera('pi')]
+        now = [0.]
+        factory = Mock(return_value=created)
+        scheduler = service.Scheduler({'pi':original}, factory=factory, clock=lambda:now[0],
+                                      executor=InlineExecutor(), camera_loader=lambda:entries)
+        scheduler.run_once()
+        entries.append(camera('new-camera'))
+        now[0] = 2.1
+        scheduler.run_once()
+        self.assertIs(scheduler.workers['pi'],original)
+        self.assertIs(scheduler.workers['new-camera'],created)
+        self.assertEqual(original.state['state'],'learning')
+        factory.assert_called_once()
+
+    def test_bad_registry_does_not_stop_active_workers(self):
+        service = load_service()
+        worker = types.SimpleNamespace(step=Mock(return_value=.2), state={'state':'normal'})
+        loader = Mock(side_effect=ValueError('incomplete write'))
+        scheduler = service.Scheduler({'pi':worker}, executor=InlineExecutor(), camera_loader=loader)
+        with self.assertLogs('camera-analysis',level='WARNING'):
+            scheduler.run_once()
+        worker.step.assert_called_once()

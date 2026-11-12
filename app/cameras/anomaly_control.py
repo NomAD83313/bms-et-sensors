@@ -9,18 +9,18 @@ try:
     from .files import read_json, write_json
     from .learning_sessions import session_id as validate_session_id, session_text
     from .model_profiles import (DEFAULT_INPUT_SIZE, DEFAULT_MODEL, INPUT_SIZES, MODELS, heatmap_dimensions,
-                                 input_dimensions, validate_color_mode, validate_input_size, validate_model)
+                                 input_dimensions, validate_input_size, validate_model)
     from .roi import validate_roi
 except ImportError:
     from files import read_json, write_json
     from learning_sessions import session_id as validate_session_id, session_text
     from model_profiles import (DEFAULT_INPUT_SIZE, DEFAULT_MODEL, INPUT_SIZES, MODELS, heatmap_dimensions,
-                                input_dimensions, validate_color_mode, validate_input_size, validate_model)
+                                input_dimensions, validate_input_size, validate_model)
     from roi import validate_roi
 
 # Re-exported for the worker and tests, which read model and file helpers from this module.
 __all__ = ['DEFAULT_INPUT_SIZE', 'DEFAULT_MODEL', 'INPUT_SIZES', 'MODELS', 'heatmap_dimensions', 'input_dimensions',
-           'read_json', 'validate_color_mode', 'validate_input_size', 'validate_model', 'write_json']
+           'read_json', 'validate_input_size', 'validate_model', 'write_json']
 
 ACTIVE_STATES = frozenset(('normal', 'suspect', 'anomaly'))
 STATUS_MAX_AGE_SECONDS = 20
@@ -34,12 +34,12 @@ MODE_AFTER_ACTION = {
     'learn': (True, False), 'add-session': (True, False), 'replace-session': (True, False),
     'monitor': (False, 'ready'),
     'pause': (False, False), 'invalidate': (False, False),
-    'resize': (False, False), 'model': (False, False), 'roi': (False, False), 'color': (False, False),
+    'resize': (False, False), 'model': (False, False), 'roi': (False, False),
     'remove-session': (False, False), 'rebuild-sessions': (False, False),
     'configure': None, 'confirmation': None, 'rename-session': None,
 }
 # Actions that only take effect when they change a model setting.
-CONFIGURATION_ACTIONS = ('resize', 'model', 'roi', 'color')
+CONFIGURATION_ACTIONS = ('resize', 'model', 'roi')
 # Actions the dashboard accepts over HTTP; 'invalidate' is issued internally on a capture change.
 PUBLIC_ACTIONS = frozenset(MODE_AFTER_ACTION) - {'invalidate'}
 # Actions after which detection is off, so event-only recording must stop its buffer too.
@@ -102,8 +102,7 @@ def command_mode(action, ready, learning, monitoring):
 
 
 def request(action, multiplier=DEFAULT_MULTIPLIER, input_size=None, confirmation_frames=None, model_key=None,
-            roi=None, learning_seconds=None, session_id=None, session_name='', session_note='',
-            color_mode=None):
+            roi=None, learning_seconds=None, session_id=None, session_name='', session_note=''):
     command_mode(action, False, False, False)
     multiplier = validate_multiplier(multiplier)
     command = dict(id=uuid.uuid4().hex, action=action, multiplier=multiplier)
@@ -122,8 +121,6 @@ def request(action, multiplier=DEFAULT_MULTIPLIER, input_size=None, confirmation
         command['model_key'] = validate_model(model_key)
     if action == 'roi':
         command['roi'] = validate_roi(roi)
-    if action == 'color':
-        command['color_mode'] = validate_color_mode(color_mode)
     write_json(DATA / 'command.json', command)
     return command
 

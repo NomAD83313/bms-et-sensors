@@ -128,3 +128,23 @@ class TwoInstancesTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StoppedCameraTests(TwoInstancesTests):
+    def test_a_stopped_camera_does_not_fetch_frames_or_delete_its_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            worker_module=self.build_module(root)
+            data,controls=root/'data',root/'control'
+            data.mkdir();controls.mkdir()
+            baseline=data/'baseline.npz';baseline.write_bytes(b'normal baseline')
+            anomaly_control.write_json(data/'session.json',dict(monitoring=True,multiplier=1.3))
+            worker=worker_module.AnomalyWorker(data=data,control_dir=controls,recording_mode='anomaly')
+            (controls/'camera-stopped').touch()
+            with patch.object(worker,'fetch_analysis_frame') as fetch:
+                wait=worker.step()
+            fetch.assert_not_called()
+            self.assertFalse(worker.monitoring)
+            self.assertEqual(baseline.read_bytes(),b'normal baseline')
+            self.assertGreaterEqual(wait,1)
+            self.assertFalse(control.enabled(controls))

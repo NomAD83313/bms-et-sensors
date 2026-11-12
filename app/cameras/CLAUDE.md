@@ -7,7 +7,30 @@ commit `runtime/` or secrets).
 
 ## Architecture
 
-Per camera: `camera-recorder` (`recorder.py`) + `camera-dashboard` (`dashboard.py`, Flask
+The shared deployment (`docker-compose.camera-shared.yml`, profile `camera-shared`)
+uses `camera-media` (`camera_manager.py`) and `camera-analysis`. The manager serves
+one UI on port 8082 and supervises independent dashboard/recorder process groups.
+Per-camera dashboards listen on ephemeral loopback ports; only the manager is
+exposed through nginx. Registry updates add analysis workers without restarting
+existing workers. Per-camera `camera-stopped` markers prevent analysis after Stop.
+State directories match in both containers (`/data/pi`, `/data/wifi`, `/data/extra/<id>`).
+The private registry is `runtime/camera-manager/cameras.json`; never expose its URLs
+in public status. `scripts/restart-cameras-shared.sh` activates this deployment;
+`runtime/camera-manager/enabled` makes other lifecycle scripts use its Compose file.
+One camera's Start/Stop must never stop a shared container. Individual processes
+remain isolated; moving them into a container does not share their Python heaps.
+
+Optional `docker-compose.camera-hub.yml` adds one MediaMTX relay (`camera-hub`),
+enabled by `scripts/restart-camera-hub.sh`. `stream_hub.py` writes the private runtime
+configuration atomically; MediaMTX watches the mounted directory and reloads paths.
+The registry retains original RTSP URLs; both media consumers use the local relay
+URL. CSI sources bypass it. Paths are pulled on demand, once per camera regardless
+of reader count. Never publish the hub config or source credentials through status.
+The enabled marker is `runtime/camera-hub/enabled`. Health controls all three
+containers together; per-camera actions only stop their own consumers.
+
+The original per-camera profiles remain available before migration:
+`camera-recorder` (`recorder.py`) + `camera-dashboard` (`dashboard.py`, standard-library HTTP
 UI in `web/`). All cameras share **one** analysis worker, `camera-analysis`
 (`analysis_service.py`), which schedules the cameras through `AnomalyWorker`
 (`anomaly_worker.py`). Each camera has at most one step in flight on its own pool
@@ -32,7 +55,7 @@ Design and decisions for multi-camera: `docs/camera-instances.md`. Detection det
 - `patchcore_lite.py` — PatchCore-style detector: NumPy + ONNX Runtime (XNNPACK) + FAISS.
   Baseline is `baseline.npz` (version-tagged; bump on format change). **No PyTorch at
   runtime** — it exists only in the `exporter` and `test` Docker stages.
-- `frame_gate.py` — skips analysis of unchanged frames (RGB/grayscale ROI thumbnail block diff,
+- `frame_gate.py` — skips analysis of unchanged frames (RGB ROI thumbnail block diff,
   including partial edge blocks). Imports
   numpy/PIL lazily so host tests keep running.
 - `anomaly_worker.py` — one camera's analysis loop; exclusive `.worker.lock` per data dir
@@ -42,6 +65,9 @@ Design and decisions for multi-camera: `docs/camera-instances.md`. Detection det
 - `camera_registry.py` — validates `runtime/cameras.json` and generates
   `runtime/docker-compose.cameras.yml`, `runtime/camera-registry/analysis-extra.json` and
   nginx `cameras.conf`. Reserved ids: wifi, pi, cameras, pi-camera, analysis, api, probe.
+- `camera_manager.py`, `web/fleet.*` — shared registry, public UI/API, process-group
+  supervision and streaming proxy. HTTP streaming preserves ranges and frame tokens.
+  Stop persists before process shutdown and pauses analysis while preserving learning.
 - `source.py`, `preview_quality.py` — FFmpeg input options, `FFMPEG` prefix, `stop_process`,
   capture settings; `DecodeGuard` drops frames after decoder errors (1 s cooldown).
 - `clips.py` — clip retention (`prune`) and FFmpeg progress parsing shared by the recorder modes.

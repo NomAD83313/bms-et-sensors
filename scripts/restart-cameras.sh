@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/compose-common.sh"
 bms_cd_project
+if [[ -f runtime/camera-manager/enabled ]]; then
+  exec "${SCRIPT_DIR}/restart-cameras-shared.sh"
+fi
 
 bms_ensure_camera_onnx_runtime
 echo ">>> Building and starting camera recorder, dashboard and visual analysis..."

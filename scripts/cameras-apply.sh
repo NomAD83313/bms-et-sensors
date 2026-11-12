@@ -9,6 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/compose-common.sh"
 bms_cd_project
+if [[ -f runtime/camera-manager/enabled ]]; then
+  echo 'Shared camera deployment: add cameras in http://<host>/cameras/.'
+  exit 0
+fi
 
 if [[ ! -f runtime/cameras.json ]]; then
   cp config/cameras.example.json runtime/cameras.json

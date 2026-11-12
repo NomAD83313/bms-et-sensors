@@ -4,6 +4,10 @@ Status: P1-P5 are implemented. The two existing cameras (`cameras`
 profile: RTSP/Wi-Fi, `pi-camera` profile: CSI on the host) must keep working unchanged
 at every step.
 
+The next target is two or three Raspberry Pi Zero 2 W source nodes and shared
+central media services. See [the proposed migration](camera-zero2w-plan.md).
+The current implementation below still creates a recorder/dashboard pair per camera.
+
 Decisions (2026-11-11): extra dashboards use ports 8085 and up; extra cameras record
 like the existing ones (recorder + dashboard, shared analysis worker); the shared
 worker keeps the current budget of 2 CPUs on cores 2-3.
@@ -20,9 +24,11 @@ Measured on the Pi 5 (4 GB, 2026-11-11, after removing PyTorch from the worker):
 
 A third and fourth camera by copy-pasting three Compose services each would add about
 260 MB per camera, plus hand-edited nginx routes, `service-controller` groups and
-health-page rows. CPU is not the limit: one analysis cycle costs about 0.1 core-second
-(median 88 ms, 2 threads), so three cameras at 0.3 s intervals need about one core of
-the two reserved for analysis.
+health-page rows. The earlier 88 ms single-camera analysis measurement does not
+establish capacity for three simultaneous cameras: CPU time per frame, decoding,
+source resolution, frame gating and the shared CPU budget all matter. Live 8 MP
+tests on 2026-11-12 showed a growing preview queue at 10 FPS, even with detection
+paused. Validate the complete workload at the intended camera settings.
 
 ## Where a camera is hard-coded today
 
