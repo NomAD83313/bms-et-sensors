@@ -601,9 +601,11 @@ HTTP availability separately from recording health.
 The main dashboard's Cameras link follows HTTP availability and remains active
 when recording or detection is paused; recorder health is shown inside Cameras.
 System Health also shows recording/detection state, baseline readiness, saved
-clip count and event windows. Its Cameras Start/Stop/Restart controls manage
-`camera-recorder`, `camera-dashboard` and `camera-anomaly` together, scoped to
-the controller's Compose project. They preserve the saved detection selection;
+clip count and event windows. System Health shows one Cameras block with a line per
+camera and one control row per camera. Start/Stop/Restart of a camera manage its
+recorder and dashboard (`camera-recorder`, `camera-dashboard`) and make sure the shared
+analysis worker `camera-analysis` runs; Stop leaves that worker running because it also
+serves the other cameras. All controls are scoped to the controller's Compose project. They preserve the saved detection selection;
 routine detection/recording pause is managed on `/cameras/`. If the optional
 containers have not been created, run `./scripts/restart-cameras.sh` first.
 
@@ -616,7 +618,7 @@ existing directory. Never run two recorders against the same directory.
 To stop the Docker camera services:
 
 ```sh
-docker compose --profile cameras stop camera-anomaly camera-recorder camera-dashboard
+docker compose --profile cameras stop camera-recorder camera-dashboard
 ```
 
 Local migration (2026-11-05): the Docker camera services use port 8082 and
@@ -658,8 +660,8 @@ The `cameras` profile also includes a local **Unusual view detection** experimen
 using a lightweight PatchCore-style model. Learn a normal view, inspect anomaly
 scores and event snapshots. In anomaly mode, analysis and event recording share
 one start/pause control.
-Both camera pages offer MobileNetV3, MobileNetV4 ConvSmall ×0.5 and MobileOne-S0.
-MobileOne has a finer stride-eight heatmap but requires more processing. Applying a different model pauses detection/event
+Both camera pages offer MobileNetV3 and MobileNetV4 ConvSmall ×0.5.
+Applying a different model pauses detection/event
 recording and requires new normal-view learning. Each camera keeps its own selection
 and strict baseline. All choices require scene-specific sensitivity validation.
 See [camera anomaly setup and limitations](docs/camera-anomaly.md).
@@ -702,7 +704,8 @@ sudo apt-get install --no-install-recommends rpicam-apps-core rpicam-apps-encode
 Open `/cameras/` for the original camera and `/cameras/pi/` for the Pi camera;
 both pages have camera navigation links. The main dashboard also has a separate
 Raspberry Pi Camera tile with an HTTP availability indicator. The optional `pi-camera` Compose profile
-starts `pi-camera-recorder`, `pi-camera-dashboard` and `pi-camera-anomaly`.
+starts `pi-camera-recorder` and `pi-camera-dashboard`. One shared worker, `camera-analysis`
+(started by every camera profile), analyses all cameras.
 The existing camera services and `CAMERA_URL` are independent of this profile.
 
 The host service `bms-pi-camera` opens the CSI camera once and shares a loopback-only
@@ -732,7 +735,7 @@ Use the camera pages for recording/detection controls. Host source logs:
 `journalctl -u bms-pi-camera`. To stop the second camera completely:
 
 ```sh
-docker compose --profile pi-camera stop pi-camera-recorder pi-camera-dashboard pi-camera-anomaly
+docker compose --profile pi-camera stop pi-camera-recorder pi-camera-dashboard
 sudo systemctl disable --now bms-pi-camera
 ```
 

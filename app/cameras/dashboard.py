@@ -12,30 +12,32 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
 
 try:
-    from . import control, anomaly_control, history, source
+    from . import control, anomaly_control, environment, history, source
     from .capture_settings import validate_update
-    from .model_profiles import ANALYSIS_SOURCE
+    from .environment import recording_mode
+    from .model_profiles import ANALYSIS_SOURCE, geometry_fields
     from .preview_quality import DecodeGuard, decoder_error_kind
     from .roi import validate_roi, roi_input_dimensions, roi_bounds
     from .learning_sessions import LearningSessions, MAX_SESSIONS
-    from .source import preview_input_args
+    from .source import FFMPEG, MAX_FRAME_BYTES, preview_input_args, stop_process
 except ImportError:
     import control
     import anomaly_control
+    import environment
     import history
     import source
     from capture_settings import validate_update
-    from model_profiles import ANALYSIS_SOURCE
+    from environment import recording_mode
+    from model_profiles import ANALYSIS_SOURCE, geometry_fields
     from preview_quality import DecodeGuard, decoder_error_kind
     from roi import validate_roi, roi_input_dimensions, roi_bounds
     from learning_sessions import LearningSessions, MAX_SESSIONS
-    from source import preview_input_args
+    from source import FFMPEG, MAX_FRAME_BYTES, preview_input_args, stop_process
 
 ROOT = Path(__file__).resolve().parent
 RECORDINGS = Path(os.environ.get('RECORDING_DIR', ROOT / 'runtime/recordings')).resolve()
 WEB = ROOT / 'web'
 LOG = logging.getLogger('camera-preview')
-MAX_FRAME_BYTES = source.MAX_FRAME_BYTES
 
 
 def browser_preview(jpeg):
@@ -50,10 +52,6 @@ def browser_preview(jpeg):
     result = io.BytesIO()
     canvas.save(result, format='JPEG', quality=85)
     return result.getvalue()
-
-
-def recording_mode():
-    return os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
 
 
 def clip_path(name):
@@ -83,7 +81,7 @@ def status():
     details = control.recording_details()
     analysis = anomaly_control.read_json(anomaly_control.DATA / 'status.json', {})
     analysis_state = analysis.get('state', 'offline') if anomaly_control.state_is_current(analysis) else 'offline'
-    clip_seconds = int(os.environ.get('CLIP_SECONDS', '60'))
+    clip_seconds = environment.clip_seconds()
     healthy = control.enabled() and state == 'recording' and time.time() - newest < clip_seconds + 60
     if mode == 'anomaly':
         healthy = control.enabled() and state in ('buffering', 'saving_event')
@@ -91,6 +89,7 @@ def status():
     if source.capture_url():
         capture = source.capture_settings()
         resolution = f"{capture['width']} × {capture['height']}"
+    pre_seconds, post_seconds = environment.event_windows()
     return dict(camera_name=os.environ.get('CAMERA_NAME', 'Camera 01'),
                 camera_description=os.environ.get('CAMERA_DESCRIPTION', 'Network camera'),
                 camera_resolution=resolution, service=state, healthy=healthy, recording_enabled=control.enabled(), recording_mode=mode,
@@ -102,11 +101,10 @@ def status():
                 baseline_ready=analysis.get('baseline_ready', False),
                 analysis_score=analysis.get('score'), analysis_threshold=analysis.get('threshold'),
                 preview_quality=browser_live().quality(),
-                pre_seconds=float(os.environ.get('CAMERA_EVENT_PRE_SEC', '7')),
-                post_seconds=float(os.environ.get('CAMERA_EVENT_POST_SEC', '10')),
+                pre_seconds=pre_seconds, post_seconds=post_seconds,
                 clips=clips, total_bytes=sum(p['bytes'] for p in clips), free_bytes=shutil.disk_usage(RECORDINGS).free,
-                clip_seconds=clip_seconds, max_storage_bytes=int(os.environ.get('MAX_STORAGE_MB', '10240'))*1024*1024,
-                max_age_hours=float(os.environ.get('MAX_AGE_HOURS', '24')), live_available=bool(os.environ.get('CAMERA_URL')))
+                clip_seconds=clip_seconds, max_storage_bytes=environment.max_storage_bytes(),
+                max_age_hours=environment.max_age_hours(), live_available=bool(os.environ.get('CAMERA_URL')))
 
 
 class LivePreview:
@@ -269,12 +267,7 @@ class LivePreview:
                     self.decoder_error('stream_error')
             finally:
                 watchdog_stop.set()
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                stop_process(process)
                 process.stdout.close()
                 watchdog_thread.join(timeout=1)
                 errors.join(timeout=2)
@@ -291,7 +284,7 @@ def decoder_command(main_url, browser):
     frame_filter = ('fps=10,scale=960:540:force_original_aspect_ratio=decrease:'
                     'force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
                     if browser_substream else 'fps=5' if separate_analysis_stream else 'fps=10')
-    args = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'warning',
+    args = [*FFMPEG, '-loglevel', 'warning',
             *preview_input_args(url, transport='tcp', strict=not browser_substream),
             '-map', '0:v:0', '-an', '-vf', frame_filter,
             '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3', '-threads', '1',
@@ -325,13 +318,8 @@ LIVE = LivePreview()
 BROWSER = LivePreview(browser=True)
 POST_PATHS = frozenset((
     '/api/capture',
-    '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause',
-    '/api/anomaly/configure', '/api/anomaly/resize',
-    '/api/anomaly/confirmation', '/api/anomaly/model', '/api/anomaly/roi', '/api/anomaly/color',
-    '/api/anomaly/add-session', '/api/anomaly/replace-session',
-    '/api/anomaly/remove-session', '/api/anomaly/rename-session', '/api/anomaly/rebuild-sessions',
-    '/api/delete/event', '/api/delete/recording', '/api/delete/all-events',
-    '/api/delete/all-recordings', '/api/delete/history',
+    *('/api/anomaly/' + action for action in anomaly_control.PUBLIC_ACTIONS),
+    *('/api/delete/' + action for action in history.ACTIONS),
 ))
 ASSETS = {
     '/': ('index.html', 'text/html; charset=utf-8'),
@@ -419,9 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
             session_name=body.get('session_name', ''), session_note=body.get('session_note', ''),
             color_mode=body.get('color_mode'))
-        if (recording_mode() == 'anomaly'
-                and action in ('pause', 'learn', 'resize', 'model', 'roi', 'color', 'add-session',
-                               'replace-session', 'remove-session', 'rebuild-sessions')):
+        if recording_mode() == 'anomaly' and action in anomaly_control.MONITORING_STOPPING_ACTIONS:
             # Stopping the buffer must also work while the worker is offline.
             control.set_enabled(False)
         return self.send(json.dumps(command).encode(), 'application/json', 202)
@@ -479,12 +465,7 @@ class Handler(BaseHTTPRequestHandler):
                 width, height = roi_input_dimensions(
                     result.get('input_size', anomaly_control.DEFAULT_INPUT_SIZE),
                     *geometry, result.get('roi'))
-                model_key = anomaly_control.validate_model(
-                    result.get('model_key', anomaly_control.DEFAULT_MODEL))
-                heat_width, heat_height = anomaly_control.heatmap_dimensions(
-                    width, height, model_key)
-                result.update(effective_input_width=width, effective_input_height=height,
-                              heatmap_width=heat_width, heatmap_height=heat_height,
+                result.update(geometry_fields(width, height, result.get('model_key', anomaly_control.DEFAULT_MODEL)),
                               roi_geometry_valid=True)
             except ValueError:
                 # Keep area reset available after a source aspect-ratio change.
@@ -572,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
         clip = clip_path(path.removeprefix('/api/play/'))
         # Fragmented MP4 allows playback without a second copy of each clip.
         process = subprocess.Popen([
-            'ffmpeg', '-nostdin', '-loglevel', 'quiet', '-i', str(clip),
+            *FFMPEG, '-loglevel', 'quiet', '-i', str(clip),
             '-map', '0:v:0', '-an', '-c:v', 'copy',
             '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
             '-f', 'mp4', 'pipe:1'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -584,12 +565,7 @@ class Handler(BaseHTTPRequestHandler):
             shutil.copyfileobj(process.stdout, self.wfile)
         finally:
             process.stdout.close()
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            stop_process(process)
 
     def route(self):
         path = unquote(urlsplit(self.path).path)

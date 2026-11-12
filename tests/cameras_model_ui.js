@@ -17,9 +17,9 @@ async function run() {
   const api = new Function('document', 'fetch', 'Image', 'setInterval', 'setTimeout', 'performance', 'window',
     fs.readFileSync('app/cameras/web/app.js', 'utf8') + '\nreturn {syncModel, syncDetectionControls, syncInputSize, applyModel};')(
       document, fetch, class {}, () => {}, () => {}, {now: () => 0}, {});
-  api.syncModel({model_key: 'mobileone-s0'}, false);
+  api.syncModel({model_key: 'mobilenetv4-convsmall-x0.5'}, false);
   const select = element('anomaly-model');
-  assert(select.value === 'mobileone-s0', 'Initialize from the actual worker model');
+  assert(select.value === 'mobilenetv4-convsmall-x0.5', 'Initialize from the actual worker model');
   select.value = 'mobilenetv3'; select.listeners.change();
   assert(!element('anomaly-model-apply').disabled, 'Offer Apply for a changed model');
   assert(element('anomaly-learn').disabled, 'Do not learn against an unapplied model selection');
@@ -36,7 +36,7 @@ async function run() {
   api.syncInputSize({...applied, retraining_required: false, input_size: '1920x1080', heatmap_width: 120, heatmap_height: 68}, false);
   assert(element('input-size-status').textContent.includes('120 × 68'), 'Use the worker heatmap grid, including rounded height');
   for (const [model, fallback] of [['mobilenetv4-convsmall-x0.5', '120 × 68'],
-      ['mobileone-s0', '240 × 135']]) {
+      ['mobilenetv3', '120 × 68']]) {
     select.value = model; select.listeners.change();
     assert(!element('anomaly-model-apply').disabled, 'Offer Apply for the new model');
     assert(element('anomaly-learn').disabled, 'Wait for the new model to be applied before learning');
@@ -61,14 +61,14 @@ async function run() {
   const options = html.match(/<select id="anomaly-model"[^>]*>(.*?)<\/select>/s)[1];
   const visible = [...options.matchAll(/<option value="([^"]+)"([^>]*)>/g)]
     .filter(match => !/\bhidden\b|\bdisabled\b/.test(match[2])).map(match => match[1]);
-  assert(JSON.stringify(visible) === JSON.stringify(['mobilenetv3', 'mobilenetv4-convsmall-x0.5', 'mobileone-s0']), 'Offer the three selected candidates');
+  assert(JSON.stringify(visible) === JSON.stringify(['mobilenetv3', 'mobilenetv4-convsmall-x0.5']), 'Offer the two selected candidates');
   const shortlisted = [...options.matchAll(/<option value="([^"]+)"[^>]*class="model-shortlist"[^>]*>/g)].map(match => match[1]);
   assert(JSON.stringify(shortlisted) === JSON.stringify(['mobilenetv3']), 'Bold the strongest current Pi Camera model');
   assert(fs.readFileSync('app/cameras/web/style.css', 'utf8').includes('option.model-shortlist{font-weight:700}'), 'Render shortlisted model options in bold');
-  for (const key of ['resnet-fp32', 'pp-lcnet-x0.5', 'resnet-int8', 'shufflenetv2-x0.5', 'shufflenetv2-x1.0', 'mobilenetv3-int8'])
+  for (const key of ['mobileone-s0', 'resnet-fp32', 'pp-lcnet-x0.5', 'resnet-int8', 'shufflenetv2-x0.5', 'shufflenetv2-x1.0', 'mobilenetv3-int8'])
     assert(!options.includes('value="' + key + '"'), 'Remove retired model identifiers from the UI');
   assert(html.includes('Experimental candidates: verify detection sensitivity'), 'Do not imply the shortlist passed quality acceptance');
-  assert(html.includes('MobileOne provides a finer heatmap'), 'Explain the finer stride-eight heatmap');
+  assert(html.includes('stride-sixteen heatmap'), 'Describe the shared stride-sixteen heatmap');
   console.log('Model selection, acknowledgment, retraining and stride-sixteen heatmap UI passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

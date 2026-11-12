@@ -43,6 +43,48 @@ class MissingContainerActionTests(unittest.TestCase):
         )
 
 
+def labelled(identifier, role, service, label=None, port="8085"):
+    return types.SimpleNamespace(labels={
+        "bms.camera.id": identifier, "bms.camera.role": role, "bms.camera.label": label or identifier.title(),
+        "bms.camera.port": port, "com.docker.compose.service": service})
+
+
+class ExtraCameraDiscoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.mod = _load_module()
+        self.controller = types.SimpleNamespace(labels={"com.docker.compose.project": "stack"})
+        self.client = types.SimpleNamespace(containers=Mock())
+        self.client.containers.get.return_value = self.controller
+
+    def test_cameras_are_grouped_by_label_with_recorder_before_dashboard(self):
+        self.client.containers.list.return_value = [
+            labelled("yard", "dashboard", "cam-yard-dashboard", port="8086"),
+            labelled("garage", "dashboard", "cam-garage-dashboard"),
+            labelled("garage", "recorder", "cam-garage-recorder", label="Garage"),
+            labelled("yard", "recorder", "cam-yard-recorder", port="8086"),
+        ]
+        cameras = self.mod.discover_extra_cameras(self.client)
+        self.assertEqual([camera["id"] for camera in cameras], ["garage", "yard"])
+        self.assertEqual(cameras[0]["names"], ["cam-garage-recorder", "cam-garage-dashboard"])
+        self.assertEqual((cameras[0]["label"], cameras[0]["port"]), ("Garage", "8085"))
+        self.client.containers.list.assert_called_once_with(all=True, filters={"label": [
+            "com.docker.compose.project=stack", "bms.camera.id"]})
+
+    def test_nothing_is_found_without_labelled_containers_or_a_compose_project(self):
+        self.client.containers.list.return_value = []
+        self.assertEqual(self.mod.discover_extra_cameras(self.client), [])
+        self.controller.labels = {}
+        self.assertEqual(self.mod.discover_extra_cameras(self.client), [])
+
+    def test_extra_camera_services_are_looked_up_by_compose_service_like_the_other_cameras(self):
+        running = Mock(status="running")
+        self.client.containers.list.return_value = [running]
+        self.assertEqual(self.mod.container_status(self.client, "cam-garage-dashboard"), "running")
+        self.client.containers.list.assert_called_once_with(all=True, filters={"label": [
+            "com.docker.compose.project=stack", "com.docker.compose.service=cam-garage-dashboard",
+            "com.docker.compose.oneoff=False"]})
+
+
 class ComposeCameraTests(unittest.TestCase):
     def setUp(self):
         self.mod = _load_module()

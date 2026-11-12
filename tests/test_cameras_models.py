@@ -25,7 +25,6 @@ class ModelSelectionTests(unittest.TestCase):
 
     def test_encoders_have_independent_identities_and_layouts(self):
         self.assertEqual(len({profile['encoder'] for profile in MODELS.values()}), len(MODELS))
-        self.assertEqual(heatmap_dimensions(1920, 1080, 'mobileone-s0'), (240, 135))
 
     def test_small_backbone_commands_and_all_supported_heatmap_layouts(self):
         from app.cameras.anomaly_control import INPUT_SIZES, input_dimensions

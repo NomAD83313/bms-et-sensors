@@ -7,8 +7,8 @@ import statistics
 import time
 import sys
 
-import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import numpy as np
 from app.cameras.patchcore_lite import PatchCoreLite
 
 
@@ -26,15 +26,19 @@ def main():
     args = parser.parse_args()
     if args.samples < 5:
         parser.error('At least 5 samples required')
-    model = PatchCoreLite(input_size=args.size)
-    model.load(args.baseline)
     jpeg = args.frame.read_bytes()
-    torch.set_num_threads(1)
+
+    def load(threads):
+        instance = PatchCoreLite(input_size=args.size, threads=threads)
+        instance.load(args.baseline)
+        return instance
+
+    model = load(1)
     reference = model.features(jpeg)
     reference_score, reference_heat = model.score(reference)
     results = []
     for threads in (1, 2, 2, 1):
-        torch.set_num_threads(threads)
+        model = load(threads)
         for _ in range(5):
             model.score(model.features(jpeg))
         elapsed, features_ms, score_ms = [], [], []
@@ -49,8 +53,8 @@ def main():
             score_ms.append((end-middle)*1000)
             elapsed.append((end-start)*1000)
         cpu = (time.process_time()-cpu_started)/(time.perf_counter()-wall_started)*100
-        torch.testing.assert_close(features, reference, rtol=1e-4, atol=1e-4)
-        torch.testing.assert_close(heat, reference_heat, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(features, reference, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(heat, reference_heat, rtol=1e-4, atol=1e-4)
         result = dict(threads=threads, mean_ms=statistics.mean(elapsed), median_ms=statistics.median(elapsed),
                       p95_ms=percentile(elapsed, .95), features_mean_ms=statistics.mean(features_ms),
                       score_mean_ms=statistics.mean(score_ms), cpu_percent=cpu,

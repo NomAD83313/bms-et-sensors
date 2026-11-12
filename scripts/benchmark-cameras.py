@@ -13,8 +13,10 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 CGROUP = Path('/sys/fs/cgroup')
 SERVICES = {
-    'wifi': ['camera-recorder', 'camera-dashboard', 'camera-anomaly'],
-    'pi': ['pi-camera-recorder', 'pi-camera-dashboard', 'pi-camera-anomaly'],
+    'wifi': ['camera-recorder', 'camera-dashboard'],
+    'pi': ['pi-camera-recorder', 'pi-camera-dashboard'],
+    # One shared worker analyses every camera; measure it once.
+    'analysis': ['camera-analysis'],
 }
 FIELDS = ('service', 'recording_mode', 'recording_enabled', 'analysis_state',
           'monitoring_enabled', 'camera_resolution', 'preview_quality')
@@ -120,8 +122,9 @@ def main():
         parser.error('Require duration >= interval > 0 and warmup >= 0')
     if args.preview and args.interval > 10:
         parser.error('Preview tests require interval <= 10 seconds')
-    cameras = list(SERVICES) if args.camera == 'both' else [args.camera]
-    targets = discover(cameras)
+    cameras = ['wifi', 'pi'] if args.camera == 'both' else [args.camera]
+    # The shared analysis worker serves every selected camera and is measured with them.
+    targets = discover(cameras + ['analysis'])
     urls = {'wifi': args.wifi_url.rstrip('/'), 'pi': args.pi_url.rstrip('/')}
     urls = {camera: url for camera, url in urls.items() if camera in cameras}
     output = ROOT / 'runtime' / 'camera-benchmarks' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + f'-{time.time_ns()}')

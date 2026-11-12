@@ -150,7 +150,7 @@ installed source before using the matrix runner after a code change.
 
 `scripts/benchmark-camera-models.py` measures the actual `PatchCoreLite.features()`
 and `score()` implementations for the production model profiles. Use `--models`
-to select MobileNetV3, MobileOne-S0 or MobileNetV4 ConvSmall ×0.5.
+to select MobileNetV3 or MobileNetV4 ConvSmall ×0.5.
 Run it inside the deployed anomaly image with a private, writable `--work`
 directory. Supply 24 distinct JPEGs in `frames/`; existing private
 `banks/<model>/` are validated and reused. Production learning is never replaced.

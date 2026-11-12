@@ -180,6 +180,23 @@
       white-space: pre-wrap;
       min-height: 88px;
     }
+    .cam-line {
+      display: grid;
+      grid-template-columns: minmax(8rem, 12rem) auto 1fr;
+      gap: 6px 12px;
+      align-items: start;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .cam-line:last-of-type { border-bottom: 0; }
+    .cam-line .cam-name { font-weight: 700; color: var(--text); }
+    .cam-line .status { min-height: 28px; padding: 0 10px; }
+    .cam-line .cam-text { white-space: pre-wrap; }
+    .cam-note { margin-top: 6px; font-size: 0.84rem; }
+    @media (max-width: 900px) {
+      .cam-line { grid-template-columns: 1fr auto; }
+      .cam-line .cam-text { grid-column: 1 / -1; }
+    }
     @media (max-width: 900px) {
       .card.wide { grid-column: span 1; }
       .hero { grid-template-columns: 1fr; }
@@ -339,10 +356,12 @@
       { id: 'almemo', name: 'ALMEMO 2490', url: '/probe/almemo', type: 'json', pass: (d) => d && d.status === 'ok', group: 'device' },
       { id: 'pyrometer', name: 'Pyrometers', url: '/probe/pyrometer', type: 'json', pass: (d) => d && (d.status === 'ok' || d.status === 'degraded') && Array.isArray(d.connected_devices) && d.connected_devices.length > 0, group: 'device' },
       { id: 'messkluppe', name: 'Messkluppe', url: '/probe/messkluppe', type: 'json', pass: (d) => d && d.ok === true, group: 'device' },
-      { id: 'cameras', name: 'Camera WiFI', url: '/probe/cameras', target: 'cameras', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
-      { id: 'pi-camera', name: 'Pi Camera', url: '/probe/pi-camera', target: 'pi-camera', type: 'json', pass: (d) => d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service) && !['recovering', 'unavailable'].includes(d.preview_quality?.state) && (d.recording_mode !== 'anomaly' || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state)), group: 'device' },
+      { id: 'cameras', name: 'Cameras', url: '/api/control/cameras', type: 'cameras', group: 'device', wide: true },
     ];
-    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana', 'cameras', 'pi-camera'];
+    const controllableTargets = ['redlab', 'almemo', 'mscl', 'pyrometer', 'messkluppe', 'grafana'];
+    // Camera groups come from the service controller (/api/control/cameras), one row per camera.
+    let cameraTargets = [];
+    let cameraLabels = {};
     const targetDisplayNames = {
       redlab: 'RedLab',
       almemo: 'ALMEMO',
@@ -350,8 +369,6 @@
       pyrometer: 'Pyrometers',
       messkluppe: 'Messkluppe',
       grafana: 'Grafana',
-      cameras: 'Camera WiFI',
-      'pi-camera': 'Pi Camera',
     };
     const statusLinks = {
       influx: `${window.location.protocol}//${window.location.hostname}:8086`,
@@ -363,8 +380,6 @@
       almemo: '/almemo/',
       pyrometer: '/pyrometer/',
       messkluppe: '/messkluppe/',
-      cameras: '/cameras/',
-      'pi-camera': '/cameras/pi/',
     };
 
     const platformGrid = document.getElementById('platformGrid');
@@ -388,7 +403,7 @@
           </div>
           ${statusEl}
         </div>
-        <div class="details" id="dt-${s.id}">-</div>
+        <div class="details${s.type === 'cameras' ? ' cam-list' : ''}" id="dt-${s.id}">-</div>
       `;
       if (s.group === 'device') {
         deviceGrid.appendChild(el);
@@ -400,10 +415,10 @@
     services.forEach(mkCard);
     function mkControlRows() {
       controlRows.innerHTML = '';
-      controllableTargets.forEach((t) => {
+      [...controllableTargets, ...cameraTargets].forEach((t) => {
         const row = document.createElement('div');
         row.className = 'ctrl-row';
-        const label = targetDisplayNames[t] || t;
+        const label = targetDisplayNames[t] || cameraLabels[t] || t;
         row.innerHTML = `
           <span class="label">${label}</span>
           <button type="button" data-target="${t}" data-action="start">Start</button>
@@ -416,6 +431,16 @@
     }
 
     mkControlRows();
+
+    function syncCameraControlRows(cameras) {
+      const targets = cameras.map((camera) => camera.target);
+      const labels = {};
+      cameras.forEach((camera) => { labels[camera.target] = camera.label || camera.id; });
+      cameraLabels = labels;
+      if (JSON.stringify(targets) === JSON.stringify(cameraTargets)) return;
+      cameraTargets = targets;
+      mkControlRows();
+    }
 
     function setCtrlNote(text) {
       ctrlNote.textContent = text;
@@ -475,14 +500,14 @@
         const data = await controlFetch('/api/control/services', { cache: 'no-store' });
         const svc = data.services || {};
         const pauses = data.manual_pauses || {};
-        controllableTargets.forEach((target) => {
+        [...controllableTargets, ...cameraTargets].forEach((target) => {
           const states = svc[target] || {};
           const paused = !!pauses[target];
           setTargetState(target, summarizeTargetState(states, paused));
           setTargetButtons(target, states, paused);
         });
       } catch (e) {
-        controllableTargets.forEach((target) => {
+        [...controllableTargets, ...cameraTargets].forEach((target) => {
           setTargetState(target, 'unavailable');
           setTargetButtons(target, {});
         });
@@ -553,7 +578,7 @@
       if (id === 'messkluppe') {
         return `Mode: ${data.fake_mode ? 'fake' : 'real'} | Running: ${yn(!!data.collector_running)} | Influx: ${yn(!!data.influx_configured)} | Packets: ${data.packets_received ?? 0} | Writes: ${data.records_written ?? 0} | Errors: ${data.last_error || 'none'}`;
       }
-      if (id === 'cameras' || id === 'pi-camera') {
+      if (id === 'cameras' || id === 'pi-camera' || id === 'camera') {
         const score = Number.isFinite(data.analysis_score) && Number.isFinite(data.analysis_threshold)
           ? ` | Score: ${data.analysis_score.toFixed(2)} / ${data.analysis_threshold.toFixed(2)}` : '';
         const quality = data.preview_quality;
@@ -585,7 +610,102 @@
       return !!(svcctlData && svcctlData.manual_pauses && svcctlData.manual_pauses[target]);
     }
 
+    function cameraHealthy(d) {
+      return !!d && ['paused', 'buffering', 'saving_event', 'recording'].includes(d.service)
+        && !['recovering', 'unavailable'].includes(d.preview_quality?.state)
+        && (d.recording_mode !== 'anomaly'
+          || ['normal', 'suspect', 'anomaly', 'paused', 'learning', 'training'].includes(d.analysis_state));
+    }
+
+    // One camera: badge text, severity and detail text from its dashboard status.
+    function judgeCamera(data) {
+      const details = summarizeJson('camera', data);
+      const ok = cameraHealthy(data);
+      if (ok && data.recording_mode === 'anomaly') {
+        if (data.analysis_state === 'anomaly') return { level: 'warn', badge: 'anomaly', details };
+        if (data.service === 'paused' && ['paused', 'learning', 'training'].includes(data.analysis_state)) {
+          return { level: 'warn', badge: data.analysis_state, details };
+        }
+      }
+      return { level: ok ? 'ok' : 'warn', badge: ok ? 'up' : 'degraded', details };
+    }
+
+    async function probeOneCamera(camera, pauses) {
+      if (pauses[camera.target]) {
+        return { camera, level: 'warn', badge: 'paused', details: 'User stopped from Service Control' };
+      }
+      try {
+        const res = await fetchWithTimeout(camera.status_url, { cache: 'no-store' });
+        if (!res.ok) return { camera, level: 'err', badge: 'down', details: `HTTP ${res.status}` };
+        return { camera, ...judgeCamera(JSON.parse((await res.text()) || '{}')) };
+      } catch (e) {
+        return { camera, level: 'err', badge: 'down', details: e.message || 'request failed' };
+      }
+    }
+
+    const BADGE_SEVERITY = { anomaly: 3, degraded: 2, learning: 1, training: 1, paused: 0 };
+
+    function overallCameraState(results) {
+      if (!results.length) return { level: 'warn', badge: 'no cameras' };
+      const failed = results.filter((r) => r.level === 'err');
+      if (failed.length) return { level: 'err', badge: 'down' };
+      const warned = results.filter((r) => r.level === 'warn')
+        .sort((a, b) => (BADGE_SEVERITY[b.badge] ?? 1) - (BADGE_SEVERITY[a.badge] ?? 1));
+      if (warned.length) return { level: 'warn', badge: warned[0].badge };
+      return { level: 'ok', badge: 'up' };
+    }
+
+    function renderCameraList(results) {
+      const st = document.getElementById('st-cameras');
+      const dt = document.getElementById('dt-cameras');
+      const overall = overallCameraState(results);
+      st.className = `status ${overall.level}`;
+      st.textContent = overall.badge;
+      dt.textContent = '';
+      results.forEach((result) => {
+        const line = document.createElement('div');
+        line.className = 'cam-line';
+        const name = document.createElement('a');
+        name.className = 'cam-name';
+        name.href = result.camera.path;
+        name.textContent = result.camera.label || result.camera.id;
+        const badge = document.createElement('span');
+        badge.className = `status ${result.level}`;
+        badge.textContent = result.badge;
+        const text = document.createElement('span');
+        text.className = 'cam-text';
+        text.textContent = result.details;
+        line.appendChild(name);
+        line.appendChild(badge);
+        line.appendChild(text);
+        dt.appendChild(line);
+      });
+      const note = document.createElement('div');
+      note.className = 'cam-note';
+      note.textContent = 'Analysis: one shared worker for all cameras';
+      dt.appendChild(note);
+    }
+
+    async function probeCameras(s) {
+      try {
+        const res = await fetchWithTimeout(s.url, { cache: 'no-store' });
+        if (!res.ok) {
+          setState(s.id, 'err', 'down', `Camera list unavailable: HTTP ${res.status}`);
+          return;
+        }
+        const list = await res.json();
+        const cameras = Array.isArray(list.cameras) ? list.cameras : [];
+        syncCameraControlRows(cameras);
+        const pauses = list.manual_pauses || {};
+        const results = await Promise.all(cameras.map((camera) => probeOneCamera(camera, pauses)));
+        renderCameraList(results);
+      } catch (e) {
+        setState(s.id, 'err', 'down', e.message || 'request failed');
+      }
+    }
+
     async function probe(s, sharedResponses) {
+      if (s.type === 'cameras') return probeCameras(s);
       try {
         if (serviceIsPaused(s.target, sharedResponses)) {
           setState(s.id, 'warn', 'paused', 'User stopped from Service Control');
@@ -611,16 +731,6 @@
           const data = JSON.parse(res.text || '{}');
           const ok = s.pass(data);
           const details = summarizeJson(s.id, data);
-          if (['cameras', 'pi-camera'].includes(s.id) && ok && data.recording_mode === 'anomaly') {
-            if (data.analysis_state === 'anomaly') {
-              setState(s.id, 'warn', 'anomaly', details);
-              return;
-            }
-            if (data.service === 'paused' && ['paused', 'learning', 'training'].includes(data.analysis_state)) {
-              setState(s.id, 'warn', data.analysis_state, details);
-              return;
-            }
-          }
           setState(s.id, ok ? 'ok' : 'warn', ok ? 'up' : 'degraded', details);
         } else {
           const text = res.text;

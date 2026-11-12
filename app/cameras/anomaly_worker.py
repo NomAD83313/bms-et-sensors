@@ -1,8 +1,10 @@
 """Visual anomaly analysis and linked event-recording session control."""
 import contextlib
+import fcntl
 import json
 import logging
 import os
+from pathlib import Path
 import pickle
 import shutil
 import threading
@@ -14,47 +16,86 @@ from urllib.parse import quote
 
 import control
 from anomaly_control import (
-    DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, DEFAULT_MULTIPLIER, MODELS, SESSION_ACTIONS,
-    command_mode, heatmap_dimensions, input_dimensions, read_json,
+    CONFIGURATION_ACTIONS, DATA, Confirmation, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, DEFAULT_MULTIPLIER, MODELS,
+    SESSION_ACTIONS, command_mode, input_dimensions, read_json,
     validate_confirmation_frames, validate_input_size, validate_model,
     validate_learning_seconds, validate_multiplier, validate_color_mode, write_json,
 )
 from patchcore_lite import PatchCoreLite, overlay
 try:
-    from .model_profiles import ANALYSIS_SOURCE
+    from .model_profiles import ANALYSIS_SOURCE, geometry_fields
     from .roi import ROIGeometryChanged, validate_roi
     from .learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from .frame_gate import FrameGate
     from .source import MAX_FRAME_BYTES
 except ImportError:
-    from model_profiles import ANALYSIS_SOURCE
+    from model_profiles import ANALYSIS_SOURCE, geometry_fields
     from roi import ROIGeometryChanged, validate_roi
     from learning_sessions import LearningSessions, configuration, configuration_matches, MAX_SESSIONS
+    from frame_gate import FrameGate
     from source import MAX_FRAME_BYTES
 
 LOG = logging.getLogger('camera-anomaly')
 MAX_EVENTS = 100
 LEARNING_INTERVAL_SEC = 2
-# Actions that only take effect when they change a model setting.
-CONFIGURATION_ACTIONS = ('resize', 'model', 'roi', 'color')
 # Actions that keep collected samples and the running session unless a setting changed.
 NON_DISRUPTIVE_ACTIONS = ('configure', 'confirmation') + CONFIGURATION_ACTIONS
+# Timing and encoder fields measured by the last full evaluation, shown for skipped frames.
+EVALUATION_METRICS = ('preparation_ms', 'jpeg_decode_ms', 'image_transform_ms', 'tensor_ms', 'encoder_ms',
+                      'feature_ms', 'distance_ms', 'jpeg_draft', 'decoded_mode', 'decoded_width',
+                      'decoded_height')
+LOCK_RETRY_SECONDS = 10
+ERROR_LOG_INTERVAL_SECONDS = 60
+# Baselines written by the former PyTorch implementation; rebuilt from saved sessions.
+LEGACY_BASELINES = ('baseline.pt', 'baseline-previous.pt', 'baseline-next.pt')
+
+
+class WorkerLocked(RuntimeError):
+    """Another analysis worker already owns this camera directory."""
+
+
+def acquire_directory_lock(path):
+    """Hold an exclusive lock on `path` for the life of the returned handle."""
+    handle = open(path, 'a+')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        handle.close()
+        raise WorkerLocked(f'Another analysis worker already owns {path.parent}') from error
+    return handle
 
 
 class AnomalyWorker:
-    def __init__(self):
-        self.preview = os.environ.get(
+    def __init__(self, data=None, control_dir=None, preview_url=None, recording_mode=None,
+                 settings=None, name=None, exclusive=False):
+        """One camera's analysis; the arguments default to the container environment.
+
+        `settings` may override interval_sec, confirm_frames, normal_frames and the
+        PatchCoreLite options (`model`) for this camera. `exclusive` takes a lock so that
+        two workers never analyse the same camera directory at the same time.
+        """
+        settings = settings or {}
+        self.name = name
+        self.log = LOG.getChild(name) if name else LOG
+        self.data = DATA if data is None else Path(data)
+        self.control_dir = None if control_dir is None else Path(control_dir)
+        self.data.mkdir(parents=True, exist_ok=True)
+        self._lock = acquire_directory_lock(self.data / '.worker.lock') if exclusive else None
+        (self.data / 'events').mkdir(exist_ok=True)
+        self.preview = preview_url or os.environ.get(
             'CAMERA_ANOMALY_PREVIEW_URL', 'http://127.0.0.1:8082/api/live.jpg')
-        self.recording_mode = os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
-        self.interval = max(.2, float(os.environ.get('CAMERA_ANOMALY_INTERVAL_SEC', '.2')))
-        self.confirmation_frames = max(
-            1, min(5, int(os.environ.get('CAMERA_ANOMALY_CONFIRM_FRAMES', '2'))))
-        sample_count = max(
-            20, min(120, int(os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60'))))
+        self.recording_mode = recording_mode or os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
+        self.interval = max(.2, float(settings.get(
+            'interval_sec', os.environ.get('CAMERA_ANOMALY_INTERVAL_SEC', '.2'))))
+        self.confirmation_frames = max(1, min(5, int(settings.get(
+            'confirm_frames', os.environ.get('CAMERA_ANOMALY_CONFIRM_FRAMES', '2')))))
+        sample_count = max(20, min(120, int(settings.get(
+            'normal_frames', os.environ.get('CAMERA_ANOMALY_NORMAL_FRAMES', '60')))))
         self.state = dict(state='loading', message='Loading visual model', updated=time.time())
         self.baseline_source = None
-        write_json(DATA / 'status.json', self.state)
+        self.publish_status()
 
-        previous = read_json(DATA / 'session.json', {})
+        previous = read_json(self.data / 'session.json', {})
         try:
             self.learning_seconds = validate_learning_seconds(
                 previous.get('learning_seconds', sample_count * 2))
@@ -82,7 +123,7 @@ class AnomalyWorker:
         selected_color = saved_setting(validate_color_mode, 'color_mode', 'rgb')
         self.baseline_invalidated = self.baseline_invalidated or configuration_reset
 
-        self.model = PatchCoreLite()
+        self.model = PatchCoreLite(**settings.get('model', {}))
         if selected_input_size != self.model.input_size:
             self.model.set_input_size(selected_input_size)
         if selected_model != self.model.model_key:
@@ -92,8 +133,15 @@ class AnomalyWorker:
         if selected_color != self.model.color_mode:
             self.model.set_color_mode(selected_color)
 
-        self.model_path = DATA / 'baseline.pt'
-        self.sessions = LearningSessions(DATA)
+        self.model_path = self.data / 'baseline.npz'
+        # A rebuilt baseline is staged, then swapped in while the previous one is kept as backup.
+        self.staging_path = self.data / 'baseline-next.npz'
+        self.backup_path = self.data / 'baseline-previous.npz'
+        self.pending_migration = False
+        self.gate = FrameGate()
+        self.last_metrics = {}
+        self._last_error = (None, float('-inf'))
+        self.sessions = LearningSessions(self.data)
         self.sessions.recover()
         self.learning_error = None
         catalog = self.sessions.catalog()
@@ -102,30 +150,54 @@ class AnomalyWorker:
             self.baseline_invalidated = configuration_reset = True
         if self.baseline_invalidated:
             self.invalidate_baseline(clear_sessions=configuration_reset)
-        elif self.model_path.exists() or self.model_path.with_name('baseline-previous.pt').exists():
+        elif self.model_path.exists() or self.backup_path.exists():
             try:
                 self.load_baseline()
             except ValueError:
                 self.invalidate_baseline()
                 configuration_reset = True
-                LOG.warning('Baseline is incompatible; new learning required')
+                self.log.warning('Baseline is incompatible; new learning required')
+        elif any((self.data / name).exists() for name in LEGACY_BASELINES):
+            if catalog['sessions']:
+                self.pending_migration = True
+                self.log.info('Rebuilding the baseline from saved normal sessions (format change)')
+            else:
+                self.invalidate_baseline()
+                configuration_reset = True
+                self.log.warning('Legacy baseline has no saved sessions; new learning required')
 
         self.last_request = previous.get('last_request')
         if configuration_reset:
-            self.last_request = read_json(DATA / 'command.json', {}).get(
+            self.last_request = read_json(self.data / 'command.json', {}).get(
                 'id', self.last_request)
+        self.resume_after_migration = previous.get('monitoring', False)
         self.monitoring = previous.get('monitoring', False) and self.model.memory is not None
         self.multiplier = previous.get('multiplier', DEFAULT_MULTIPLIER)
         self.learning = False
-        self.samples = []
+        self.collected = 0
         self.confirmation = Confirmation(required=self.confirmation_frames)
         self.candidate_since = None
         self.video_id = None
-        self.event_count = len(list((DATA / 'events').glob('*.json')))
+        self.event_count = len(list((self.data / 'events').glob('*.json')))
 
         if configuration_reset:
             self.clear_video_trigger()
             self.save_session()
+
+    def close(self):
+        """Release the exclusive camera lock, if this worker holds one."""
+        if self._lock is not None:
+            self._lock.close()
+            self._lock = None
+
+    def publish_status(self, state=None):
+        write_json(self.data / 'status.json', self.state if state is None else state)
+
+    def stop_learning(self):
+        """Abandon the running learning session and its collected frames."""
+        self.learning = self.monitoring = False
+        self.collected = 0
+        self.sessions.abort()
 
     def invalidate_baseline(self, clear_sessions=False):
         self.baseline_invalidated = True
@@ -134,15 +206,17 @@ class AnomalyWorker:
         self.model.threshold = None
         self.model.baseline_frames = 0
         self.model_path.unlink(missing_ok=True)
-        self.model_path.with_name('baseline-previous.pt').unlink(missing_ok=True)
+        self.backup_path.unlink(missing_ok=True)
+        for name in LEGACY_BASELINES:
+            (self.data / name).unlink(missing_ok=True)
         if clear_sessions:
             self.learning_error = None
             count = self.sessions.clear()
             if count:
-                LOG.info('Removed %d incompatible normal sessions', count)
+                self.log.info('Removed %d incompatible normal sessions', count)
 
     def load_baseline(self):
-        backup = self.model_path.with_name('baseline-previous.pt')
+        backup = self.backup_path
         for path in (self.model_path, backup):
             if not path.is_file():
                 continue
@@ -165,15 +239,16 @@ class AnomalyWorker:
         raise ValueError('No compatible normal baseline is available')
 
     def clear_video_trigger(self):
-        write_json(DATA / 'video-trigger.json', {})
+        write_json(self.data / 'video-trigger.json', {})
 
     def reset_detection_candidate(self):
         self.confirmation = Confirmation(required=self.confirmation_frames)
         self.candidate_since = None
         self.video_id = None
+        self.gate.reset()
 
     def save_session(self):
-        write_json(DATA / 'session.json', dict(
+        write_json(self.data / 'session.json', dict(
             last_request=self.last_request, monitoring=self.monitoring,
             multiplier=self.multiplier, input_size=self.model.input_size,
             model_key=self.model.model_key,
@@ -190,10 +265,7 @@ class AnomalyWorker:
         if source_size is not None:
             state.update(source_width=source_size[0], source_height=source_size[1])
         width, height = size or input_dimensions(self.model.input_size)
-        model_key = self.model.model_key
-        heat_width, heat_height = heatmap_dimensions(width, height, model_key)
-        state.update(effective_input_width=width, effective_input_height=height,
-                     heatmap_width=heat_width, heatmap_height=heat_height)
+        state.update(geometry_fields(width, height, self.model.model_key))
 
     def configuration_change(self, action, command):
         """Return whether a resize/model/roi/color command differs from the current setting."""
@@ -219,7 +291,7 @@ class AnomalyWorker:
             self.model.set_color_mode(command['color_mode'])
 
     def apply_pending_command(self):
-        command = read_json(DATA / 'command.json', {})
+        command = read_json(self.data / 'command.json', {})
         if not command.get('id') or command['id'] == self.last_request:
             return
         action = command.get('action')
@@ -245,7 +317,7 @@ class AnomalyWorker:
         self.last_request = command['id']
         self.reset_detection_candidate()
         if action not in NON_DISRUPTIVE_ACTIONS or changed:
-            self.samples = []
+            self.collected = 0
             self.sessions.abort()
             self.clear_video_trigger()
         if action == 'pause' and was_learning and self.model_path.exists():
@@ -284,13 +356,13 @@ class AnomalyWorker:
                 if action == 'learn' and self.selected_roi is not None:
                     self.model.set_input_size(self.model.input_size)
                 self.learning, self.monitoring = True, False
-                self.samples = []
+                self.collected = 0
             else:
                 self.learning = self.monitoring = False
                 self.sessions.abort()
                 items = self.sessions.proposed(command['session_id']) if action == 'remove-session' else self.sessions.catalog()['sessions']
                 self.clear_video_trigger()
-                control.follow_detection(False, self.recording_mode)
+                control.follow_detection(False, self.recording_mode, self.control_dir)
                 self.rebuild_sessions(self.state, items, resume=False)
         except (ValueError, OSError) as error:
             self.learning_error = str(error) if isinstance(error, ValueError) else 'Session storage unavailable; check free disk space'
@@ -327,7 +399,7 @@ class AnomalyWorker:
             input_width=width, input_height=height,
             retraining_required=self.baseline_invalidated,
             analysis_source=ANALYSIS_SOURCE, last_request=self.last_request,
-            collected=len(self.samples), target=self.sample_count,
+            collected=self.collected, target=self.sample_count,
             multiplier=self.multiplier, learning_seconds=self.learning_seconds,
             analysis_interval_sec=self.effective_interval(),
             confirmation_frames=self.confirmation_frames,
@@ -338,6 +410,7 @@ class AnomalyWorker:
             message=('Analysis paused' if self.model.memory is not None
                      else 'Learn a normal view to begin'))
         self.update_geometry(state)  # effective input and heatmap size, which depend on the area
+        state.update(self.gate.status())
         if self.baseline_invalidated:
             state['message'] = (
                 'Model, area or analysis source changed. Learn normal view again before detection.')
@@ -389,7 +462,7 @@ class AnomalyWorker:
 
         def beat():
             while not done.wait(2):
-                write_json(DATA / 'status.json', dict(state, updated=time.time()))
+                self.publish_status(dict(state, updated=time.time()))
 
         heartbeat = threading.Thread(target=beat, daemon=True)
         heartbeat.start()
@@ -401,8 +474,8 @@ class AnomalyWorker:
 
     def publish_baseline(self, items, revision, progress):
         """Fit and atomically publish the baseline; restore the previous file if publication fails."""
-        temporary = self.model_path.with_name('baseline-next.pt')
-        backup = self.model_path.with_name('baseline-previous.pt')
+        temporary = self.staging_path
+        backup = self.backup_path
         published = False
         try:
             if items:
@@ -433,9 +506,9 @@ class AnomalyWorker:
         state.update(state='training', training_collected=0,
                      training_target=sum(item['frames'] for item in items),
                      message='Rebuilding saved normal sessions and calibrating the threshold')
-        write_json(DATA / 'status.json', state)
-        temporary = self.model_path.with_name('baseline-next.pt')
-        backup = self.model_path.with_name('baseline-previous.pt')
+        self.publish_status(state)
+        temporary = self.staging_path
+        backup = self.backup_path
         revision = uuid.uuid4().hex
 
         def progress(completed, total):
@@ -445,9 +518,7 @@ class AnomalyWorker:
             with self.training_heartbeat(state):
                 self.publish_baseline(items, revision, progress)
         except Exception:
-            self.learning = self.monitoring = False
-            self.samples = []
-            self.sessions.abort()
+            self.stop_learning()
             self.learning_error = 'Learning rebuild failed; previous sessions are retained. Check storage and retry.'
             self.model.set_input_size(self.model.input_size)
             try:
@@ -461,16 +532,17 @@ class AnomalyWorker:
             temporary.unlink(missing_ok=True)
             backup.unlink(missing_ok=True)
         self.learning = False
-        queued = read_json(DATA / 'command.json', {})
+        queued = read_json(self.data / 'command.json', {})
         if queued.get('id') != self.last_request and queued.get('action') == 'pause':
             resume = False
         self.monitoring = bool(items) and resume
         self.baseline_source = self.model.source_size if items else None
-        self.samples = []
+        self.collected = 0
         self.confirmation = Confirmation(required=self.confirmation_frames)
+        self.gate.reset()
         self.baseline_invalidated = not bool(items)
         self.save_session()
-        control.follow_detection(self.monitoring, self.recording_mode)
+        control.follow_detection(self.monitoring, self.recording_mode, self.control_dir)
         state.update(
             state='normal' if self.monitoring else 'paused' if items else 'untrained', baseline_ready=bool(items),
             baseline_frames=self.model.baseline_frames,
@@ -478,22 +550,22 @@ class AnomalyWorker:
             learning_sessions=self.sessions.public(),
             message='Normal sessions rebuilt; monitoring started' if self.monitoring else
                     'Normal sessions rebuilt; detection paused' if items else 'No normal sessions; learn a normal view')
-        LOG.info('Baseline ready; frames=%s', self.model.baseline_frames)
+        self.log.info('Baseline ready; frames=%s', self.model.baseline_frames)
 
     def save_event(self, jpeg, distances, threshold, score):
         name = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + str(time.time_ns())
-        (DATA / 'events' / (name + '.jpg')).write_bytes(jpeg)
+        (self.data / 'events' / (name + '.jpg')).write_bytes(jpeg)
         heatmap = overlay(jpeg, distances, threshold, roi=self.selected_roi)
-        (DATA / 'events' / (name + '-heat.jpg')).write_bytes(heatmap)
-        write_json(DATA / 'events' / (name + '.json'), dict(
+        (self.data / 'events' / (name + '-heat.jpg')).write_bytes(heatmap)
+        write_json(self.data / 'events' / (name + '.json'), dict(
             id=name, timestamp=time.time(), score=score, threshold=threshold,
             video_id=self.video_id, roi=self.selected_roi,
             image=name + '.jpg', heatmap=name + '-heat.jpg'))
-        for expired in sorted((DATA / 'events').glob('*.json'))[:-MAX_EVENTS]:
+        for expired in sorted((self.data / 'events').glob('*.json'))[:-MAX_EVENTS]:
             for suffix in ('.jpg', '-heat.jpg', '.json'):
                 expired.with_name(expired.stem + suffix).unlink(missing_ok=True)
         self.event_count += 1
-        LOG.info('Unusual view snapshot saved')
+        self.log.info('Unusual view snapshot saved')
 
     def monitor_frame(self, state, jpeg, score, distances):
         threshold = self.model.threshold * self.multiplier
@@ -509,7 +581,7 @@ class AnomalyWorker:
                 self.video_id = (time.strftime(
                     '%Y%m%dT%H%M%SZ', time.gmtime(self.candidate_since))
                     + '-' + str(time.time_ns()))
-            write_json(DATA / 'video-trigger.json', dict(
+            write_json(self.data / 'video-trigger.json', dict(
                 id=self.video_id, start=self.candidate_since, last=time.time()))
         state.update(
             state='anomaly' if abnormal else 'suspect' if score > threshold else 'normal',
@@ -524,6 +596,17 @@ class AnomalyWorker:
     def analyze_frame(self, state, started):
         jpeg, token, fetch_ms = self.fetch_analysis_frame()
         state['fetch_ms'] = fetch_ms
+        thumbnail = None
+        if self.monitoring and not self.learning and self.gate.enabled:
+            thumbnail = self.gate.thumbnail(jpeg, self.selected_roi)
+            reused = self.gate.reusable(thumbnail)
+            if reused is not None:
+                self.gate.count(skipped=True)
+                state.update(self.last_metrics, frame_skipped=True)
+                self.monitor_frame(state, jpeg, *reused)
+                state.update(self.gate.status())
+                state['inference_ms'] = round((time.monotonic() - started) * 1000)
+                return
         feature_started = time.monotonic()
         previous_source = self.baseline_source
         features = self.model.features(jpeg)
@@ -546,30 +629,29 @@ class AnomalyWorker:
             except ValueError as error:
                 raise ROIGeometryChanged() from error
             except OSError:
-                self.learning = False
-                self.samples = []
-                self.sessions.abort()
+                self.stop_learning()
                 self.learning_error = 'Learning stopped: storage limit or free-space check failed. Saved sessions are retained.'
                 raise
-            self.samples.append(None)
-            state.update(state='learning', collected=len(self.samples),
+            self.collected += 1
+            state.update(state='learning', collected=self.collected,
                          message='Learning current view as normal')
-            if len(self.samples) >= self.sample_count:
+            if self.collected >= self.sample_count:
                 self.finish_learning(state)
         else:
+            self.gate.remember(thumbnail, result)
+            self.gate.count(skipped=False)
+            self.last_metrics = {key: state[key] for key in EVALUATION_METRICS if key in state}
             self.monitor_frame(state, jpeg, *result)
+            state.update(self.gate.status(), frame_skipped=False)
         state['inference_ms'] = round((time.monotonic() - started) * 1000)
 
     def handle_geometry_change(self):
-        self.learning = False
-        self.monitoring = False
-        self.samples = []
-        self.sessions.abort()
+        self.stop_learning()
         self.invalidate_baseline(clear_sessions=True)
         self.reset_detection_candidate()
         self.clear_video_trigger()
         self.save_session()
-        control.follow_detection(False, self.recording_mode)
+        control.follow_detection(False, self.recording_mode, self.control_dir)
         self.state.update(
             state='untrained', updated=time.time(), baseline_ready=False,
             monitoring_enabled=False, retraining_required=True,
@@ -578,7 +660,7 @@ class AnomalyWorker:
         for key in ('score', 'threshold', 'ratio'):
             self.state.pop(key, None)
         self.update_geometry(self.state)
-        write_json(DATA / 'status.json', self.state)
+        self.publish_status()
 
     def handle_error(self, error):
         # Never include URLs, credentials or arbitrary exception text in status/logs.
@@ -592,19 +674,33 @@ class AnomalyWorker:
                 and (error.headers or {}).get('X-Camera-Stream-Error') == '1'):
             self.state['message'] = (
                 'Video stream error; damaged frames excluded from analysis and learning')
-        write_json(DATA / 'status.json', self.state)
-        LOG.warning('Analysis iteration failed (%s); retrying', type(error).__name__)
+        self.publish_status()
+        # A camera that stays unreachable would repeat the same line every retry.
+        kind, logged_at = self._last_error
+        if kind != type(error).__name__ or time.monotonic() - logged_at >= ERROR_LOG_INTERVAL_SECONDS:
+            self.log.warning('Analysis iteration failed (%s); retrying', type(error).__name__)
+            self._last_error = (type(error).__name__, time.monotonic())
+
+    def migrate_legacy_baseline(self):
+        """Rebuild the baseline from saved sessions once, then drop the old PyTorch files."""
+        self.pending_migration = False
+        self.rebuild_sessions(self.state, self.sessions.catalog()['sessions'],
+                              resume=self.resume_after_migration)
+        for name in LEGACY_BASELINES:
+            (self.data / name).unlink(missing_ok=True)
 
     def step(self):
         started = time.monotonic()
         try:
+            if self.pending_migration:
+                self.migrate_legacy_baseline()
             self.apply_pending_command()
-            control.follow_detection(self.monitoring, self.recording_mode)
+            control.follow_detection(self.monitoring, self.recording_mode, self.control_dir)
             self.state = self.status_snapshot()
             if self.learning or self.monitoring:
                 self.analyze_frame(self.state, started)
             self.state['updated'] = time.time()
-            write_json(DATA / 'status.json', self.state)
+            self.publish_status()
         except ROIGeometryChanged:
             self.handle_geometry_change()
         except Exception as error:
@@ -618,9 +714,16 @@ class AnomalyWorker:
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-    DATA.mkdir(parents=True, exist_ok=True)
-    (DATA / 'events').mkdir(exist_ok=True)
-    AnomalyWorker().run()
+    worker = None
+    while worker is None:
+        try:
+            worker = AnomalyWorker(exclusive=True)
+        except WorkerLocked as error:
+            # The shared analysis service (or another worker) owns this camera: wait instead
+            # of exiting, so a restart policy cannot turn the conflict into a restart loop.
+            LOG.warning('%s; waiting for it to stop', error)
+            time.sleep(LOCK_RETRY_SECONDS)
+    worker.run()
 
 
 if __name__ == '__main__':

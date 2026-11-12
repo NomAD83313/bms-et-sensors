@@ -8,6 +8,7 @@ except ImportError:
     from anomaly_control import valid_event_id
 
 LOCK = threading.Lock()
+ACTIONS = ('event', 'recording', 'all-events', 'all-recordings', 'history')
 
 
 def delete_event(anomaly, event_id):
@@ -38,7 +39,7 @@ def delete_recording(recordings, name):
 
 
 def delete_saved(recordings, anomaly, action, name=None):
-    if action not in ('event', 'recording', 'all-events', 'all-recordings', 'history'):
+    if action not in ACTIONS:
         raise ValueError('Invalid deletion action')
     result = dict(events=0, recordings=0)
     with LOCK:

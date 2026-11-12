@@ -15,12 +15,6 @@ class FeatureEncoder(torch.nn.Module):
         self.dimensions = profile['dimensions']
         if model_key == 'mobilenetv3':
             self.layers = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT).features[:9]
-        elif model_key == 'mobileone-s0':
-            try:
-                from .mobileone_encoder import mobileone_layers
-            except ImportError:
-                from mobileone_encoder import mobileone_layers
-            self.layers = mobileone_layers()
         elif 'timm_model' in profile:
             import timm
             network = timm.create_model(profile['timm_model'], pretrained=True)

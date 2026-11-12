@@ -1,6 +1,7 @@
 # Camera unusual-view experiment
 
-The optional `cameras` Compose profile includes `camera-anomaly`. Open
+The optional camera Compose profiles (`cameras`, `pi-camera`, `cameras-extra`) include the
+shared analysis worker `camera-analysis`, which analyses every camera in one process. Open
 `/cameras/` and use **Unusual view detection**. This is a visual appearance
 experiment, not a validated production-process alarm. Event-only recording
 is available with `CAMERA_RECORDING_MODE=anomaly`.
@@ -17,9 +18,9 @@ Grayscale JPEG decoding requests luminance directly, then crops and resizes one
 channel. Normalization broadcasts that channel into three, preserving compatibility
 with the current RGB ONNX input. Both modes write directly into one owned contiguous
 FP32 CHW buffer, using the same divide-by-255, subtract-mean, divide-by-standard-deviation
-order as the torchvision reference. NumPy performs normalization in place and PyTorch
-shares the result without copying it. Each frame owns its buffer, so later frames
-cannot overwrite tensors already in use. This implementation change preserves
+order as the torchvision reference. NumPy performs normalization in place and ONNX
+Runtime reads the buffer without copying it. Each frame owns its buffer, so later frames
+cannot overwrite arrays already in use. This implementation change preserves
 normalized values and does not require rebuilding saved normal sessions. The CNN
 and nearest-neighbor workloads remain unchanged; compare preparation and total
 cycle time to measure the benefit. Color-only anomalies may become less visible.
@@ -131,8 +132,7 @@ Save important video separately before normal retention expires.
 This is a small **PatchCore-style variant**, not the original benchmark model:
 
 - The default frozen ImageNet MobileNetV3-Small uses its first nine feature stages,
-  with locally averaged 48-dimensional stride-sixteen patch features. MobileOne-S0
-  provides 128-dimensional stride-eight features. Maximum input selects
+  with locally averaged 48-dimensional stride-sixteen patch features. Maximum input selects
   bounds of 768 × 432, 1024 × 576, 1280 × 720, 1536 × 864 or 1920 × 1080;
   an enabled ROI is fitted within those bounds while preserving its proportions.
   Analysis settings do not change capture resolution.
@@ -144,8 +144,13 @@ This is a small **PatchCore-style variant**, not the original benchmark model:
 - Fixed-shape ONNX models are exported for all five full-frame input sizes during
   image build. Additional dynamic-shape encoders support ROI aspect ratios.
   ONNX Runtime uses XNNPACK if the installed runtime provides it; otherwise it uses
-  CPUExecutionProvider. PyTorch remains available as a reference backend, using
-  inference mode and channels-last convolution weights. Status reports the actual
+  CPUExecutionProvider. The analysis worker does not import PyTorch: encoders are
+  exported to ONNX at image build time and the runtime needs only NumPy, Pillow,
+  ONNX Runtime and FAISS (about 280 MB less memory per worker). PyTorch exists only in
+  the build stage that exports the encoders and in the separate test image, so the
+  runtime image is about 0.5 GB instead of 1.4 GB. Run the camera tests (including the
+  PyTorch reference comparisons) with `scripts/test-cameras.sh`; it builds the `test`
+  target of `Dockerfile.camera-analysis`. Status reports the actual
   feature engine, distance engine, ONNX provider, feature time and distance time.
 - Baselines use one strict schema that records the encoder, source geometry, ROI,
   preprocessing, input size, score aggregation and coreset size. Any mismatch pauses
@@ -184,7 +189,7 @@ belong to the optional `cameras` and `pi-camera` profiles.
 ## Runtime files and operations
 
 All learned data is local under `runtime/cameras/anomaly/`, ignored by Git:
-`baseline.pt`, `status.json`, `session.json`, `command.json`, `events/`, and `learning/`.
+`baseline.npz`, `status.json`, `session.json`, `command.json`, `events/`, and `learning/`.
 Pi uses the same structure under `runtime/pi-camera/anomaly/`. Neither directory
 belongs in Git.
 The pretrained backbone is in the image; normal-view memory is runtime state.
@@ -193,8 +198,8 @@ Interrupted collection is cancelled rather than silently resuming with mixed vie
 
 ```sh
 ./scripts/restart-cameras.sh
-./scripts/logs.sh camera-anomaly
-docker compose --profile cameras stop camera-anomaly
+./scripts/logs.sh camera-analysis
+docker compose --profile cameras stop camera-analysis
 python3 -m unittest discover -s tests -p 'test_cameras_*.py' -q
 ```
 
@@ -203,11 +208,23 @@ Settings in `.env.example`:
 - `CAMERA_ANOMALY_INTERVAL_SEC=0.2`: detection interval, minimum 0.2 seconds; effective rate is bounded
   by inference and decoder availability.
 - `CAMERA_ANOMALY_CONFIRM_FRAMES=2`: consecutive suspicious frames to confirm, clamped to 1–5.
+- `CAMERA_ANOMALY_FRAME_GATE=1`: skip the model while the analysed area is unchanged
+  (`0` disables it). A grayscale thumbnail of the ROI is compared with the last fully
+  evaluated frame; the previous score and heatmap are reused when the largest 8×8 block
+  difference is below `CAMERA_ANOMALY_GATE_BLOCK_DIFF=3.0` grey levels and the mean
+  difference below `CAMERA_ANOMALY_GATE_MEAN_DIFF=1.2`. Blocks are used because a small
+  object barely moves a global average. A full evaluation is forced when the result is
+  older than `CAMERA_ANOMALY_GATE_MAX_AGE_SEC=2.0` seconds, after any command, on a
+  source-geometry change, and for every frame while learning. Changes outside the ROI
+  are ignored. Thresholds were measured on static Pi frames (consecutive block maxima
+  stay below 1.5, drift over two minutes below 3.2) against synthetic objects (a 0.6 %
+  wide object of weak contrast gives about 7.5). Status reports `frame_skipped`,
+  `frames_skipped`, `frames_evaluated` and the recent `skip_ratio`.
 - `CAMERA_ANOMALY_NORMAL_FRAMES=60`: startup default, clamped to 20–120 successful
   frames. The 1–4 minute UI selection stores 30, 60, 90 or 120 frames for later runs.
 - `CAMERA_DASHBOARD_PORT=8082`: also configures the worker's internal preview URL.
-- `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: `onnx` or `torch`.
-- `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `torch`.
+- `CAMERA_ANOMALY_FEATURE_ENGINE=onnx`: the only feature engine.
+- `CAMERA_ANOMALY_DISTANCE_ENGINE=faiss`: `faiss` or `numpy` (exact, slower fallback).
 - `CAMERA_ANOMALY_THREADS=1`: 1–4 worker threads. Pi can override this with
   `PI_CAMERA_ANOMALY_THREADS`; its CPU quota is controlled separately by
   `PI_CAMERA_ANOMALY_CPUS`. More threads do not guarantee lower latency.
@@ -233,7 +250,7 @@ Settings in `.env.example`:
 
 ```sh
 docker build -f Dockerfile.camera-onnx-xnnpack -t bms-onnx-xnnpack:local .
-CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose build pi-camera-anomaly
+CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local docker compose --profile pi-camera build camera-analysis
 ```
 
 Ordinary `CPUExecutionProvider` is not XNNPACK. See the
@@ -250,22 +267,11 @@ guarantees 5–10 FPS at 1280 × 720. Changing the feature encoder can change de
 sensitivity, so relearn and validate both normal scenes and representative anomalies.
 
 To repeat a fixed-frame compute comparison, pause detection and other CPU-heavy
-jobs first. Keep capture and preview running. The script uses a private 1,024-patch
-test bank, three warm-up iterations and ten measured iterations per engine/thread
-setting; it does not load or replace the live baseline. Results exclude HTTP frame
-acquisition, decoder-token validation, event rendering and video recording.
-
-```sh
-TASK_TEST_DIR="$PWD/runtime/camera-inference-test"
-mkdir -p "$TASK_TEST_DIR"
-curl -fsS 'http://127.0.0.1:8083/api/live.jpg?analysis=1' -o "$TASK_TEST_DIR/frame.jpg"
-docker run --rm --network none --cpus 4 \
-  -v "$PWD:/work:ro" -v "$TASK_TEST_DIR:/bench" -w /work \
-  bms-camera-anomaly:local python scripts/benchmark-camera-engines.py \
-  --frame /bench/frame.jpg --output /bench/results.json --size 1280x720
-```
-
-Add `--providers cpu xnnpack` when using the XNNPACK wheel.
+jobs first and keep capture and preview running. `scripts/benchmark-camera-models.py`
+times every model on a fixed JPEG set and `scripts/benchmark-camera-threads.py`
+compares thread counts on a read-only baseline; neither replaces the live baseline.
+Results exclude HTTP frame acquisition, decoder-token validation, event rendering and
+video recording.
 
 A 1–4 minute baseline covers only the conditions present during that run. Clouds, daylight,
 reflections, curtains and a moved camera can trigger novelty. Relearn when changing
@@ -360,17 +366,15 @@ confirmed anomaly after a normal sample can save a new snapshot immediately.
 
 ### Analysis model selection
 
-Both camera pages offer the three backend models below. No retired model identifiers
+Both camera pages offer the two backend models below. No retired model identifiers
 or hidden menu entries are retained.
 
 | Model | Features | Heatmap stride |
 | --- | --- | --- |
 | MobileNetV3 | MobileNetV3-Small first nine feature stages, FP32, 48 channels | 16 |
 | MobileNetV4 ConvSmall ×0.5 | FP32, 48 channels | 16 |
-| MobileOne-S0 | Fused stages 0–2, FP32, 128 channels | 8 |
 
-MobileNetV4 uses the pretrained timm `mobilenetv4_conv_small_050.e3000_r224_in1k` weights. MobileOne uses Apple's published
-fused S0 checkpoint; its license is retained under `app/cameras/licenses/`.
+MobileNetV4 uses the pretrained timm `mobilenetv4_conv_small_050.e3000_r224_in1k` weights.
 All encoder files are exported during the image build, so live inference does not
 download weights.
 
@@ -435,13 +439,13 @@ Both camera pages offer five **Maximum input** presets. They are fixed 16:9 mode
 dimensions for full-frame analysis and maximum bounds for an enabled ROI. The
 table lists full-frame heatmap grids; an ROI's grid follows its effective dimensions.
 
-| Input (width x height) | MobileOne grid | MobileNetV3 / MobileNetV4 grid |
-| --- | --- | --- |
-| 768x432 (default) | 96x54 | 48x27 |
-| 1024x576 | 128x72 | 64x36 |
-| 1280x720 | 160x90 | 80x45 |
-| 1536x864 | 192x108 | 96x54 |
-| 1920x1080 | 240x135 | 120x68 |
+| Input (width x height) | MobileNetV3 / MobileNetV4 grid |
+| --- | --- |
+| 768x432 (default) | 48x27 |
+| 1024x576 | 64x36 |
+| 1280x720 | 80x45 |
+| 1536x864 | 96x54 |
+| 1920x1080 | 120x68 |
 
 Select a value and press **Apply size**, then **Learn normal view**. Changing input
 size stops detection and event-only recording until learning completes. Settings
@@ -497,7 +501,7 @@ and lighting changes from the target scene.
 ### CPU threads and limits
 
 `CAMERA_ANOMALY_THREADS` selects 1–4 analysis threads (default 1), configuring
-PyTorch, FAISS and the selected ONNX provider. XNNPACK uses its own thread pool;
+FAISS and the selected ONNX provider. XNNPACK uses its own thread pool;
 the ONNX intra-operation pool stays at one thread when XNNPACK is selected.
 `CAMERA_ANOMALY_CPUS` sets the worker's Docker CPU quota (default 1.0).
 `PI_CAMERA_ANOMALY_THREADS` and `PI_CAMERA_ANOMALY_CPUS` override only the Pi worker.
@@ -549,12 +553,7 @@ run `sudo systemctl set-property bms-pi-camera.service AllowedCPUs=` and check
 
 `scripts/benchmark-camera-threads.py` compares 1/2/2/1 thread blocks on a fixed JPEG
 and read-only baseline inside the anomaly image. It checks score/heatmap equivalence.
-`scripts/benchmark-camera-live-threads.py --output runtime/camera-thread-tests/<run>`
-compares live 768x432 detection in 30-second blocks, changing only the Pi anomaly
-container's threads and CPU quota. It requires the updated image already built,
-an active learned 768x432 baseline, and collects measured worker cycle time, FPS,
-CPU and RSS. Normal Compose settings are restored in a finally block. Do not run
-builds/tests or change camera controls during performance trials. These short
+Do not run builds/tests or change camera controls during performance trials. These short
 trials are indicative and should be repeated for deployment-wide capacity planning.
 
 ### Pi snapshot capture and exposure

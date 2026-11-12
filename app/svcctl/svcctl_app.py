@@ -12,6 +12,7 @@ import docker
 from flask import Flask, jsonify
 from svcctl_docker import (
     container_status,
+    discover_extra_cameras,
     set_container_running,
     status_payload,
 )
@@ -54,9 +55,15 @@ TARGET_MAP: Dict[str, List[str]] = {
     # Keep Grafana control isolated: InfluxDB is shared by other stacks.
     "grafana": ["grafana"],
     # Start dependencies first; stop them in reverse order.
-    "cameras": ["camera-recorder", "camera-dashboard", "camera-anomaly"],
-    "pi-camera": ["pi-camera-recorder", "pi-camera-dashboard", "pi-camera-anomaly"],
+    "cameras": ["camera-recorder", "camera-dashboard"],
+    "pi-camera": ["pi-camera-recorder", "pi-camera-dashboard"],
 }
+
+# All cameras are analysed by one shared worker. Starting a camera group makes sure it runs;
+# stopping a group leaves it running because it keeps serving the other cameras.
+CAMERA_TARGETS = ("cameras", "pi-camera")
+SHARED_ANALYSIS_SERVICE = "camera-analysis"
+EXTRA_TARGET_PREFIX = "cam-"
 
 _CPU_PREV_TOTAL: int | None = None
 _CPU_PREV_IDLE: int | None = None
@@ -135,6 +142,44 @@ def _mark_manual_pause_wait(target: str, action_attr: str, reason_attr: str) -> 
     globals()[action_attr] = "manual_pause"
     globals()[reason_attr] = "user_stopped"
     return True
+
+
+def _extra_cameras() -> List[dict]:
+    """Cameras generated from runtime/cameras.json (none when Docker cannot be asked)."""
+    try:
+        return discover_extra_cameras(DOCKER_CLIENT)
+    except Exception:
+        return []
+
+
+def _extra_targets(cameras: List[dict] | None = None) -> Dict[str, List[str]]:
+    cameras = _extra_cameras() if cameras is None else cameras
+    return {EXTRA_TARGET_PREFIX + camera["id"]: list(camera["names"]) for camera in cameras}
+
+
+def _all_targets() -> Dict[str, List[str]]:
+    return {**TARGET_MAP, **_extra_targets()}
+
+
+def _is_camera_target(target: str) -> bool:
+    return target in CAMERA_TARGETS or target.startswith(EXTRA_TARGET_PREFIX)
+
+
+def _camera_start_names(target: str, targets: Dict[str, List[str]] | None = None) -> List[str]:
+    """Services to start for a camera group: its recorder and dashboard, then the shared worker."""
+    names = (targets or TARGET_MAP)[target]
+    return names + [SHARED_ANALYSIS_SERVICE] if _is_camera_target(target) else names
+
+
+def _camera_stop_names(target: str, targets: Dict[str, List[str]] | None = None) -> List[str]:
+    """Services to stop for a group; the shared worker keeps serving the other cameras."""
+    return (targets or TARGET_MAP)[target]
+
+
+def _effective_target_map() -> Dict[str, List[str]]:
+    """Target map as seen by the UI: camera groups include the shared analysis worker."""
+    targets = _all_targets()
+    return {target: _camera_start_names(target, targets) for target in targets}
 
 
 def _container_status(name: str) -> str:
@@ -550,11 +595,29 @@ def host_metrics():
 def services():
     return jsonify(
         success=True,
-        services=status_payload(DOCKER_CLIENT, TARGET_MAP),
+        services=status_payload(DOCKER_CLIENT, _effective_target_map()),
         manual_pauses=_manual_pause_snapshot(),
         serial_devices_by_id=serial_devices_by_id(),
         usb_devices=usb_devices(),
     )
+
+
+@app.route("/cameras", methods=["GET"])
+def cameras():
+    """All cameras (the two original ones and those generated from the registry) with their services."""
+    extra = _extra_cameras()
+    entries = [
+        {"id": "wifi", "target": "cameras", "label": "Camera WiFi", "path": "/cameras/"},
+        {"id": "pi", "target": "pi-camera", "label": "Pi Camera", "path": "/cameras/pi/"},
+    ] + [
+        {"id": camera["id"], "target": EXTRA_TARGET_PREFIX + camera["id"], "label": camera["label"],
+         "path": f"/cameras/{camera['id']}/"} for camera in extra
+    ]
+    status = status_payload(DOCKER_CLIENT, _effective_target_map())
+    for entry in entries:
+        entry["status_url"] = entry["path"] + "api/status"
+        entry["services"] = status.get(entry["target"], {})
+    return jsonify(success=True, cameras=entries, manual_pauses=_manual_pause_snapshot())
 
 
 @app.route("/services/redlab/health", methods=["GET"])
@@ -574,12 +637,14 @@ def almemo_health():
 
 @app.route("/services/<target>/<action>", methods=["POST"])
 def service_action(target: str, action: str):
-    if target not in TARGET_MAP:
+    targets = _all_targets()
+    if target not in targets:
         return jsonify(error="unknown target"), 404
     if action not in {"start", "stop", "restart"}:
         return jsonify(error="unknown action"), 400
 
-    names = TARGET_MAP[target]
+    start_names = _camera_start_names(target, targets)
+    stop_names = _camera_stop_names(target, targets)
     try:
         with ACTION_LOCK:
             if action == "stop":
@@ -588,18 +653,18 @@ def service_action(target: str, action: str):
                 _manual_resume_target(target)
 
             if action == "start":
-                done = _start_targets(names)
+                done = _start_targets(start_names)
             elif action == "stop":
-                done = _stop_targets(names)
+                done = _stop_targets(stop_names)
             else:
-                done = _stop_targets(names) + _start_targets(names)
+                done = _stop_targets(stop_names) + _start_targets(start_names)
         return jsonify(
             success=True,
             target=target,
             action=action,
             steps=done,
             manual_pauses=_manual_pause_snapshot(),
-            services=status_payload(DOCKER_CLIENT, TARGET_MAP),
+            services=status_payload(DOCKER_CLIENT, _effective_target_map()),
         )
     except docker.errors.NotFound as exc:
         return jsonify(error=f"container not found: {exc}"), 404

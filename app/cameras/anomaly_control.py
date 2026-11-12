@@ -1,5 +1,4 @@
 """File-based controls for the optional visual anomaly worker."""
-import json
 import os
 from pathlib import Path
 import re
@@ -7,20 +6,45 @@ import time
 import uuid
 
 try:
-    from .model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, validate_color_mode
+    from .files import read_json, write_json
+    from .learning_sessions import session_id as validate_session_id, session_text
+    from .model_profiles import (DEFAULT_INPUT_SIZE, DEFAULT_MODEL, INPUT_SIZES, MODELS, heatmap_dimensions,
+                                 input_dimensions, validate_color_mode, validate_input_size, validate_model)
     from .roi import validate_roi
 except ImportError:
-    from model_profiles import DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions, validate_color_mode
+    from files import read_json, write_json
+    from learning_sessions import session_id as validate_session_id, session_text
+    from model_profiles import (DEFAULT_INPUT_SIZE, DEFAULT_MODEL, INPUT_SIZES, MODELS, heatmap_dimensions,
+                                input_dimensions, validate_color_mode, validate_input_size, validate_model)
     from roi import validate_roi
 
-INPUT_SIZES = ('768x432', '1024x576', '1280x720', '1536x864', '1920x1080')
-DEFAULT_INPUT_SIZE = INPUT_SIZES[0]
+# Re-exported for the worker and tests, which read model and file helpers from this module.
+__all__ = ['DEFAULT_INPUT_SIZE', 'DEFAULT_MODEL', 'INPUT_SIZES', 'MODELS', 'heatmap_dimensions', 'input_dimensions',
+           'read_json', 'validate_color_mode', 'validate_input_size', 'validate_model', 'write_json']
+
 ACTIVE_STATES = frozenset(('normal', 'suspect', 'anomaly'))
 STATUS_MAX_AGE_SECONDS = 20
 LEARNING_SECONDS = (60, 120, 180, 240)
 DEFAULT_MULTIPLIER = 1.25
 SESSION_ACTIONS = ('learn', 'add-session', 'replace-session', 'remove-session',
                    'rename-session', 'rebuild-sessions')
+# Every analysis action and the (learning, monitoring) mode it leaves the worker in.
+# None keeps the current mode; 'ready' means monitoring resumes only with a baseline.
+MODE_AFTER_ACTION = {
+    'learn': (True, False), 'add-session': (True, False), 'replace-session': (True, False),
+    'monitor': (False, 'ready'),
+    'pause': (False, False), 'invalidate': (False, False),
+    'resize': (False, False), 'model': (False, False), 'roi': (False, False), 'color': (False, False),
+    'remove-session': (False, False), 'rebuild-sessions': (False, False),
+    'configure': None, 'confirmation': None, 'rename-session': None,
+}
+# Actions that only take effect when they change a model setting.
+CONFIGURATION_ACTIONS = ('resize', 'model', 'roi', 'color')
+# Actions the dashboard accepts over HTTP; 'invalidate' is issued internally on a capture change.
+PUBLIC_ACTIONS = frozenset(MODE_AFTER_ACTION) - {'invalidate'}
+# Actions after which detection is off, so event-only recording must stop its buffer too.
+MONITORING_STOPPING_ACTIONS = frozenset(
+    action for action, mode in MODE_AFTER_ACTION.items() if mode is not None and mode[1] is False)
 
 DATA = Path(os.environ.get('CAMERA_ANOMALY_DIR', '/anomaly'))
 
@@ -33,35 +57,11 @@ def valid_event_id(value):
     return isinstance(value, str) and EVENT_ID.fullmatch(value) is not None
 
 
-def read_json(path, default=None):
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return default
-
-
-def write_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
-    temporary.write_text(json.dumps(value, allow_nan=False))
-    temporary.replace(path)
-
-
 def validate_multiplier(value):
     value = float(value)
     if not .1 <= value <= 20:
         raise ValueError('Threshold multiplier must be between 0.1 and 20')
     return value
-
-
-def validate_input_size(value):
-    if not isinstance(value, str) or value not in INPUT_SIZES:
-        raise ValueError('Select a supported 16:9 model input')
-    return value
-
-
-def input_dimensions(value):
-    return tuple(map(int, validate_input_size(value).split('x')))
 
 
 def state_is_current(state, now=None):
@@ -92,19 +92,13 @@ def validate_learning_seconds(value):
 
 
 def command_mode(action, ready, learning, monitoring):
-    if action in ('learn', 'add-session', 'replace-session'):
-        return True, False
-    if action == 'monitor':
-        return False, ready
-    if action in ('pause', 'resize', 'model', 'roi', 'invalidate', 'color'):
-        return False, False
-    if action in ('configure', 'confirmation'):
+    """Return the (learning, monitoring) mode after `action`; see MODE_AFTER_ACTION."""
+    if action not in MODE_AFTER_ACTION:
+        raise ValueError('Unknown analysis action')
+    mode = MODE_AFTER_ACTION[action]
+    if mode is None:
         return learning, monitoring
-    if action in ('remove-session', 'rebuild-sessions'):
-        return False, False
-    if action == 'rename-session':
-        return learning, monitoring
-    raise ValueError('Unknown analysis action')
+    return mode[0], ready if mode[1] == 'ready' else mode[1]
 
 
 def request(action, multiplier=DEFAULT_MULTIPLIER, input_size=None, confirmation_frames=None, model_key=None,
@@ -116,12 +110,8 @@ def request(action, multiplier=DEFAULT_MULTIPLIER, input_size=None, confirmation
     if action in ('learn', 'add-session', 'replace-session') and learning_seconds is not None:
         command['learning_seconds'] = validate_learning_seconds(learning_seconds)
     if action in ('learn', 'add-session', 'replace-session', 'remove-session', 'rename-session'):
-        try:
-            from .learning_sessions import session_id as validate_id, session_text
-        except ImportError:
-            from learning_sessions import session_id as validate_id, session_text
         if action in ('replace-session', 'remove-session', 'rename-session'):
-            command['session_id'] = validate_id(session_id)
+            command['session_id'] = validate_session_id(session_id)
         command.update(session_name=session_text(session_name, 80),
                        session_note=session_text(session_note, 240))
     if action == 'resize':

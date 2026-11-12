@@ -75,11 +75,9 @@ def main():
                 parser.error('Dataset or settings changed; choose a new --prefix')
     import os
     os.environ['CAMERA_ANOMALY_ONNX_PROVIDER'] = 'xnnpack'
-    from app.cameras.patchcore_lite import PatchCoreLite
+    from app.cameras.patchcore_lite import PatchCoreLite, calibrated_threshold
     from app.cameras.model_profiles import MODELS, validate_model
     from app.cameras.roi import validate_roi
-    import torch
-
     roi = validate_roi(policy.get('roi'))
     threshold_mode = policy.get('threshold_mode', 'separate-p99')
     if threshold_mode not in ('separate-p99', 'production-held-out'):
@@ -117,9 +115,8 @@ def main():
         model.fit(features)
         del features
         if threshold_mode == 'separate-p99':
-            scores = torch.tensor([model.score(model.features(jpeg))[0] for jpeg in calibration])
-            model.threshold = max(float(torch.quantile(scores, .99)), 1e-6)
-        model.save(directory / 'baseline.pt')
+            model.threshold = calibrated_threshold([model.score(model.features(jpeg))[0] for jpeg in calibration])
+        model.save(directory / 'baseline.npz')
         threshold = model.threshold * policy['multiplier']
         print('EVALUATE', key, 'threshold', threshold, flush=True)
         warmup = calibration[0] if calibration else training[0]

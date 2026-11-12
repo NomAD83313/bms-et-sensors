@@ -41,8 +41,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable bms-pi-camera.service
 sudo systemctl restart bms-pi-camera.service
 bms_ensure_camera_onnx_runtime
-"${COMPOSE[@]}" --profile pi-camera up -d --build pi-camera-recorder pi-camera-dashboard pi-camera-anomaly
-for service in pi-camera-recorder pi-camera-dashboard pi-camera-anomaly; do
+# camera-analysis is the shared analysis worker for all cameras.
+services=(pi-camera-recorder pi-camera-dashboard camera-analysis)
+"${COMPOSE[@]}" --profile pi-camera up -d --build "${services[@]}"
+for service in "${services[@]}"; do
   if [[ -z "$("${COMPOSE[@]}" --profile pi-camera ps -a -q "$service")" ]]; then
     echo "ERROR: Compose service was not created: $service" >&2
     exit 1

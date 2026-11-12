@@ -2,27 +2,43 @@
 async function runCameraHealthTests(html) {
   const assert = (condition, message) => { if (!condition) throw Error(message); };
   const elements = new Map();
+  const makeElement = () => {
+    const el = {className: '', href: '', children: [], _text: '', _html: '',
+      appendChild(child) { this.children.push(child); return child; },
+      addEventListener() {}, querySelectorAll() { return []; }};
+    Object.defineProperty(el, 'textContent', {get() { return this._text; }, set(value) { this._text = String(value); this.children = []; }});
+    Object.defineProperty(el, 'innerHTML', {get() { return this._html; }, set(value) { this._html = String(value); this.children = []; }});
+    return el;
+  };
   const element = id => {
-    if (!elements.has(id)) elements.set(id, {
-      textContent: '', className: '', appendChild() {}, addEventListener() {}, querySelectorAll() { return []; }
-    });
+    if (!elements.has(id)) elements.set(id, makeElement());
     return elements.get(id);
   };
-  const document = {getElementById: element, createElement: () => element(Symbol())};
+  const document = {getElementById: element, createElement: () => makeElement()};
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  const api = new Function('document', 'window', 'fetch', 'setTimeout', 'clearTimeout', 'setInterval', 'AbortController',
-    script + '\nreturn {services, controllableTargets, statusLinks, probe, summarizeTargetState};')(
-      document, {location: {protocol: 'http:', hostname: 'localhost'}}, () => new Promise(() => {}),
+  const build = fetchImplementation => new Function('document', 'window', 'fetch', 'setTimeout', 'clearTimeout', 'setInterval', 'AbortController',
+    script + '\nreturn {services, controllableTargets, probe, summarizeTargetState, refreshControlStates, cameraTargets: () => cameraTargets};')(
+      document, {location: {protocol: 'http:', hostname: 'localhost'}}, fetchImplementation,
       () => {}, () => {}, () => {}, class { constructor() { this.signal = {}; } abort() {} });
-  const camera = api.services.find(service => service.id === 'cameras');
-  assert(camera && camera.target === 'cameras' && camera.group === 'device', 'Camera probe must be a device application');
-  assert(api.controllableTargets.includes('cameras'), 'Cameras needs service controls');
-  assert(api.statusLinks.cameras === '/cameras/', 'Camera status should open its application');
-  const piCamera = api.services.find(service => service.id === 'pi-camera');
-  assert(piCamera && piCamera.target === 'pi-camera' && piCamera.url === '/probe/pi-camera', 'Pi camera must have an independent probe and target');
-  assert(api.controllableTargets.includes('pi-camera'), 'Pi camera needs separate service controls');
-  assert(api.statusLinks['pi-camera'] === '/cameras/pi/', 'Pi camera status must open its own application');
+  const reply = (body, status = 200) => Promise.resolve({ok: status < 400, status, json: async () => body,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body))});
+  // A fake network: the camera list plus each camera's dashboard status, by URL.
+  const network = routes => url => (url in routes ? routes[url] : reply('', 404));
+  const camera = (id, label, target, path) => ({id, label, target, path, status_url: path + 'api/status', services: {}});
+  const wifi = camera('wifi', 'Camera WiFi', 'cameras', '/cameras/');
+  const pi = camera('pi', 'Pi Camera', 'pi-camera', '/cameras/pi/');
+  const garage = camera('garage', 'Garage', 'cam-garage', '/cameras/garage/');
+  const listing = (cameras, extra = {}) => reply({success: true, cameras, manual_pauses: {}, ...extra});
   const base = {recording_mode: 'anomaly', baseline_ready: true, pre_seconds: 7, post_seconds: 10, clips: []};
+  const status = (recorder, detector, extra = {}) => reply({...base, service: recorder, analysis_state: detector, ...extra});
+
+  const api = build(() => new Promise(() => {}));
+  const card = api.services.find(service => service.id === 'cameras');
+  assert(card && card.type === 'cameras' && card.url === '/api/control/cameras' && card.group === 'device', 'One combined Cameras card is a device application');
+  assert(!api.services.some(service => service.id === 'pi-camera'), 'There is no separate Pi camera card any more');
+  assert(!api.controllableTargets.includes('cameras') && !api.controllableTargets.includes('pi-camera'), 'Camera controls come from the camera list');
+
+  // Badge and severity of a single camera, as before.
   for (const [recorder, detector, badge, level] of [
     ['buffering', 'normal', 'up', 'ok'],
     ['paused', 'paused', 'paused', 'warn'],
@@ -32,24 +48,65 @@ async function runCameraHealthTests(html) {
     ['offline', 'normal', 'degraded', 'warn'],
     ['paused', 'untrained', 'degraded', 'warn'],
   ]) {
-    const data = {...base, service: recorder, analysis_state: detector};
-    const shared = new Map([[camera.url, Promise.resolve({ok: true, status: 200, text: JSON.stringify(data)})]]);
-    await api.probe(camera, shared);
+    const fetcher = network({'/api/control/cameras': listing([wifi]), [wifi.status_url]: status(recorder, detector)});
+    await build(fetcher).probe(card, new Map());
     assert(element('st-cameras').textContent === badge, 'Incorrect camera badge for ' + recorder + '/' + detector);
     assert(element('st-cameras').className === 'status ' + level, 'Incorrect severity for ' + detector);
-    assert(element('dt-cameras').textContent.includes('7s before / 10s after'), 'Event windows must appear in the card');
+    const line = element('dt-cameras').children[0];
+    assert(line.children[0].textContent === 'Camera WiFi' && line.children[0].href === '/cameras/', 'Each camera links to its own application');
+    assert(line.children[1].textContent === badge && line.children[1].className === 'status ' + level, 'The camera line repeats its own badge');
+    assert(line.children[2].textContent.includes('7s before / 10s after'), 'Event windows must appear in the camera line');
   }
-  await api.probe(camera, new Map([['/probe/svcctl-data', {manual_pauses: {cameras: {}}}]]));
-  assert(element('st-cameras').textContent === 'paused', 'Manual service stop should not be shown as a probe failure');
-  await api.probe(camera, new Map([[camera.url, Promise.resolve({ok: false, status: 502, text: ''})]]));
-  assert(element('st-cameras').textContent === 'down', 'HTTP failure must remain visible');
-  await api.probe(piCamera, new Map([[piCamera.url, Promise.resolve({ok: true, status: 200, text: JSON.stringify({...base, service: 'paused', analysis_state: 'paused'})})]]));
-  assert(element('st-pi-camera').textContent === 'paused', 'Pi camera must reuse the camera state display');
-  const damaged = {...base, service: 'buffering', analysis_state: 'normal', preview_quality: {state: 'recovering', decoder_errors: 3, discarded_frames: 12}};
-  await api.probe(camera, new Map([[camera.url, Promise.resolve({ok: true, status: 200, text: JSON.stringify(damaged)})]]));
+
+  // Several cameras: one line each, one badge for the worst state.
+  const up = status('buffering', 'normal');
+  const routes = {'/api/control/cameras': listing([wifi, pi, garage]), [wifi.status_url]: up, [pi.status_url]: up, [garage.status_url]: up};
+  await build(network(routes)).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'up' && element('st-cameras').className === 'status ok', 'All cameras up means up');
+  const lines = element('dt-cameras').children;
+  assert(lines.length === 4, 'One line per camera plus the analysis note');
+  assert(lines.slice(0, 3).map(line => line.children[0].textContent).join() === 'Camera WiFi,Pi Camera,Garage', 'Cameras keep the controller order');
+  assert(element('dt-cameras').children[3].textContent === 'Analysis: one shared worker for all cameras', 'The shared analysis worker is named');
+
+  await build(network({...routes, [pi.status_url]: status('saving_event', 'anomaly')})).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'anomaly' && element('st-cameras').className === 'status warn', 'An anomaly on any camera is the group state');
+  await build(network({...routes, [garage.status_url]: reply('', 502)})).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'down' && element('st-cameras').className === 'status err', 'A failed camera makes the group down');
+  assert(element('dt-cameras').children[2].children[1].textContent === 'down' && element('dt-cameras').children[0].children[1].textContent === 'up', 'Other cameras keep their own badge');
+  await build(network({...routes, '/api/control/cameras': listing([wifi, pi, garage], {manual_pauses: {'cam-garage': {reason: 'manual_stop'}}})})).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'paused' && element('st-cameras').className === 'status warn', 'A user-stopped camera is shown as paused, not as a failure');
+  assert(element('dt-cameras').children[2].children[2].textContent.includes('User stopped'), 'A stopped camera is not probed');
+  await build(network({'/api/control/cameras': reply('', 502)})).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'down' && element('dt-cameras').textContent.includes('Camera list unavailable'), 'An unavailable controller must remain visible');
+  await build(network({'/api/control/cameras': listing([])})).probe(card, new Map());
+  assert(element('st-cameras').textContent === 'no cameras' && element('st-cameras').className === 'status warn', 'An empty camera list is called out');
+  const damaged = status('buffering', 'normal', {preview_quality: {state: 'recovering', decoder_errors: 3, discarded_frames: 12}});
+  await build(network({'/api/control/cameras': listing([wifi]), [wifi.status_url]: damaged})).probe(card, new Map());
   assert(element('st-cameras').textContent === 'degraded', 'Decoder recovery must not be shown as healthy');
-  assert(element('dt-cameras').textContent.includes('Decoder errors: 3'), 'Decoder diagnostics should be visible');
+  assert(element('dt-cameras').children[0].children[2].textContent.includes('Decoder errors: 3'), 'Decoder diagnostics should be visible');
+
+  // Service Control gets one row per camera, rebuilt when the camera list changes.
+  const controlled = build(network({'/api/control/cameras': listing([wifi, pi, garage]), [wifi.status_url]: up, [pi.status_url]: up, [garage.status_url]: up}));
+  await controlled.probe(card, new Map());
+  assert(controlled.cameraTargets().join() === 'cameras,pi-camera,cam-garage', 'Camera targets follow the list');
+  const rows = element('controlRows').children;
+  assert(rows.length === controlled.controllableTargets.length + 3, 'A control row for every camera');
+  assert(rows[rows.length - 1].innerHTML.includes('data-target="cam-garage"') && rows[rows.length - 1].innerHTML.includes('>Garage<'), 'Extra cameras are controllable by label');
+  await build(network({'/api/control/cameras': listing([wifi]), [wifi.status_url]: up})).probe(card, new Map());
+  assert(element('controlRows').children.length === 6 + 1, 'Rows of removed cameras disappear');
   assert(api.summarizeTargetState({recorder: 'running', dashboard: 'running', anomaly: 'exited'}, false).startsWith('partial'), 'Partial camera stacks must be visible');
+
+  // Group status comes from /api/control/services; camera groups include the shared worker.
+  const payload = {services: {cameras: {'camera-recorder': 'running', 'camera-dashboard': 'running', 'camera-analysis': 'running'},
+    'pi-camera': {'pi-camera-recorder': 'exited', 'pi-camera-dashboard': 'exited', 'camera-analysis': 'running'},
+    redlab: {'redlab-collector': 'running'}}, manual_pauses: {}};
+  const state = build(network({'/api/control/cameras': listing([wifi, pi]), [wifi.status_url]: up, [pi.status_url]: up,
+    '/api/control/services': reply(payload)}));
+  await state.probe(card, new Map());
+  await state.refreshControlStates();
+  assert(element('ctrl-st-cameras').textContent.startsWith('state: running'), 'A fully running camera group is running');
+  assert(element('ctrl-st-pi-camera').textContent.startsWith('state: partial'), 'A stopped camera next to the running shared worker is partial');
+  assert(!element('ctrl-st-redlab').textContent.includes('analysis'), 'Other targets never mention analysis');
   return 'System Health camera states, navigation and group controls passed.';
 }
 

@@ -180,10 +180,10 @@ class SnapshotExportFailureTests(unittest.TestCase):
             settings = validate(dict(capture_mode='snapshots'))
             executor = Mock()
             with patch.object(snapshot_recording, 'ThreadPoolExecutor', return_value=executor), \
+                    patch.object(snapshot_recording, 'control', control), patch.object(snapshot_recording, 'prune', Mock()), \
                     patch.object(snapshot_recording.source, 'capture_settings', return_value=settings), \
                     self.assertLogs('camera-snapshots', level='WARNING'):
-                snapshot_recording.run(root, stop, 1000000, 3600, Mock(), control,
-                                       root / 'anomaly', 'anomaly', 60)
+                snapshot_recording.run(root, stop, 1000000, 3600, root / 'anomaly', 'anomaly', 60)
             self.assertEqual(states, ['paused'])
             executor.submit.assert_not_called()
             self.assertFalse(raw.exists())
@@ -213,8 +213,8 @@ class SnapshotExportFailureTests(unittest.TestCase):
                 if state=='export_failed':stop.set()
             control=SimpleNamespace(enabled=lambda:True,heartbeat=heartbeat)
             settings=validate(dict(capture_mode='snapshots'))
-            with patch.object(snapshot_recording,'ThreadPoolExecutor',return_value=executor), patch.object(snapshot_recording.source,'capture_settings',return_value=settings), patch.object(snapshot_recording.source,'snapshot') as snapshot, self.assertLogs('camera-snapshots',level='WARNING'):
-                snapshot_recording.run(root,stop,1000000,3600,Mock(),control,root/'anomaly','anomaly',60)
+            with patch.object(snapshot_recording,'ThreadPoolExecutor',return_value=executor), patch.object(snapshot_recording,'control',control), patch.object(snapshot_recording,'prune',Mock()), patch.object(snapshot_recording.source,'capture_settings',return_value=settings), patch.object(snapshot_recording.source,'snapshot') as snapshot, self.assertLogs('camera-snapshots',level='WARNING'):
+                snapshot_recording.run(root,stop,1000000,3600,root/'anomaly','anomaly',60)
             self.assertIn('export_failed',states)
             self.assertEqual((raw/'frame-1.jpg').read_bytes(),b'protected')
             snapshot.assert_not_called()

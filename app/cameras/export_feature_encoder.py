@@ -4,13 +4,11 @@ from pathlib import Path
 import torch
 
 try:
-    from .anomaly_control import INPUT_SIZES, input_dimensions
     from .feature_encoder import FeatureEncoder
-    from .model_profiles import MODELS
+    from .model_profiles import INPUT_SIZES, MODELS, input_dimensions
 except ImportError:
-    from anomaly_control import INPUT_SIZES, input_dimensions
     from feature_encoder import FeatureEncoder
-    from model_profiles import MODELS
+    from model_profiles import INPUT_SIZES, MODELS, input_dimensions
 
 
 def export_models(directory, model_keys=None):

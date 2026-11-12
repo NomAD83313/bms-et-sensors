@@ -43,8 +43,7 @@ bms_ensure_camera_onnx_runtime
 
 echo ">>> Building camera images (no containers are started)..."
 "${COMPOSE[@]}" --profile cameras --profile pi-camera build \
-  camera-recorder camera-dashboard camera-anomaly \
-  pi-camera-recorder pi-camera-dashboard pi-camera-anomaly
+  camera-recorder camera-dashboard pi-camera-recorder pi-camera-dashboard camera-analysis
 
 echo "==========================================="
 echo " Camera setup finished. Start a camera with:"

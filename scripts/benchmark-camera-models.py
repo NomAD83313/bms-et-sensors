@@ -26,7 +26,6 @@ def main():
     if args.samples < 10:
         parser.error('At least ten samples are required')
     from app.cameras.patchcore_lite import PatchCoreLite
-    import torch
 
     paths = sorted((args.work / 'frames').glob('*.jpg'))
     if len(paths) < 24:
@@ -44,14 +43,14 @@ def main():
             instance = model(key)
             bank = args.work / 'banks' / key
             bank.mkdir(parents=True, exist_ok=True)
-            if (bank / 'baseline.pt').exists():
-                instance.load(bank / 'baseline.pt')
+            if (bank / 'baseline.npz').exists():
+                instance.load(bank / 'baseline.npz')
                 print('REUSE', key, flush=True)
                 continue
             features = [instance.features(frame) for frame in frames[:20]]
             instance.fit(features)
             del features
-            instance.save(bank / 'baseline.pt')
+            instance.save(bank / 'baseline.npz')
             print('BANK', key, list(instance.memory.shape), flush=True)
             del instance
             gc.collect()
@@ -60,7 +59,7 @@ def main():
     instances = {}
     for key in args.models:
         instance = model(key)
-        instance.load(args.work / 'banks' / key / 'baseline.pt')
+        instance.load(args.work / 'banks' / key / 'baseline.npz')
         for _ in range(2):
             instance.score(instance.features(frames[-1]))
         instances[key] = instance

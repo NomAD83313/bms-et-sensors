@@ -6,9 +6,9 @@ import time
 import uuid
 
 try:
-    from .anomaly_control import read_json, write_json
+    from .files import read_json, write_json
 except ImportError:
-    from anomaly_control import read_json, write_json
+    from files import read_json, write_json
 
 MAX_SESSIONS = 8
 MAX_FRAMES = 120

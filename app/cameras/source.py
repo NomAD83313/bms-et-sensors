@@ -1,22 +1,41 @@
-"""FFmpeg input options shared by network and local Pi camera streams."""
+"""FFmpeg input options and process helpers shared by the camera services."""
 import json
 import math
 import os
-from pathlib import Path
+import subprocess
 import time
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 try:
-    from .anomaly_control import write_json
+    from . import control
     from .capture_settings import validate, DEFAULTS
+    from .files import write_json
 except ImportError:
-    from anomaly_control import write_json
+    import control
     from capture_settings import validate, DEFAULTS
+    from files import write_json
 
 MAX_FRAME_BYTES = 16 * 1024 * 1024
+# Common prefix of every FFmpeg command: no terminal input, no banner.
+FFMPEG = ['ffmpeg', '-nostdin', '-hide_banner']
 _CAPTURE_CACHE = None
 _CAPTURE_CACHE_AT = 0
+
+
+def stop_process(process, timeout=3, signal=None):
+    """Stop a child: terminate (or send `signal`), wait, and kill it if it does not exit."""
+    if process.poll() is not None:
+        return
+    if signal is None:
+        process.terminate()
+    else:
+        process.send_signal(signal)
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 
 
 def input_args(url):
@@ -49,7 +68,10 @@ def preview_input_args(url, transport='tcp', strict=True):
             '-timeout', '3000000',
             '-i', url,
         ]
-    return ['-fflags', '+discardcorrupt', '-err_detect', 'explode', *input_args(url)]
+    # Probe briefly: the default five-second probe delays the first frame of the Pi
+    # stream (measured 6-7 s at 3280x2464) past the preview watchdog, causing a restart loop.
+    return ['-fflags', '+discardcorrupt', '-err_detect', 'explode',
+            '-analyzeduration', '0', '-probesize', '32768', *input_args(url)]
 
 
 def browser_stream_url(url):
@@ -71,7 +93,7 @@ def capture_settings():
     global _CAPTURE_CACHE, _CAPTURE_CACHE_AT
     if not capture_url():
         return dict(DEFAULTS)
-    path = Path(os.environ.get('CAMERA_CONTROL_DIR', '/control')) / 'capture.json'
+    path = control.root() / 'capture.json'
     if path.exists():
         return validate(json.loads(path.read_text()))
     if _CAPTURE_CACHE is not None and time.monotonic()-_CAPTURE_CACHE_AT < 2:
@@ -96,7 +118,7 @@ def configure_capture(data):
         headers={'Content-Type': 'application/json', 'X-Camera-Control': '1'}, method='POST')
     with urlopen(request, timeout=10) as response:
         settings = json.load(response)
-    write_json(Path(os.environ.get('CAMERA_CONTROL_DIR', '/control')) / 'capture.json', settings)
+    write_json(control.root() / 'capture.json', settings)
     return settings
 
 

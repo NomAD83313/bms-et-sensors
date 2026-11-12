@@ -46,7 +46,7 @@ class WorkerTimingTests(unittest.TestCase):
         for elapsed, learning, expected_wait in ((.4, False, 0), (.05, False, .15), (.4, True, 1.6)):
             with self.subTest(elapsed=elapsed, learning=learning), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root / 'baseline.pt').write_bytes(b'baseline')
+                (root / 'baseline.npz').write_bytes(b'baseline')
                 anomaly_control.write_json(root / 'session.json', dict(monitoring=True))
                 if learning:
                     anomaly_control.write_json(root / 'command.json', dict(
@@ -140,7 +140,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
     def test_missing_full_source_header_cannot_train_or_create_events(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root/'baseline.pt').write_bytes(b'baseline')
+            (root/'baseline.npz').write_bytes(b'baseline')
             anomaly_control.write_json(root/'session.json', dict(monitoring=True))
             class Model(FakeModelGeometry):
                 memory = None
@@ -162,7 +162,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
     def test_event_preserves_source_jpeg_without_reencoding(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'baseline.pt').write_bytes(b'existing-baseline')
+            (root / 'baseline.npz').write_bytes(b'existing-baseline')
             anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=1))
             jpeg = b'\xff\xd8original-full-resolution-jpeg\xff\xd9'
 
@@ -217,7 +217,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
         for learning in [False, True]:
             with self.subTest(learning=learning), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root / 'baseline.pt').write_bytes(b'existing-baseline')
+                (root / 'baseline.npz').write_bytes(b'existing-baseline')
                 anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=1))
                 if learning:
                     anomaly_control.write_json(root / 'command.json', dict(id='learn', action='learn', multiplier=1))
@@ -262,7 +262,7 @@ class WorkerFrameQualityTests(unittest.TestCase):
                     self.assertNotIn('score', state)
                     self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json', {}), {})
                     self.assertEqual(list((root / 'events').glob('*.json')), [])
-                    self.assertEqual((root / 'baseline.pt').read_bytes(), b'existing-baseline')
+                    self.assertEqual((root / 'baseline.npz').read_bytes(), b'existing-baseline')
 
 
 class WorkerResizeTests(unittest.TestCase):
@@ -298,7 +298,7 @@ class WorkerResizeTests(unittest.TestCase):
     def test_size_change_requires_new_learning_and_persists_across_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'baseline.pt').write_bytes(b'old-baseline')
+            (root / 'baseline.npz').write_bytes(b'old-baseline')
             anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=8.5))
             anomaly_control.write_json(root / 'command.json', dict(id='resize-1', action='resize', input_size='1024x576'))
             loads = []
@@ -339,7 +339,7 @@ class WorkerResizeTests(unittest.TestCase):
                     self.assertEqual(state['multiplier'], 8.5)
                     self.assertFalse(control.enabled())
                 self.assertEqual(len(loads), 1)
-                self.assertFalse((root / 'baseline.pt').exists())
+                self.assertFalse((root / 'baseline.npz').exists())
 
 
 class WorkerBaselinePublicationTests(unittest.TestCase):
@@ -361,12 +361,12 @@ class WorkerBaselinePublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, instance = self.worker_in(root, Model)
-            (root / 'baseline.pt').write_bytes(b'previous-baseline')
+            (root / 'baseline.npz').write_bytes(b'previous-baseline')
             instance.sessions = Mock()
             instance.sessions.publish.side_effect = OSError('disk full')
             with self.assertRaises(OSError):
                 instance.publish_baseline([dict(frames=20)], 'revision', lambda *_: None)
-            self.assertEqual((root / 'baseline.pt').read_bytes(), b'previous-baseline')
+            self.assertEqual((root / 'baseline.npz').read_bytes(), b'previous-baseline')
 
     def test_successful_publication_replaces_baseline_and_keeps_backup_for_caller_cleanup(self):
         class Model(FakeModelGeometry):
@@ -378,12 +378,12 @@ class WorkerBaselinePublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, instance = self.worker_in(root, Model)
-            (root / 'baseline.pt').write_bytes(b'previous-baseline')
+            (root / 'baseline.npz').write_bytes(b'previous-baseline')
             instance.sessions = Mock()
             items = [dict(frames=20)]
             instance.publish_baseline(items, 'revision', lambda *_: None)
-            self.assertEqual((root / 'baseline.pt').read_bytes(), b'next-baseline')
-            self.assertEqual((root / 'baseline-previous.pt').read_bytes(), b'previous-baseline')
+            self.assertEqual((root / 'baseline.npz').read_bytes(), b'next-baseline')
+            self.assertEqual((root / 'baseline-previous.npz').read_bytes(), b'previous-baseline')
             self.assertEqual(items[0]['calibration_threshold'], 1.)
             instance.sessions.publish.assert_called_once_with(items, 'revision')
 
@@ -415,15 +415,15 @@ class WorkerConfigurationChangeTests(unittest.TestCase):
     def test_model_command_pauses_and_persists_independent_model_layout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'baseline.pt').write_bytes(b'previous-baseline')
+            (root / 'baseline.npz').write_bytes(b'previous-baseline')
             anomaly_control.write_json(root / 'session.json', dict(input_size='1024x576',
-                model_key='mobileone-s0', monitoring=True, multiplier=2.8, confirmation_frames=3,
+                model_key='mobilenetv4-convsmall-x0.5', monitoring=True, multiplier=2.8, confirmation_frames=3,
                 last_request='old'))
             anomaly_control.write_json(root / 'command.json', dict(id='switch-model',
                 action='model', model_key='mobilenetv3', multiplier=1.25))
             anomaly_control.write_json(root / 'video-trigger.json', dict(id='old-event'))
             class Model(FakeModelGeometry):
-                model_key = 'mobileone-s0'
+                model_key = 'mobilenetv4-convsmall-x0.5'
                 memory = None
                 baseline_frames = 60
                 def load(self, path): self.memory = True
@@ -452,12 +452,12 @@ class WorkerConfigurationChangeTests(unittest.TestCase):
                     self.assertEqual(status['confirmation_frames'], 3)
                 self.assertEqual(anomaly_control.read_json(root / 'session.json')['model_key'], 'mobilenetv3')
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
-                self.assertFalse((root / 'baseline.pt').exists())
+                self.assertFalse((root / 'baseline.npz').exists())
 
     def test_encoder_change_discards_baseline_and_requires_new_learning(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'baseline.pt').write_bytes(b'previous-encoder-baseline')
+            (root / 'baseline.npz').write_bytes(b'previous-encoder-baseline')
             anomaly_control.write_json(root / 'session.json', dict(input_size='1280x720',
                 monitoring=True, multiplier=1.1, confirmation_frames=1, last_request='learn-previous'))
             anomaly_control.write_json(root / 'command.json', dict(id='learn-previous', action='learn'))
@@ -489,7 +489,7 @@ class WorkerConfigurationChangeTests(unittest.TestCase):
                     self.assertFalse(control.enabled())
                 self.assertEqual(len(loads), 1)
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
-                self.assertFalse((root / 'baseline.pt').exists())
+                self.assertFalse((root / 'baseline.npz').exists())
 
 
 
@@ -497,7 +497,7 @@ class WorkerConfirmationTests(unittest.TestCase):
     def test_confirmation_applies_and_survives_restart_without_invalidating_baseline(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'baseline.pt').write_bytes(b'existing-baseline')
+            (root / 'baseline.npz').write_bytes(b'existing-baseline')
             anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=8.5))
             anomaly_control.write_json(root / 'command.json', dict(id='confirm-1', action='confirmation', confirmation_frames=1))
 
@@ -528,4 +528,4 @@ class WorkerConfirmationTests(unittest.TestCase):
                     self.assertTrue(state['monitoring_enabled'])
                     self.assertFalse(state['retraining_required'])
                     self.assertTrue(control.enabled())
-                    self.assertEqual((root / 'baseline.pt').read_bytes(), b'existing-baseline')
+                    self.assertEqual((root / 'baseline.npz').read_bytes(), b'existing-baseline')

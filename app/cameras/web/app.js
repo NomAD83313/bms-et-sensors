@@ -691,7 +691,7 @@ function syncInputSize(data, unavailable) {
   const dimensions = appliedROI ? (appliedEffectiveInput || fittedInput(appliedROI)) : bounds;
   const inputLabel = dimensions.label + (appliedROI ? ` · maximum ${bounds.label} · area proportions preserved` : ' · full frame');
   if (data.heatmap_width != null) appliedHeatmap = [data.heatmap_width, data.heatmap_height];
-  const stride = appliedModel === 'mobileone-s0' ? 8 : 16;
+  const stride = 16;
   const grid = appliedHeatmap || [Math.ceil(dimensions.width / stride), Math.ceil(dimensions.height / stride)];
   select.disabled = unavailable || learning || analysisConfiguring() || settingPending();
   $('anomaly-size-apply').disabled = unavailable || learning || analysisConfiguring() || settingPending() || !inputSizeDirty;

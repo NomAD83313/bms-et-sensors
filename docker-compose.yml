@@ -1,6 +1,7 @@
 services:
 
   camera-recorder:
+    container_name: camera-recorder
     build:
       context: .
       dockerfile: Dockerfile.cameras
@@ -29,6 +30,7 @@ services:
       - ./runtime/cameras/anomaly:/anomaly:ro
 
   camera-dashboard:
+    container_name: camera-dashboard
     build:
       context: .
       dockerfile: Dockerfile.cameras
@@ -57,47 +59,8 @@ services:
       timeout: 5s
       retries: 3
 
-  camera-anomaly:
-    build:
-      context: .
-      dockerfile: Dockerfile.camera-anomaly
-      args:
-        ONNX_RUNTIME_IMAGE: ${CAMERA_ONNX_RUNTIME_IMAGE:-onnx-cpu}
-    image: bms-camera-anomaly:local
-    profiles: [cameras]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    cpus: ${CAMERA_ANOMALY_CPUS:-1.0}
-    cpuset: ${CAMERA_ANOMALY_CPUSET:-}
-    mem_limit: 768m
-    environment:
-      CAMERA_ANOMALY_THREADS: ${CAMERA_ANOMALY_THREADS:-1}
-      CAMERA_ANOMALY_FEATURE_ENGINE: ${CAMERA_ANOMALY_FEATURE_ENGINE:-onnx}
-      CAMERA_ANOMALY_DISTANCE_ENGINE: ${CAMERA_ANOMALY_DISTANCE_ENGINE:-faiss}
-      CAMERA_ANOMALY_ONNX_PROVIDER: ${CAMERA_ANOMALY_ONNX_PROVIDER:-auto}
-      CAMERA_ANOMALY_JPEG_DRAFT: ${CAMERA_ANOMALY_JPEG_DRAFT:-0}
-      CAMERA_ANOMALY_TOP_K: ${CAMERA_ANOMALY_TOP_K:-1}
-      CAMERA_ANOMALY_CORESET_SIZE: ${CAMERA_ANOMALY_CORESET_SIZE:-1024}
-      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
-      CAMERA_ANOMALY_PREVIEW_URL: http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/live.jpg
-      CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
-      CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
-      CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
-    volumes:
-      - ./runtime/cameras/anomaly:/anomaly
-      - ./runtime/cameras/control:/control
-    depends_on:
-      camera-dashboard:
-        condition: service_healthy
-    healthcheck:
-      test: [CMD, python, -c, "import json,time; from pathlib import Path; assert time.time()-json.loads(Path('/anomaly/status.json').read_text())['updated'] < 30"]
-      interval: 30s
-      timeout: 5s
-      start_period: 60s
-      retries: 3
-
   pi-camera-recorder:
+    container_name: pi-camera-recorder
     build:
       context: .
       dockerfile: Dockerfile.cameras
@@ -128,6 +91,7 @@ services:
       - ./runtime/pi-camera/anomaly:/anomaly:ro
 
   pi-camera-dashboard:
+    container_name: pi-camera-dashboard
     build:
       context: .
       dockerfile: Dockerfile.cameras
@@ -155,41 +119,58 @@ services:
       timeout: 5s
       retries: 3
 
-  pi-camera-anomaly:
+  # Visual analysis of every camera in one process. It belongs to all camera profiles, so starting
+  # any camera starts it; a lock in each camera's /anomaly directory prevents two workers on one camera.
+  camera-analysis:
+    container_name: camera-analysis
     build:
       context: .
-      dockerfile: Dockerfile.camera-anomaly
+      dockerfile: Dockerfile.camera-analysis
       args:
         ONNX_RUNTIME_IMAGE: ${CAMERA_ONNX_RUNTIME_IMAGE:-onnx-cpu}
-    image: bms-camera-anomaly:local
-    profiles: [pi-camera]
+    image: bms-camera-analysis:local
+    profiles: [cameras, pi-camera, cameras-extra]
     network_mode: host
     init: true
     restart: unless-stopped
-    cpus: ${PI_CAMERA_ANOMALY_CPUS:-${CAMERA_ANOMALY_CPUS:-1.0}}
-    cpuset: ${PI_CAMERA_ANOMALY_CPUSET:-${CAMERA_ANOMALY_CPUSET:-}}
+    command: [python, analysis_service.py]
+    cpus: ${CAMERA_ANALYSIS_CPUS:-${CAMERA_ANOMALY_CPUS:-2.0}}
+    cpuset: ${CAMERA_ANOMALY_CPUSET:-}
     mem_limit: 768m
     environment:
-      CAMERA_ANOMALY_THREADS: ${PI_CAMERA_ANOMALY_THREADS:-${CAMERA_ANOMALY_THREADS:-1}}
       CAMERA_ANOMALY_FEATURE_ENGINE: ${CAMERA_ANOMALY_FEATURE_ENGINE:-onnx}
       CAMERA_ANOMALY_DISTANCE_ENGINE: ${CAMERA_ANOMALY_DISTANCE_ENGINE:-faiss}
       CAMERA_ANOMALY_ONNX_PROVIDER: ${CAMERA_ANOMALY_ONNX_PROVIDER:-auto}
-      CAMERA_ANOMALY_JPEG_DRAFT: ${PI_CAMERA_ANOMALY_JPEG_DRAFT:-${CAMERA_ANOMALY_JPEG_DRAFT:-0}}
-      CAMERA_ANOMALY_TOP_K: ${PI_CAMERA_ANOMALY_TOP_K:-${CAMERA_ANOMALY_TOP_K:-1}}
-      CAMERA_ANOMALY_CORESET_SIZE: ${PI_CAMERA_ANOMALY_CORESET_SIZE:-${CAMERA_ANOMALY_CORESET_SIZE:-1024}}
-      CAMERA_RECORDING_MODE: ${PI_CAMERA_RECORDING_MODE:-${CAMERA_RECORDING_MODE:-continuous}}
-      CAMERA_ANOMALY_PREVIEW_URL: http://127.0.0.1:${PI_CAMERA_DASHBOARD_PORT:-8083}/api/live.jpg
       CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
       CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
+      CAMERA_ANOMALY_FRAME_GATE: ${CAMERA_ANOMALY_FRAME_GATE:-1}
+      CAMERA_ANOMALY_GATE_BLOCK_DIFF: ${CAMERA_ANOMALY_GATE_BLOCK_DIFF:-3.0}
+      CAMERA_ANOMALY_GATE_MEAN_DIFF: ${CAMERA_ANOMALY_GATE_MEAN_DIFF:-1.2}
+      CAMERA_ANOMALY_GATE_MAX_AGE_SEC: ${CAMERA_ANOMALY_GATE_MAX_AGE_SEC:-2.0}
       CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
+      CAMERA_ANALYSIS_EXTRA_FILE: /registry/analysis-extra.json
+      CAMERA_ANALYSIS_CAMERAS: >-
+        [{"id": "wifi", "data": "/anomaly/wifi", "control": "/control/wifi",
+        "preview": "http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/live.jpg",
+        "recording_mode": "${CAMERA_RECORDING_MODE:-continuous}",
+        "settings": {"model": {"threads": ${CAMERA_ANOMALY_THREADS:-1},
+        "jpeg_draft": ${CAMERA_ANOMALY_JPEG_DRAFT:-0}, "top_k": ${CAMERA_ANOMALY_TOP_K:-1},
+        "coreset_size": ${CAMERA_ANOMALY_CORESET_SIZE:-1024}}}},
+        {"id": "pi", "data": "/anomaly/pi", "control": "/control/pi",
+        "preview": "http://127.0.0.1:${PI_CAMERA_DASHBOARD_PORT:-8083}/api/live.jpg",
+        "recording_mode": "${PI_CAMERA_RECORDING_MODE:-${CAMERA_RECORDING_MODE:-continuous}}",
+        "settings": {"model": {"threads": ${PI_CAMERA_ANOMALY_THREADS:-${CAMERA_ANOMALY_THREADS:-1}},
+        "jpeg_draft": ${PI_CAMERA_ANOMALY_JPEG_DRAFT:-${CAMERA_ANOMALY_JPEG_DRAFT:-0}},
+        "top_k": ${PI_CAMERA_ANOMALY_TOP_K:-${CAMERA_ANOMALY_TOP_K:-1}},
+        "coreset_size": ${PI_CAMERA_ANOMALY_CORESET_SIZE:-${CAMERA_ANOMALY_CORESET_SIZE:-1024}}}}}]
     volumes:
-      - ./runtime/pi-camera/anomaly:/anomaly
-      - ./runtime/pi-camera/control:/control
-    depends_on:
-      pi-camera-dashboard:
-        condition: service_healthy
+      - ./runtime/cameras/anomaly:/anomaly/wifi
+      - ./runtime/cameras/control:/control/wifi
+      - ./runtime/pi-camera/anomaly:/anomaly/pi
+      - ./runtime/pi-camera/control:/control/pi
+      - ./runtime/camera-registry:/registry:ro
     healthcheck:
-      test: [CMD, python, -c, "import json,time; from pathlib import Path; assert time.time()-json.loads(Path('/anomaly/status.json').read_text())['updated'] < 30"]
+      test: [CMD, python, -c, "import os,time; assert time.time()-os.path.getmtime('/tmp/camera-analysis.alive') < 30"]
       interval: 30s
       timeout: 5s
       start_period: 60s
@@ -537,6 +518,7 @@ services:
     volumes:
       - ./dashboard/simple-dash:/usr/share/nginx/html:ro
       - ./dashboard/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./runtime/camera-registry/nginx:/etc/nginx/cameras:ro
     depends_on:
       - service-controller
       - ap-control

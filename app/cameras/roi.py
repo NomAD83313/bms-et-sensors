@@ -2,6 +2,10 @@
 import math
 from numbers import Real
 
+try:
+    from .model_profiles import input_dimensions
+except ImportError:
+    from model_profiles import input_dimensions
 
 ROI_PREPROCESSING = 'roi-original-aspect-v1'
 
@@ -61,10 +65,6 @@ def roi_bounds(source_width, source_height, roi):
 
 def roi_input_dimensions(input_size, source_width, source_height, roi):
     """Shrink the crop to the model-input bounds without enlarging source pixels."""
-    try:
-        from .anomaly_control import input_dimensions
-    except ImportError:
-        from anomaly_control import input_dimensions
     maximum_width, maximum_height = input_dimensions(input_size)
     roi = validate_roi(roi)
     bounds = roi_bounds(source_width, source_height, roi)

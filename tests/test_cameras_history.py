@@ -21,7 +21,7 @@ class HistoryTests(unittest.TestCase):
         self.recordings.mkdir()
         self.anomaly = self.root / 'anomaly'
         (self.anomaly / 'events').mkdir(parents=True)
-        (self.anomaly / 'baseline.pt').write_bytes(b'model')
+        (self.anomaly / 'baseline.npz').write_bytes(b'model')
         (self.anomaly / 'session.json').write_text('{}')
         (self.recordings / '.buffer').mkdir()
         (self.recordings / '.buffer/live.mkv').write_bytes(b'active')
@@ -54,7 +54,7 @@ class HistoryTests(unittest.TestCase):
         self.recording('old-continuous.mkv')
         result = history.delete_saved(self.recordings, self.anomaly, 'history')
         self.assertEqual(result, dict(events=1, recordings=2))
-        self.assertTrue((self.anomaly / 'baseline.pt').exists())
+        self.assertTrue((self.anomaly / 'baseline.npz').exists())
         self.assertTrue((self.anomaly / 'session.json').exists())
         self.assertEqual((self.recordings / '.buffer/live.mkv').read_bytes(), b'active')
         self.assertEqual(list(self.recordings.glob('*.mkv')), [])

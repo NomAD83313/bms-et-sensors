@@ -40,6 +40,9 @@ class InputTests(unittest.TestCase):
         args = preview_input_args(url)
         self.assertEqual(args[args.index('-fflags') + 1], '+discardcorrupt')
         self.assertNotIn('-max_delay', args)
+        # A short probe keeps first-frame latency below the preview watchdog timeout.
+        self.assertEqual(args[args.index('-analyzeduration') + 1], '0')
+        self.assertEqual(args[args.index('-probesize') + 1], '32768')
         self.assertEqual(args[args.index('-i') + 1], url)
 
     def test_browser_substream_preserves_rtsp_authority(self):

@@ -3,30 +3,29 @@
 This experimental variant uses a bounded candidate pool, projected greedy
 coreset, and an unweighted maximum nearest-patch distance. It does not claim
 benchmark equivalence with the original WideResNet-50 PatchCore implementation.
+
+The runtime depends only on NumPy, Pillow, ONNX Runtime and (optionally) FAISS:
+the encoders are exported to ONNX at image build time, so PyTorch is never imported.
 """
 import io
+import json
 import math
 import os
 from pathlib import Path
 import time
 
 import numpy as np
-import torch
-from torch.nn import functional as F
-from torchvision.transforms import functional as TF
 from PIL import Image
 
 try:
-    from .anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
-    from .feature_encoder import FeatureEncoder
-    from .model_profiles import (DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions,
-                                 ANALYSIS_SOURCE, IMAGENET_MEAN, IMAGENET_STD)
+    from .model_profiles import (ANALYSIS_SOURCE, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, IMAGENET_MEAN, IMAGENET_STD,
+                                 MODELS, heatmap_dimensions, input_dimensions, validate_color_mode,
+                                 validate_input_size, validate_model)
     from .roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 except ImportError:
-    from anomaly_control import validate_input_size, input_dimensions, DEFAULT_INPUT_SIZE, validate_color_mode
-    from feature_encoder import FeatureEncoder
-    from model_profiles import (DEFAULT_MODEL, MODELS, validate_model, heatmap_dimensions,
-                                ANALYSIS_SOURCE, IMAGENET_MEAN, IMAGENET_STD)
+    from model_profiles import (ANALYSIS_SOURCE, DEFAULT_INPUT_SIZE, DEFAULT_MODEL, IMAGENET_MEAN, IMAGENET_STD,
+                                MODELS, heatmap_dimensions, input_dimensions, validate_color_mode,
+                                validate_input_size, validate_model)
     from roi import validate_roi, roi_bounds, roi_input_dimensions, ROI_PREPROCESSING, ROIGeometryChanged
 
 
@@ -35,6 +34,12 @@ HOLDOUT_STEP = 5
 CANDIDATE_LIMIT = 8000
 MIN_SESSION_FRAMES, MAX_SESSION_FRAMES, MAX_SESSION_GROUPS = 20, 120, 8
 CALIBRATION_QUANTILE = .99
+RANDOM_SEED = 42
+PROJECTION_DIMENSIONS = 32
+DISTANCE_CHUNK = 1024
+BASELINE_VERSION = 7
+FEATURE_ENGINES = ('onnx',)
+DISTANCE_ENGINES = ('faiss', 'numpy')
 
 
 def is_held_out(index):
@@ -42,7 +47,40 @@ def is_held_out(index):
 
 
 def calibrated_threshold(scores):
-    return max(float(torch.quantile(torch.as_tensor(scores), CALIBRATION_QUANTILE)), 1e-6)
+    return max(float(np.quantile(np.asarray(scores, dtype=np.float64), CALIBRATION_QUANTILE)), 1e-6)
+
+
+def greedy_coreset(patches, projection, size):
+    """Select `size` patch indices by greedy farthest-point sampling in a projected space."""
+    compact = np.ascontiguousarray(patches @ projection, dtype=np.float32)
+    distances = np.full(len(patches), np.inf, dtype=np.float32)
+    difference = np.empty_like(compact)
+    selected, index = [], 0
+    for _ in range(min(size, len(patches))):
+        selected.append(index)
+        np.subtract(compact, compact[index], out=difference)
+        np.minimum(distances, np.einsum('ij,ij->i', difference, difference), out=distances)
+        distances[index] = -1
+        index = int(distances.argmax())
+    return selected
+
+
+def nearest_distances(patches, memory):
+    """Euclidean distance from every patch to its nearest memory vector (exact, chunked)."""
+    memory = np.asarray(memory, dtype=np.float64)
+    memory_norm = np.einsum('ij,ij->i', memory, memory)
+    result = np.empty(len(patches), dtype=np.float32)
+    for start in range(0, len(patches), DISTANCE_CHUNK):
+        part = np.asarray(patches[start:start + DISTANCE_CHUNK], dtype=np.float64)
+        squared = (np.einsum('ij,ij->i', part, part)[:, None] + memory_norm[None, :]
+                   - 2 * part @ memory.T)
+        result[start:start + DISTANCE_CHUNK] = np.sqrt(np.maximum(squared.min(axis=1), 0))
+    return result
+
+
+def top_k_mean(values, count):
+    count = min(count, len(values))
+    return float(np.partition(values, len(values) - count)[len(values) - count:].mean())
 
 
 def bounded_int(value, low, high, message):
@@ -66,10 +104,9 @@ class PatchCoreLite:
         requested_threads = os.environ.get('CAMERA_ANOMALY_THREADS', '1') if threads is None else threads
         self.inference_threads = bounded_int(
             requested_threads, 1, 4, 'Analysis CPU threads must be between 1 and 4')
-        torch.set_num_threads(self.inference_threads)
-        self.feature_engine = feature_engine or os.environ.get('CAMERA_ANOMALY_FEATURE_ENGINE', 'torch')
-        self.distance_engine = distance_engine or os.environ.get('CAMERA_ANOMALY_DISTANCE_ENGINE', 'torch')
-        if self.feature_engine not in ('torch', 'onnx') or self.distance_engine not in ('torch', 'faiss'):
+        self.feature_engine = feature_engine or os.environ.get('CAMERA_ANOMALY_FEATURE_ENGINE', 'onnx')
+        self.distance_engine = distance_engine or os.environ.get('CAMERA_ANOMALY_DISTANCE_ENGINE', 'faiss')
+        if self.feature_engine not in FEATURE_ENGINES or self.distance_engine not in DISTANCE_ENGINES:
             raise ValueError('Unsupported inference engine')
         requested_draft = os.environ.get('CAMERA_ANOMALY_JPEG_DRAFT', '0') if jpeg_draft is None else jpeg_draft
         if isinstance(requested_draft, bool):
@@ -84,8 +121,6 @@ class PatchCoreLite:
         self.coreset_size = bounded_int(
             os.environ.get('CAMERA_ANOMALY_CORESET_SIZE', '1024') if coreset_size is None else coreset_size,
             256, 4096, 'Coreset size must be an integer between 256 and 4096')
-        self._requested_feature_engine = self.feature_engine
-        self.network = None
         self.onnx_provider = None
         self._ort = None
         self._session = None
@@ -105,19 +140,12 @@ class PatchCoreLite:
         model_key = validate_model(model_key)
         if getattr(self, 'model_key', None) == model_key:
             return
-        feature_engine = self._requested_feature_engine
-        if feature_engine == 'onnx':
-            self._init_onnx()
+        self._init_onnx()
         profile = MODELS[model_key]
         self._mean = np.asarray(profile.get('mean', IMAGENET_MEAN), dtype=np.float32)[:, None, None]
         self._std = np.asarray(profile.get('std', IMAGENET_STD), dtype=np.float32)[:, None, None]
-        self.feature_engine = feature_engine
-        if feature_engine == 'torch':
-            self.onnx_provider = None
         self.model_key, self.encoder_id = model_key, profile['encoder']
         self.feature_dimensions = profile['dimensions']
-        self.network = (FeatureEncoder(model_key).eval().to(memory_format=torch.channels_last)
-                        if self.feature_engine == 'torch' else None)
         self.set_input_size(self.input_size)
 
     def _init_onnx(self):
@@ -218,7 +246,7 @@ class PatchCoreLite:
                       round(bounds[3] * decoded_height / source_height))
             image = image.crop(scaled)
         width, height = self.effective_input_size
-        image = TF.resize(image, [height, width])
+        image = image.resize((width, height), Image.BILINEAR)
         transform_ms = (time.perf_counter() - transform_started) * 1000
         tensor_started = time.perf_counter()
         pixels = np.asarray(image)
@@ -230,7 +258,7 @@ class PatchCoreLite:
         np.divide(pixels, np.float32(255), out=normalized, dtype=np.float32)
         normalized -= self._mean
         normalized /= self._std
-        tensor = torch.from_numpy(normalized).unsqueeze(0)
+        tensor = normalized[None]
         tensor_ms = (time.perf_counter() - tensor_started) * 1000
         self.preparation_metrics = dict(
             geometry_ms=geometry_ms, decode_ms=decode_ms, transform_ms=transform_ms,
@@ -239,15 +267,12 @@ class PatchCoreLite:
             decoded_mode=decoded_mode)
         return tensor
 
-    @torch.inference_mode()
     def features(self, jpeg):
         x = self._image(jpeg)
-        if self.network is not None:
-            return self.network(x)
         session_size = self.effective_input_size if self.roi is not None else self.input_size
         if self._session is None or self._session_size != session_size:
             self._open_session(session_size)
-        return torch.from_numpy(self._session.run(None, {'image': x.numpy()})[0])
+        return self._session.run(None, {'image': x})[0]
 
     def _open_session(self, session_size):
         directory = Path(os.environ.get('CAMERA_ANOMALY_MODEL_DIR', '/opt/bms-camera/encoders'))
@@ -269,35 +294,34 @@ class PatchCoreLite:
             raise RuntimeError('Requested ONNX provider did not initialize')
         self._session_size = session_size
 
-    @torch.inference_mode()
     def fit(self, samples):
+        samples = [np.asarray(sample, dtype=np.float32) for sample in samples]
         if len(samples) < MIN_SESSION_FRAMES:
             raise ValueError('At least 20 independent frames are required')
         # Hold out complete frames: calibration patches never enter the bank.
         training = [sample for i, sample in enumerate(samples) if not is_held_out(i)]
         validation = [sample for i, sample in enumerate(samples) if is_held_out(i)]
-        generator = torch.Generator().manual_seed(42)
+        generator = np.random.default_rng(RANDOM_SEED)
         # Select the same global sample without concatenating full-resolution frames.
-        indices = torch.randperm(sum(len(frame) for frame in training), generator=generator)[:CANDIDATE_LIMIT]
-        patches = torch.empty((len(indices), training[0].shape[1]), dtype=training[0].dtype)
+        indices = generator.permutation(sum(len(frame) for frame in training))[:CANDIDATE_LIMIT]
+        patches = np.empty((len(indices), training[0].shape[1]), dtype=np.float32)
         offset = 0
         for frame in training:
             selected = (indices >= offset) & (indices < offset + len(frame))
             patches[selected] = frame[indices[selected] - offset]
             offset += len(frame)
         self._fit_candidates(patches, generator)
-        scores = torch.tensor([self.score(sample)[0] for sample in validation])
+        scores = [self.score(sample)[0] for sample in validation]
         self.threshold = calibrated_threshold(scores)
         self.baseline_frames = len(samples)
-        return scores.tolist()
+        return scores
 
-    @torch.inference_mode()
     def fit_sessions(self, groups, progress=None):
         """Stream saved JPEGs with equal candidate budgets and held-out frames per session."""
         if (not 1 <= len(groups) <= MAX_SESSION_GROUPS
                 or any(not MIN_SESSION_FRAMES <= len(group) <= MAX_SESSION_FRAMES for group in groups)):
             raise ValueError('Learn one to eight sessions with 20 to 120 frames each')
-        generator = torch.Generator().manual_seed(42)
+        generator = np.random.default_rng(RANDOM_SEED)
         candidates = []
         completed, total = 0, sum(map(len, groups))
         for group_index, paths in enumerate(groups):
@@ -306,11 +330,11 @@ class PatchCoreLite:
             for index, path in enumerate(training):
                 features = self.features(path.read_bytes())
                 count = min(len(features), budget // len(training) + int(index < budget % len(training)))
-                candidates.append(features[torch.randperm(len(features), generator=generator)[:count]])
+                candidates.append(features[generator.permutation(len(features))[:count]])
                 completed += 1
                 if progress:
                     progress(completed, total)
-        self._fit_candidates(torch.cat(candidates), generator)
+        self._fit_candidates(np.concatenate(candidates), generator)
         del candidates
         calibration = []
         for paths in groups:
@@ -329,64 +353,61 @@ class PatchCoreLite:
         return calibration
 
     def _fit_candidates(self, patches, generator):
-        projection = torch.randn(self.feature_dimensions, 32, generator=generator) / math.sqrt(32)
-        compact = patches @ projection
-        distances = torch.full((len(patches),), float('inf'))
-        selected = []
-        index = 0
-        for _ in range(min(self.coreset_size, len(patches))):
-            selected.append(index)
-            distances = torch.minimum(distances, ((compact - compact[index]) ** 2).sum(dim=1))
-            distances[index] = -1
-            index = int(distances.argmax())
-        self.memory = patches[selected].contiguous()
+        projection = (generator.standard_normal((self.feature_dimensions, PROJECTION_DIMENSIONS))
+                      / math.sqrt(PROJECTION_DIMENSIONS)).astype(np.float32)
+        selected = greedy_coreset(patches, projection, self.coreset_size)
+        self.memory = np.ascontiguousarray(patches[selected], dtype=np.float32)
 
-    @torch.inference_mode()
     def score(self, patches):
         if self.memory is None:
             raise ValueError('Learn a normal view first')
+        patches = np.ascontiguousarray(patches, dtype=np.float32)
         if self.distance_engine == 'faiss':
             if self._index is None or self._indexed_memory is not self.memory:
                 self._index = self._faiss.IndexFlatL2(self.feature_dimensions)
-                self._index.add(self.memory.contiguous().numpy())
+                self._index.add(self.memory)
                 self._indexed_memory = self.memory
-            squared, _ = self._index.search(patches.contiguous().numpy(), 1)
+            squared, _ = self._index.search(patches, 1)
             # FAISS returns squared L2; keep the existing Euclidean score scale.
-            distances = torch.from_numpy(np.sqrt(np.maximum(squared[:, 0], 0)))
+            distances = np.sqrt(np.maximum(squared[:, 0], 0))
         else:
-            distances = torch.cat([torch.cdist(part, self.memory).min(dim=1).values
-                                   for part in patches.split(1024)])
+            distances = nearest_distances(patches, self.memory)
         width, height = self.effective_input_size or input_dimensions(self.input_size)
         heat_width, heat_height = heatmap_dimensions(width, height, self.model_key)
-        count = min(self.top_k, len(distances))
-        score = float(torch.topk(distances, count).values.mean())
-        return score, distances.reshape(heat_height, heat_width)
+        return top_k_mean(distances, self.top_k), distances.reshape(heat_height, heat_width)
 
     def save(self, path):
         temporary = Path(str(path) + '.tmp')
         if self.source_size is None or self.effective_input_size is None:
             raise ValueError('Source geometry is required before saving a baseline')
-        torch.save(dict(version=6, analysis_source=ANALYSIS_SOURCE,
-                        learning_revision=self.learning_revision,
-                        color_mode=self.color_mode,
+        metadata = dict(version=BASELINE_VERSION, analysis_source=ANALYSIS_SOURCE,
+                        learning_revision=self.learning_revision, color_mode=self.color_mode,
                         encoder=self.encoder_id, input_size=self.input_size,
                         roi=self.roi, roi_preprocessing=ROI_PREPROCESSING,
-                        source_size=self.source_size, effective_input_size=self.effective_input_size,
+                        source_size=list(self.source_size),
+                        effective_input_size=list(self.effective_input_size),
                         jpeg_draft=self.jpeg_draft, score_top_k=self.top_k,
-                        coreset_size=len(self.memory), memory=self.memory,
-                        threshold=self.threshold, baseline_frames=self.baseline_frames), temporary)
+                        coreset_size=len(self.memory), threshold=float(self.threshold),
+                        baseline_frames=int(self.baseline_frames))
+        with temporary.open('wb') as stream:
+            np.savez(stream, metadata=np.array(json.dumps(metadata)), memory=self.memory)
         temporary.replace(path)
 
     def load(self, path):
-        model = torch.load(path, map_location='cpu', weights_only=True)
+        try:
+            with np.load(path, allow_pickle=False) as archive:
+                model = json.loads(str(archive['metadata']))
+                memory = np.array(archive['memory'], dtype=np.float32)
+        except (OSError, KeyError, ValueError, EOFError) as error:
+            raise ValueError('Unsupported visual baseline') from error
         required = {'version', 'analysis_source', 'encoder', 'input_size', 'roi',
                     'roi_preprocessing', 'source_size', 'effective_input_size',
-                    'jpeg_draft', 'score_top_k', 'coreset_size', 'memory',
+                    'jpeg_draft', 'score_top_k', 'coreset_size',
                     'threshold', 'baseline_frames'}
         if (not isinstance(model, dict) or not required.issubset(model)
-                or model['version'] != 6 or model['analysis_source'] != ANALYSIS_SOURCE
+                or model['version'] != BASELINE_VERSION or model['analysis_source'] != ANALYSIS_SOURCE
                 or model.get('encoder') != self.encoder_id
-                or model['memory'].ndim != 2 or model['memory'].shape[1] != self.feature_dimensions):
+                or memory.ndim != 2 or memory.shape[1] != self.feature_dimensions):
             raise ValueError('Unsupported visual baseline')
         if model.get('input_size') != self.input_size:
             raise ValueError('Baseline input size changed; learn a normal view again')
@@ -413,9 +434,9 @@ class PatchCoreLite:
         if self._roi_geometry is not None and geometry != self._roi_geometry:
             raise ValueError('Baseline source geometry changed; learn the normal view again')
         if (isinstance(model['coreset_size'], bool) or not isinstance(model['coreset_size'], int)
-                or model['coreset_size'] != len(model['memory'])):
+                or model['coreset_size'] != len(memory)):
             raise ValueError('Invalid baseline coreset')
-        self.memory = model['memory']
+        self.memory = memory
         self.learning_revision = model.get('learning_revision')
         self.threshold = model['threshold']
         self.baseline_frames = model['baseline_frames']
@@ -428,9 +449,10 @@ def overlay(jpeg, distances, threshold, roi=None):
     roi = validate_roi(roi)
     bounds = roi_bounds(image.width, image.height, roi)
     region = image.crop(bounds) if roi is not None else image
-    heat = F.interpolate(((distances / max(threshold, 1e-6) - .8) / .7).clamp(0, 1)[None, None],
-                         size=(region.height, region.width), mode='bilinear', align_corners=False)[0, 0]
-    alpha = TF.to_pil_image((heat * .65).unsqueeze(0))
+    heat = np.clip((np.asarray(distances, dtype=np.float32) / max(threshold, 1e-6) - .8) / .7, 0, 1)
+    heat = Image.fromarray(np.ascontiguousarray(heat, dtype=np.float32), mode='F').resize(
+        region.size, Image.BILINEAR)
+    alpha = Image.fromarray((np.clip(np.asarray(heat), 0, 1) * .65 * 255).astype(np.uint8), mode='L')
     red = Image.new('RGB', region.size, (255, 32, 0))
     result = Image.composite(red, region, alpha)
     if roi is not None:

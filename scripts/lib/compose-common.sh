@@ -4,6 +4,10 @@
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml)
+# Extra cameras: recorder and dashboard services generated from runtime/cameras.json.
+if [[ -f "${SCRIPT_DIR}/../runtime/docker-compose.cameras.yml" ]]; then
+  COMPOSE+=(-f runtime/docker-compose.cameras.yml)
+fi
 DEFAULT_APP_BUILD_SERVICES=(mscl-collector redlab-collector graf-lite service-controller almemo-collector pyrometer-collector ap-control)
 OPTIONAL_APP_BUILD_SERVICES=(matter-collector)
 APP_BUILD_SERVICES=("${DEFAULT_APP_BUILD_SERVICES[@]}" "${OPTIONAL_APP_BUILD_SERVICES[@]}")
@@ -13,6 +17,8 @@ source "${SCRIPT_DIR}/lib/setup-common.sh"
 
 bms_cd_project() {
   cd "${PROJECT_ROOT}"
+  # Bind-mounted by Compose: create them as the current user, not as root.
+  mkdir -p runtime/camera-registry/nginx
 }
 
 bms_build_services() {
