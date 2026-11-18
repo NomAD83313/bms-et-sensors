@@ -90,7 +90,7 @@ def print_results(label, rs):
 
 
 # ────────────────────────────────────────────────────────────
-# A1: 5 одновременных GET /health
+# A1: 5 concurrent GET /health
 # ────────────────────────────────────────────────────────────
 def test_a1():
     print("\n\n=== A1: 5 simultaneous GET /health (cold, bypasses cache) ===")
@@ -102,7 +102,7 @@ def test_a1():
 
 
 # ────────────────────────────────────────────────────────────
-# A2: 10 быстрых /api/command последовательно, 50ms пауза
+# A2: 10 rapid sequential /api/command calls, 50 ms pause
 # ────────────────────────────────────────────────────────────
 def test_a2():
     print("\n\n=== A2: 10 rapid /api/command sequential (50ms gap) ===")
@@ -116,7 +116,7 @@ def test_a2():
 
 
 # ────────────────────────────────────────────────────────────
-# A3: /api/command + /health параллельно
+# A3: /api/command + /health in parallel
 # ────────────────────────────────────────────────────────────
 def test_a3():
     print("\n\n=== A3: /api/command vs /health in parallel ===")
@@ -148,7 +148,7 @@ def test_a3():
 
 
 # ────────────────────────────────────────────────────────────
-# A4: 3 потока одновременно шлют команды (SESSION_SWITCH_LOCK)
+# A4: 3 threads send commands concurrently (SESSION_SWITCH_LOCK)
 # ────────────────────────────────────────────────────────────
 def test_a4():
     print("\n\n=== A4: 3 threads simultaneous commands (SESSION_SWITCH_LOCK contention) ===")
@@ -172,7 +172,7 @@ def test_a4():
 
 
 # ────────────────────────────────────────────────────────────
-# A5: симуляция F5 ×3 — каждый поток: health + command сразу
+# A5: simulate F5 x3: each thread sends health + command at once
 # ────────────────────────────────────────────────────────────
 def test_a5():
     print("\n\n=== A5: F5 x3 simulation — health + command burst per 'tab' ===")
@@ -192,7 +192,7 @@ def test_a5():
 
 
 # ────────────────────────────────────────────────────────────
-# A6 (bonus): быстрый Sensor Info — 10 команд без паузы
+# A6 (bonus): fast Sensor Info: 10 commands without a pause
 # ────────────────────────────────────────────────────────────
 def test_a6():
     print("\n\n=== A6 (bonus): Sensor Info burst — 10 commands, no sleep between ===")
@@ -210,7 +210,7 @@ def test_a6():
 
 
 # ────────────────────────────────────────────────────────────
-# A7: прерывание команды — 2 потока, один занят, второй врывается
+# A7: command interruption: 2 threads, one busy, the second cuts in
 # ────────────────────────────────────────────────────────────
 def test_a7():
     print("\n\n=== A7: Interrupt simulation — slow command + immediate health probe ===")

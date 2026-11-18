@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# /gemini: Логика автоматического разделения встроенного Wi-Fi (AP), внешних USB-адаптеров и опционального Ethernet AP.
+# Automatically splits roles between built-in Wi-Fi (AP), external USB adapters and an optional Ethernet AP.
 # Raspberry Pi only:
 # - built-in Wi-Fi -> Access Point (NetworkManager) by default
 # - additional Wi-Fi adapters -> normal client Wi-Fi
@@ -32,6 +32,9 @@ AP_PASSWORD="${AP_PASSWORD:-ChangeMe12345}"
 AP_BAND="${AP_BAND:-bg}"   # bg or a
 AP_CHANNEL="${AP_CHANNEL:-6}"
 AP_COUNTRY="${AP_COUNTRY:-DE}"
+# Above client profiles (default 0): a client profile bound to the AP interface must never
+# take it over at boot or after a failure.
+AP_AUTOCONNECT_PRIORITY="${AP_AUTOCONNECT_PRIORITY:-100}"
 AP_WIFI_IPV4_CIDR="${AP_WIFI_IPV4_CIDR:-10.42.0.1/24}"
 AP_ETH_IPV4_CIDR="${AP_ETH_IPV4_CIDR:-10.42.1.1/24}"
 AP_LOCAL_DNS_ENABLE="${AP_LOCAL_DNS_ENABLE:-true}"
@@ -131,6 +134,7 @@ configure_ap_on_ethernet() {
     run_nmcli connection modify "${eth_profile}" \
       connection.interface-name "${ap_if}" \
       connection.autoconnect yes \
+      connection.autoconnect-priority "${AP_AUTOCONNECT_PRIORITY}" \
       ipv4.method shared \
       ipv4.addresses "${ap_cidr}" \
       ipv6.method link-local
@@ -178,11 +182,14 @@ configure_ap_on_builtin_wifi() {
 
   echo ">>> Configure AP '${profile}' on built-in Wi-Fi: ${ap_if} (${ap_cidr})"
 
+  # Disable PMF in AP mode to prevent NetworkManager from adding WPA3/SAE.
+  # This keeps WPA2/CCMP compatible with Zero 2 W clients running Trixie.
   # Reuse existing AP profile if present, otherwise create.
   if nmcli -t -f NAME connection show | grep -Fxq "${profile}"; then
     run_nmcli connection modify "${profile}" \
       connection.interface-name "${ap_if}" \
       connection.autoconnect yes \
+      connection.autoconnect-priority "${AP_AUTOCONNECT_PRIORITY}" \
       802-11-wireless.ssid "${AP_SSID}" \
       802-11-wireless.mode ap \
       802-11-wireless.band "${AP_BAND}" \
@@ -191,7 +198,7 @@ configure_ap_on_builtin_wifi() {
       wifi-sec.proto rsn \
       wifi-sec.pairwise ccmp \
       wifi-sec.group ccmp \
-      wifi-sec.pmf 2 \
+      wifi-sec.pmf 1 \
       wifi-sec.psk "${AP_PASSWORD}" \
       ipv4.method shared \
       ipv4.addresses "${ap_cidr}" \
@@ -201,6 +208,7 @@ configure_ap_on_builtin_wifi() {
     run_nmcli connection modify "${profile}" \
       connection.interface-name "${ap_if}" \
       connection.autoconnect yes \
+      connection.autoconnect-priority "${AP_AUTOCONNECT_PRIORITY}" \
       802-11-wireless.mode ap \
       802-11-wireless.band "${AP_BAND}" \
       802-11-wireless.channel "${AP_CHANNEL}" \
@@ -208,7 +216,7 @@ configure_ap_on_builtin_wifi() {
       wifi-sec.proto rsn \
       wifi-sec.pairwise ccmp \
       wifi-sec.group ccmp \
-      wifi-sec.pmf 2 \
+      wifi-sec.pmf 1 \
       wifi-sec.psk "${AP_PASSWORD}" \
       ipv4.method shared \
         ipv4.addresses "${ap_cidr}" \

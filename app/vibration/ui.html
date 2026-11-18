@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vibration sensors</title>
+  <link rel="stylesheet" href="device-common.css">
+  <style>
+    .page { max-width: 1180px; margin: 0 auto; }
+    .section { padding: 18px 20px; margin: 0 0 18px; }
+    .section h2 { margin: 0 0 12px; font-size: 1.15rem; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+    input, select { min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; color: var(--ink); background: #fff; }
+    input[type=number] { width: 110px; }
+    input.addr { width: 90px; }
+    select.port { min-width: 320px; max-width: 100%; }
+    button { min-height: 38px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-strong); background: #fff; color: var(--accent); font-weight: 800; cursor: pointer; }
+    button:hover:not(:disabled) { background: var(--accent-soft); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button.danger { color: var(--err); }
+    .note { margin: 8px 0 0; color: var(--muted); font-size: 0.86rem; }
+    .msg { min-height: 1.3em; margin: 8px 0 0; font-size: 0.9rem; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: var(--ok); }
+    .table-wrap { overflow-x: auto; scrollbar-width: none; }
+    .table-wrap::-webkit-scrollbar { display: none; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 8px 5px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; vertical-align: middle; }
+    th { text-align: center; white-space: normal; line-height: 1.15; }
+    th .th-main, th .th-sub { display: block; }
+    th .th-sub { margin-top: 3px; color: var(--ink); font-size: 0.68rem; font-weight: 700; text-transform: none; letter-spacing: 0; }
+    tr.sensor-row:has(+ tr.detail-row) td { border-bottom: none; }
+    tr.detail-row td { padding-top: 0; white-space: normal; }
+    th:first-child, td:first-child, th.l, td.l { text-align: left; }
+    th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--err); }
+    .dot.on { background: var(--ok); }
+    .dot.off { background: var(--line-strong); }
+    .actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+    .actions button { min-height: 30px; padding: 0 8px; font-size: 0.78rem; }
+    details.values { width: calc(100vw - 72px); max-width: 1120px; box-sizing: border-box; margin: 6px 0 2px; text-align: left; white-space: normal; }
+    details.values summary { cursor: pointer; color: var(--accent); font-weight: 700; }
+    .common-values { margin: 8px 0; max-width: 360px; font-size: 0.84rem; }
+    .axis-values-wrap { width: 100%; margin-top: 8px; overflow: hidden; }
+    .axis-values-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; width: 100%; min-width: 0; }
+    .axis-values { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+    .axis-values h4 { margin: 0 0 8px; color: var(--accent); font-size: 0.9rem; }
+    .value-group + .value-group { margin-top: 12px; }
+    .value-group h5 { margin: 0 0 4px; padding-bottom: 3px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .axis-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 2px 0; font-size: 0.82rem; }
+    .axis-value .metric { min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+    .axis-value .reading { white-space: nowrap; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .axis-value .reading span { color: var(--muted); }
+    .bauds { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 0.86rem; }
+    .bauds label { flex-direction: row; align-items: center; color: var(--ink); font-weight: 400; }
+    .found { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .harmonics { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; margin-top: 8px; }
+    .harmonics h4 { margin: 0 0 6px; font-size: 0.85rem; }
+    .roll-setup { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: end; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+    .roll-setup > strong { align-self: center; color: var(--accent); }
+    .roll-setup label span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-weight: 400; }
+    .roll-setup input { width: 92px; min-height: 32px; }
+    .roll-result { display: flex; gap: 10px; align-items: baseline; margin-left: auto; font-variant-numeric: tabular-nums; }
+    .roll-result span { color: var(--muted); }
+    .roll-result strong { color: var(--ink); font-size: 1rem; }
+    .detected-frequency { margin: -2px 0 8px; color: var(--muted); font-size: 0.78rem; }
+    .detected-frequency strong { color: var(--ink); }
+    .harmonic-group + .harmonic-group { margin-top: 12px; }
+    .harmonic-group h5 { margin: 0 0 5px; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .hbar { display: grid; grid-template-columns: 72px 1fr 56px; gap: 6px; align-items: center; min-height: 30px; font-size: 0.78rem; }
+    .hbar.band { grid-template-columns: 104px 1fr 56px; }
+    .hlabel { line-height: 1.1; }
+    .hlabel small { display: block; margin-top: 2px; color: var(--muted); font-size: 0.66rem; white-space: nowrap; }
+    .hbar .track { height: 10px; border-radius: 5px; background: var(--panel-soft); border: 1px solid var(--line); overflow: hidden; }
+    .hbar .fill { height: 100%; background: var(--accent); }
+    .hbar.fund .fill { background: var(--ok); }
+    .hbar.band .fill { background: var(--warn); }
+    .hbar span:last-child { text-align: right; color: var(--muted); }
+    .ratios { margin-top: 6px; font-size: 0.8rem; color: var(--muted); }
+    .ratios strong { color: var(--ink); }
+    .fft-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; font-size: 0.84rem; color: var(--muted); }
+    .fft-head strong { color: var(--ink); }
+    .fft-head .unit { display: flex; gap: 4px; margin-left: auto; }
+    .fft-head .unit button { min-height: 28px; padding: 0 10px; font-size: 0.78rem; }
+    .fft-head .unit button.on { background: var(--accent); color: #fff; }
+    .fft-head select { min-height: 32px; }
+    .fft-periodic { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); font-size: 0.84rem; color: var(--muted); }
+    .fft-periodic > strong { align-self: center; color: var(--accent); }
+    .fft-periodic input { width: 80px; min-height: 32px; }
+    .fft-periodic button { min-height: 32px; }
+    .fft-periodic .state { align-self: center; }
+    .fft-periodic .state strong { color: var(--ink); }
+    .fft-periodic .state .run { color: var(--ok); }
+    .fft-chart { width: 100%; height: 260px; display: block; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 10px; }
+    .fft-chart text { font-size: 11px; fill: var(--muted); }
+    .fft-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .fft-chart polyline { fill: none; stroke-width: 1.4; }
+    .axis-x { stroke: #1f5f9a; color: #1f5f9a; }
+    .axis-y { stroke: #1b7d4d; color: #1b7d4d; }
+    .axis-z { stroke: #c2410c; color: #c2410c; }
+    .fft-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 0.8rem; }
+    .fft-legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; background: currentColor; }
+    .fft-peaks { margin-top: 10px; font-size: 0.82rem; }
+    .fft-peaks td, .fft-peaks th { padding: 4px 6px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <span class="eyebrow">RS485 · Modbus RTU</span>
+  <h1>Vibration sensors</h1>
+  <p class="page-subtitle">WitMotion WTVB01-485: velocity, displacement, frequency, acceleration and statistics, written to InfluxDB.</p>
+
+  <div class="summary">
+    <div class="stat-block"><div class="stat-label">Status</div><div class="stat-value" id="sumStatus">-</div></div>
+    <div class="stat-block"><div class="stat-label">Port</div><div class="stat-value" id="sumPort">-</div></div>
+    <div class="stat-block"><div class="stat-label">Sensors online</div><div class="stat-value" id="sumOnline">-</div></div>
+    <div class="stat-block"><div class="stat-label">Poll cycle</div><div class="stat-value" id="sumCycle">-</div></div>
+    <div class="stat-block"><div class="stat-label">InfluxDB</div><div class="stat-value" id="sumInflux">-</div></div>
+    <div class="stat-block"><div class="stat-label">Periodic FFT</div><div class="stat-value" id="sumFft">-</div></div>
+  </div>
+
+  <div class="card section">
+    <h2>Sensors</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span class="th-main">Sensor</span></th>
+          <th><span class="th-main">Address</span><span class="th-sub">hex</span></th>
+          <th><span class="th-main">Velocity</span><span class="th-sub">X/Y/Z · mm/s</span></th>
+          <th><span class="th-main">Displacement</span><span class="th-sub">X/Y/Z · µm</span></th>
+          <th><span class="th-main">Frequency</span><span class="th-sub">X/Y/Z · Hz</span></th>
+          <th><span class="th-main">Temperature</span><span class="th-sub">°C</span></th>
+          <th><span class="th-main">Reads</span><span class="th-sub">ok / errors</span></th>
+          <th><span class="th-main">Actions</span></th>
+        </tr></thead>
+        <tbody id="sensorRows"><tr><td colspan="8">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <label>Address (dec or 0x..)<input class="addr" id="addAddress" placeholder="0x50"></label>
+      <label>Name<input id="addName" placeholder="pump-1" maxlength="48"></label>
+      <button id="addBtn">Add sensor</button>
+    </div>
+    <p class="msg" id="sensorMsg"></p>
+  </div>
+
+  <div class="card section">
+    <h2>Bus</h2>
+    <div class="row">
+      <label>Serial port<select class="port" id="port"></select></label>
+      <button id="refreshPorts" title="Refresh port list">↻</button>
+      <label>Adapter baud (this Pi)<select id="baud"></select></label>
+      <label>Poll interval, s<input type="number" id="poll" min="0" max="3600" step="0.05"></label>
+      <label>Read profile<select id="profile"></select></label>
+      <button id="saveBus">Save</button>
+    </div>
+    <p class="note">Poll interval 0 polls as fast as the bus allows. Profiles: basic = velocity, displacement, frequency, acceleration, temperature; extended adds statistics and fault codes; full adds spectrum energy.</p>
+    <p class="note"><strong>Adapter baud</strong> only changes how this Pi opens the port; nothing is written to the sensors. Use it when the sensors already run at that rate. All sensors on one bus must share one rate.</p>
+    <h2 style="margin-top:18px">Reprogram sensor baud</h2>
+    <div class="row">
+      <label>Bus now runs at<input id="currentBaud" readonly></label>
+      <label>Reprogram all registered sensors to<select id="newBaud"></select></label>
+      <button class="danger" id="applyBaud">Reprogram sensors…</button>
+    </div>
+    <p class="note">Writes the rate into every registered sensor (unlock, write, save), then switches the adapter to it. A sensor that misses the change stays at the old rate; find it with Scan at that rate.</p>
+    <p class="msg" id="busMsg"></p>
+  </div>
+
+  <div class="card section">
+    <h2>Scan</h2>
+    <div class="row">
+      <label>From<input class="addr" id="scanFirst" value="0x01"></label>
+      <label>To<input class="addr" id="scanLast" value="0x7F"></label>
+      <button id="scanBtn">Scan bus</button>
+    </div>
+    <div class="note">Baud rates to try (polling pauses during a scan; about 0.1 s per address and rate):</div>
+    <div class="bauds" id="scanBauds"></div>
+    <div class="found" id="scanFound"></div>
+    <p class="msg" id="scanMsg"></p>
+  </div>
+</div>
+<script src="ui.js"></script>
+</body>
+</html>

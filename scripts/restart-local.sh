@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# /gemini: Скрипт управляет полным циклом перезапуска стека с учетом архитектуры хоста.
+# Rebuilds and restarts the full stack for the host architecture.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/compose-common.sh"
@@ -25,7 +25,7 @@ STACK_SERVICES=(
 )
 
 echo ">>> Building app images for current host architecture (${ARCH})..."
-bms_build_services "${APP_BUILD_SERVICES[@]}"
+bms_build_services "${DEFAULT_APP_BUILD_SERVICES[@]}"
 
 echo ">>> Restarting full stack services..."
 bms_up_services "${STACK_SERVICES[@]}"

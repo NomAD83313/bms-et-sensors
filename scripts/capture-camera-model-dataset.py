@@ -6,18 +6,51 @@ import json
 from pathlib import Path
 import time
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 
 
 LOCKED_FIELDS = (
     'input_size', 'roi', 'source_width', 'source_height',
     'effective_input_width', 'effective_input_height', 'inference_threads',
     'multiplier', 'confirmation_frames', 'analysis_interval_sec',
+    'model_key', 'feature_engine', 'distance_engine', 'analysis_source',
+    'jpeg_draft', 'score_top_k', 'coreset_size',
 )
 
 
 def request_json(url):
     with urlopen(Request(url, headers={'Accept': 'application/json'}), timeout=10) as response:
         return json.load(response)
+
+
+def capture_settings(base):
+    status = request_json(base + '/api/anomaly')
+    capture = request_json(base + '/api/capture')
+    return dict({field: status.get(field) for field in LOCKED_FIELDS}, camera_url=base,
+                capture=capture.get('settings') if capture.get('available') else None)
+
+
+def capture_frame(base, expected):
+    """Reject changed preprocessing and frames invalidated during acquisition."""
+    if capture_settings(base) != expected:
+        raise ValueError('Camera settings changed during capture')
+    request = Request(base + '/api/live.jpg?analysis=1', headers={'Accept': 'image/jpeg'})
+    with urlopen(request, timeout=10) as response:
+        data = response.read(16 * 1024 * 1024 + 1)
+        source = response.headers.get('X-Camera-Analysis-Source')
+        token = response.headers.get('X-Camera-Frame-Token')
+    if len(data) > 16 * 1024 * 1024:
+        raise ValueError('Camera JPEG exceeds the 16 MiB analysis limit')
+    if not data.startswith(b'\xff\xd8') or not data.endswith(b'\xff\xd9'):
+        raise ValueError('Camera returned an incomplete JPEG')
+    if source != 'original-v1' or not token:
+        raise ValueError('Camera did not return a guarded original analysis frame')
+    valid = request_json(base + '/api/live.jpg?check=' + quote(token, safe=''))
+    if valid.get('valid') is not True:
+        raise ValueError('Camera frame was invalidated by the decoder')
+    if capture_settings(base) != expected:
+        raise ValueError('Camera settings changed during capture')
+    return data, token
 
 
 def jpeg_size(data):
@@ -66,7 +99,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--phase', required=True, choices=('normal', 'challenge'))
-    parser.add_argument('--url', default='http://127.0.0.1:8082')
+    parser.add_argument('--url', default='http://127.0.0.1:8082/view/pi',
+                        help='Camera API base in camera-media: http://127.0.0.1:8082/view/<camera id>')
     parser.add_argument('--frames', type=int, required=True)
     parser.add_argument('--interval', type=float, default=.5)
     args = parser.parse_args()
@@ -79,9 +113,8 @@ def main():
         parser.error(f'Capture directory is not empty: {phase}')
     phase.mkdir(parents=True, exist_ok=True)
 
-    status = request_json(args.url.rstrip('/') + '/api/anomaly')
-    settings = {field: status.get(field) for field in LOCKED_FIELDS}
-    settings.update(camera_url=args.url.rstrip('/'), analysis_source=status.get('analysis_source'))
+    base = args.url.rstrip('/')
+    settings = capture_settings(base)
     settings_path = args.work / 'capture-settings.json'
     if settings_path.exists():
         if json.loads(settings_path.read_text()) != settings:
@@ -90,6 +123,7 @@ def main():
         write_json(settings_path, settings)
 
     records = []
+    generation, seen = None, set()
     started = time.time()
     next_frame = time.monotonic()
     for index in range(args.frames):
@@ -97,30 +131,26 @@ def main():
         if delay > 0:
             time.sleep(delay)
         requested = time.time()
-        request = Request(args.url.rstrip('/') + '/api/live.jpg?fresh=1&analysis=1',
-                          headers={'Accept': 'image/jpeg'})
-        with urlopen(request, timeout=10) as response:
-            data = response.read(16 * 1024 * 1024 + 1)
-            source = response.headers.get('X-Camera-Analysis-Source')
-            token = response.headers.get('X-Camera-Decoder-Generation')
-        if len(data) > 16 * 1024 * 1024:
-            raise ValueError('Camera JPEG exceeds the 16 MiB analysis limit')
-        if source != 'original-v1':
-            raise ValueError('Camera did not return an original analysis frame')
+        data, token = capture_frame(base, settings)
+        if generation is not None and token != generation:
+            raise ValueError('Decoder generation changed during capture')
+        generation = token
         width, height = jpeg_size(data)
         if (width, height) != (settings['source_width'], settings['source_height']):
             raise ValueError('Camera source dimensions changed during capture')
+        digest = hashlib.sha256(data).hexdigest()
+        if digest in seen:
+            raise ValueError('Capture contains duplicate JPEG content; increase --interval')
+        seen.add(digest)
         path = phase / f'{index:04d}.jpg'
         path.write_bytes(data)
         records.append(dict(path=str(path), requested=requested, elapsed=requested - started,
                             width=width, height=height, bytes=len(data),
-                            sha256=hashlib.sha256(data).hexdigest(), decoder_generation=token))
+                            sha256=digest, decoder_generation=token))
         write_json(phase / 'capture.json', records)
         print(f'{args.phase.upper()} {index + 1}/{args.frames}', flush=True)
         next_frame += args.interval
 
-    if len({row['sha256'] for row in records}) != len(records):
-        raise ValueError('Capture contains duplicate JPEG content')
     print(json.dumps(dict(phase=args.phase, frames=len(records), seconds=time.time() - started,
                           directory=str(phase))), flush=True)
 

@@ -1,6 +1,10 @@
 services:
 
-  camera-recorder:
+  # Cameras (Compose profile `cameras`, started by scripts/restart-cameras.sh).
+  # camera-media runs one recorder and one dashboard process per camera from the registry
+  # runtime/camera-manager/cameras.json (managed in the UI at /cameras/) and serves the UI on 8082.
+  camera-media:
+    container_name: camera-media
     build:
       context: .
       dockerfile: Dockerfile.cameras
@@ -9,187 +13,77 @@ services:
     network_mode: host
     init: true
     restart: unless-stopped
-    stop_grace_period: 20s
+    stop_grace_period: 40s
     cpuset: ${CAMERA_MEDIA_CPUSET:-}
-    environment: &camera-environment
+    mem_limit: 768m
+    command: [python, camera_manager.py]
+    environment:
       TZ: UTC
-      CAMERA_URL: ${CAMERA_URL:-}
-      CAMERA_NAME: Camera WiFi
-      CAMERA_DESCRIPTION: Thingino network camera
-      RECORDING_DIR: /recordings
-      CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
-      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
+      CAMERA_MEDIA_PORT: 8082
+      CAMERA_MEDIA_REGISTRY: /registry
+      CAMERA_MEDIA_DATA: /data
       CAMERA_EVENT_PRE_SEC: ${CAMERA_EVENT_PRE_SEC:-7}
       CAMERA_EVENT_POST_SEC: ${CAMERA_EVENT_POST_SEC:-10}
       MAX_STORAGE_MB: ${CAMERA_MAX_STORAGE_MB:-10240}
       MAX_AGE_HOURS: ${CAMERA_MAX_AGE_HOURS:-24}
+      CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
     volumes:
-      - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/recordings
-      - ./runtime/cameras/control:/control
-      - ./runtime/cameras/anomaly:/anomaly:ro
-
-  camera-dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.cameras
-    image: bms-cameras:local
-    profiles: [cameras]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    command: [python, dashboard.py]
-    cpuset: ${CAMERA_MEDIA_CPUSET:-}
-    environment:
-      <<: *camera-environment
-      DASHBOARD_HOST: 0.0.0.0
-      DASHBOARD_PORT: ${CAMERA_DASHBOARD_PORT:-8082}
-      CAMERA_PREVIEW_PATH: ${CAMERA_PREVIEW_PATH:-/ch1}
-    volumes:
-      - ${CAMERA_RECORDING_DIR:-./runtime/cameras/recordings}:/recordings
-      - ./runtime/cameras/control:/control
-      - ./runtime/cameras/anomaly:/anomaly
-    depends_on:
-      camera-recorder:
-        condition: service_started
+      - ./runtime/camera-manager:/registry
+      - ./runtime/pi-camera:/data/pi
+      - ${PI_CAMERA_RECORDING_DIR:-./runtime/pi-camera/recordings}:/data/pi/recordings
+      - ./runtime/cameras-extra:/data/extra
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/status', timeout=3).read()"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/api/cameras', timeout=3).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  camera-anomaly:
+  # Visual analysis of every camera in one process; camera-media writes its camera list
+  # (runtime/camera-manager/analysis.json). A lock in each camera's anomaly directory
+  # prevents two workers on one camera.
+  camera-analysis:
+    container_name: camera-analysis
     build:
       context: .
-      dockerfile: Dockerfile.camera-anomaly
+      dockerfile: Dockerfile.camera-analysis
       args:
         ONNX_RUNTIME_IMAGE: ${CAMERA_ONNX_RUNTIME_IMAGE:-onnx-cpu}
-    image: bms-camera-anomaly:local
+    image: bms-camera-analysis:local
     profiles: [cameras]
     network_mode: host
     init: true
     restart: unless-stopped
-    cpus: ${CAMERA_ANOMALY_CPUS:-1.0}
+    command: [python, analysis_service.py]
+    cpus: ${CAMERA_ANALYSIS_CPUS:-${CAMERA_ANOMALY_CPUS:-2.0}}
     cpuset: ${CAMERA_ANOMALY_CPUSET:-}
     mem_limit: 768m
     environment:
-      CAMERA_ANOMALY_THREADS: ${CAMERA_ANOMALY_THREADS:-1}
+      TZ: UTC
+      CAMERA_ANALYSIS_CONFIG: /registry/analysis.json
       CAMERA_ANOMALY_FEATURE_ENGINE: ${CAMERA_ANOMALY_FEATURE_ENGINE:-onnx}
       CAMERA_ANOMALY_DISTANCE_ENGINE: ${CAMERA_ANOMALY_DISTANCE_ENGINE:-faiss}
       CAMERA_ANOMALY_ONNX_PROVIDER: ${CAMERA_ANOMALY_ONNX_PROVIDER:-auto}
+      CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
+      CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
+      CAMERA_ANOMALY_FRAME_GATE: ${CAMERA_ANOMALY_FRAME_GATE:-1}
+      CAMERA_ANOMALY_GATE_BLOCK_DIFF: ${CAMERA_ANOMALY_GATE_BLOCK_DIFF:-3.0}
+      CAMERA_ANOMALY_GATE_MEAN_DIFF: ${CAMERA_ANOMALY_GATE_MEAN_DIFF:-1.2}
+      CAMERA_ANOMALY_GATE_MAX_AGE_SEC: ${CAMERA_ANOMALY_GATE_MAX_AGE_SEC:-2.0}
+      CAMERA_ANOMALY_GATE_ADAPTIVE: ${CAMERA_ANOMALY_GATE_ADAPTIVE:-1}
+      CAMERA_ANOMALY_GATE_BLOCK_DIFF_MAX: ${CAMERA_ANOMALY_GATE_BLOCK_DIFF_MAX:-12.0}
+      CAMERA_ANOMALY_GATE_MEAN_DIFF_MAX: ${CAMERA_ANOMALY_GATE_MEAN_DIFF_MAX:-4.0}
+      CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
+      # Defaults for cameras whose registry entry has no model settings.
+      CAMERA_ANOMALY_THREADS: ${CAMERA_ANOMALY_THREADS:-1}
       CAMERA_ANOMALY_JPEG_DRAFT: ${CAMERA_ANOMALY_JPEG_DRAFT:-0}
       CAMERA_ANOMALY_TOP_K: ${CAMERA_ANOMALY_TOP_K:-1}
       CAMERA_ANOMALY_CORESET_SIZE: ${CAMERA_ANOMALY_CORESET_SIZE:-1024}
-      CAMERA_RECORDING_MODE: ${CAMERA_RECORDING_MODE:-continuous}
-      CAMERA_ANOMALY_PREVIEW_URL: http://127.0.0.1:${CAMERA_DASHBOARD_PORT:-8082}/api/live.jpg
-      CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
-      CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
-      CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
     volumes:
-      - ./runtime/cameras/anomaly:/anomaly
-      - ./runtime/cameras/control:/control
-    depends_on:
-      camera-dashboard:
-        condition: service_healthy
+      - ./runtime/camera-manager:/registry:ro
+      - ./runtime/pi-camera:/data/pi
+      - ./runtime/cameras-extra:/data/extra
     healthcheck:
-      test: [CMD, python, -c, "import json,time; from pathlib import Path; assert time.time()-json.loads(Path('/anomaly/status.json').read_text())['updated'] < 30"]
-      interval: 30s
-      timeout: 5s
-      start_period: 60s
-      retries: 3
-
-  pi-camera-recorder:
-    build:
-      context: .
-      dockerfile: Dockerfile.cameras
-    image: bms-cameras:local
-    profiles: [pi-camera]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    stop_grace_period: 20s
-    cpuset: ${PI_CAMERA_MEDIA_CPUSET:-${CAMERA_MEDIA_CPUSET:-}}
-    environment: &pi-camera-environment
-      CAMERA_CAPTURE_URL: http://127.0.0.1:8084
-      TZ: UTC
-      CAMERA_URL: http://127.0.0.1:8084/stream.ts
-      CAMERA_NAME: Raspberry Pi Camera
-      CAMERA_DESCRIPTION: ${PI_CAMERA_DESCRIPTION:-Sony IMX219}
-      CAMERA_RESOLUTION: 1280 × 720
-      RECORDING_DIR: /recordings
-      CLIP_SECONDS: ${CAMERA_CLIP_SECONDS:-60}
-      CAMERA_RECORDING_MODE: ${PI_CAMERA_RECORDING_MODE:-${CAMERA_RECORDING_MODE:-continuous}}
-      CAMERA_EVENT_PRE_SEC: ${CAMERA_EVENT_PRE_SEC:-7}
-      CAMERA_EVENT_POST_SEC: ${CAMERA_EVENT_POST_SEC:-10}
-      MAX_STORAGE_MB: ${CAMERA_MAX_STORAGE_MB:-10240}
-      MAX_AGE_HOURS: ${CAMERA_MAX_AGE_HOURS:-24}
-    volumes:
-      - ${PI_CAMERA_RECORDING_DIR:-./runtime/pi-camera/recordings}:/recordings
-      - ./runtime/pi-camera/control:/control
-      - ./runtime/pi-camera/anomaly:/anomaly:ro
-
-  pi-camera-dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.cameras
-    image: bms-cameras:local
-    profiles: [pi-camera]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    command: [python, dashboard.py]
-    cpuset: ${PI_CAMERA_MEDIA_CPUSET:-${CAMERA_MEDIA_CPUSET:-}}
-    environment:
-      <<: *pi-camera-environment
-      DASHBOARD_HOST: 0.0.0.0
-      DASHBOARD_PORT: ${PI_CAMERA_DASHBOARD_PORT:-8083}
-    volumes:
-      - ${PI_CAMERA_RECORDING_DIR:-./runtime/pi-camera/recordings}:/recordings
-      - ./runtime/pi-camera/control:/control
-      - ./runtime/pi-camera/anomaly:/anomaly
-    depends_on:
-      pi-camera-recorder:
-        condition: service_started
-    healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PI_CAMERA_DASHBOARD_PORT:-8083}/api/status', timeout=3).read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  pi-camera-anomaly:
-    build:
-      context: .
-      dockerfile: Dockerfile.camera-anomaly
-      args:
-        ONNX_RUNTIME_IMAGE: ${CAMERA_ONNX_RUNTIME_IMAGE:-onnx-cpu}
-    image: bms-camera-anomaly:local
-    profiles: [pi-camera]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    cpus: ${PI_CAMERA_ANOMALY_CPUS:-${CAMERA_ANOMALY_CPUS:-1.0}}
-    cpuset: ${PI_CAMERA_ANOMALY_CPUSET:-${CAMERA_ANOMALY_CPUSET:-}}
-    mem_limit: 768m
-    environment:
-      CAMERA_ANOMALY_THREADS: ${PI_CAMERA_ANOMALY_THREADS:-${CAMERA_ANOMALY_THREADS:-1}}
-      CAMERA_ANOMALY_FEATURE_ENGINE: ${CAMERA_ANOMALY_FEATURE_ENGINE:-onnx}
-      CAMERA_ANOMALY_DISTANCE_ENGINE: ${CAMERA_ANOMALY_DISTANCE_ENGINE:-faiss}
-      CAMERA_ANOMALY_ONNX_PROVIDER: ${CAMERA_ANOMALY_ONNX_PROVIDER:-auto}
-      CAMERA_ANOMALY_JPEG_DRAFT: ${PI_CAMERA_ANOMALY_JPEG_DRAFT:-${CAMERA_ANOMALY_JPEG_DRAFT:-0}}
-      CAMERA_ANOMALY_TOP_K: ${PI_CAMERA_ANOMALY_TOP_K:-${CAMERA_ANOMALY_TOP_K:-1}}
-      CAMERA_ANOMALY_CORESET_SIZE: ${PI_CAMERA_ANOMALY_CORESET_SIZE:-${CAMERA_ANOMALY_CORESET_SIZE:-1024}}
-      CAMERA_RECORDING_MODE: ${PI_CAMERA_RECORDING_MODE:-${CAMERA_RECORDING_MODE:-continuous}}
-      CAMERA_ANOMALY_PREVIEW_URL: http://127.0.0.1:${PI_CAMERA_DASHBOARD_PORT:-8083}/api/live.jpg
-      CAMERA_ANOMALY_INTERVAL_SEC: ${CAMERA_ANOMALY_INTERVAL_SEC:-0.2}
-      CAMERA_ANOMALY_CONFIRM_FRAMES: ${CAMERA_ANOMALY_CONFIRM_FRAMES:-2}
-      CAMERA_ANOMALY_NORMAL_FRAMES: ${CAMERA_ANOMALY_NORMAL_FRAMES:-60}
-    volumes:
-      - ./runtime/pi-camera/anomaly:/anomaly
-      - ./runtime/pi-camera/control:/control
-    depends_on:
-      pi-camera-dashboard:
-        condition: service_healthy
-    healthcheck:
-      test: [CMD, python, -c, "import json,time; from pathlib import Path; assert time.time()-json.loads(Path('/anomaly/status.json').read_text())['updated'] < 30"]
+      test: [CMD, python, -c, "import os,time; assert time.time()-os.path.getmtime('/tmp/camera-analysis.alive') < 30"]
       interval: 30s
       timeout: 5s
       start_period: 60s
@@ -230,7 +124,7 @@ services:
       - INFLUX_ORG=${INFLUX_ORG}
       - INFLUX_BUCKET=${INFLUX_BUCKET}
       - MSCL_PORT=${MSCL_PORT:-}
-      - MSCL_EXCLUDE_USB_IDS=${MSCL_EXCLUDE_USB_IDS:-10c4:834b}
+      - MSCL_EXCLUDE_USB_IDS=${MSCL_EXCLUDE_USB_IDS:-10c4:834b,1a86:7523}
       - MSCL_NODE_IDS=${MSCL_NODE_IDS:-16904}
     volumes:
       - /dev:/dev
@@ -253,7 +147,7 @@ services:
       - INFLUX_BUCKET=${INFLUX_BUCKET}
       - ALMEMO_PORT=${ALMEMO_PORT:-}
       - ALMEMO_EXCLUDE_PORTS=${ALMEMO_EXCLUDE_PORTS:-/dev/ttyMICROEPS*,/dev/ttyOPTRIS*,/dev/ttyPYRO*}
-      - ALMEMO_EXCLUDE_USB_IDS=${ALMEMO_EXCLUDE_USB_IDS:-10c4:834b}
+      - ALMEMO_EXCLUDE_USB_IDS=${ALMEMO_EXCLUDE_USB_IDS:-10c4:834b,1a86:7523}
       - ALMEMO_DEVICE_NAME=${ALMEMO_DEVICE_NAME:-almemo_logger}
     volumes:
       - /dev:/dev
@@ -428,6 +322,39 @@ services:
       - ./runtime/messkluppe:/data
     restart: unless-stopped
 
+  vibration-collector:
+    # WitMotion WTVB01-485 sensors on one RS485 bus (USB adapter). The port is selected
+    # in the UI (/vibration/) and stored in runtime/vibration/config.json.
+    build:
+      context: .
+      dockerfile: Dockerfile.vibration
+    image: nomad375/bms-vibration-collector:latest
+    container_name: vibration-collector
+    profiles:
+      - vibration
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - VIBRATION_HTTP_PORT=3090
+      - VIBRATION_DATA_DIR=/data
+      - VIBRATION_INFLUX_MEASUREMENT=${VIBRATION_INFLUX_MEASUREMENT:-wtvb01}
+      - VIBRATION_INFLUX_BATCH_SIZE=${VIBRATION_INFLUX_BATCH_SIZE:-500}
+      - VIBRATION_INFLUX_FLUSH_MS=${VIBRATION_INFLUX_FLUSH_MS:-1000}
+    # USB serial (ttyUSB, 188) and CDC-ACM (ttyACM, 166) adapters. /dev is mounted
+    # instead of devices: so by-id paths survive adapter replugging.
+    device_cgroup_rules:
+      - "c 188:* rmw"
+      - "c 166:* rmw"
+    volumes:
+      - /dev:/dev:ro
+      - ./runtime/vibration:/data
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
   influxdb:
     image: influxdb:2.7
     container_name: influxdb
@@ -520,6 +447,8 @@ services:
       - MSCL_UI_ALLOW_WITHOUT_SERIAL=${MSCL_UI_ALLOW_WITHOUT_SERIAL:-1}
       - SVCCTL_KEEP_DEGRADED_SERVICES_RUNNING=${SVCCTL_KEEP_DEGRADED_SERVICES_RUNNING:-1}
       - SVCCTL_DEGRADED_START_RETRY_SEC=${SVCCTL_DEGRADED_START_RETRY_SEC:-60.0}
+      # Camera list and per-camera start/stop come from camera-media (host network).
+      - CAMERA_MEDIA_CONTROL_URL=http://127.0.0.1:8082
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /dev:/dev:ro
@@ -540,6 +469,21 @@ services:
     depends_on:
       - service-controller
       - ap-control
+    restart: unless-stopped
+
+  # Internet access through a Cloudflare Tunnel (outbound only, works behind NAT).
+  # The tunnel's public hostname must point to http://dashboard:80 and be protected
+  # by a Cloudflare Access application; see docs/remote-access.md.
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    container_name: cloudflared
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      - TZ=UTC
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - dashboard
     restart: unless-stopped
 
 

@@ -1,22 +1,22 @@
-# ПОЛНОЕ ИСКЛЮЧЕНИЕ ДЛЯ AI AGENT
+# FULL EXCLUSION LIST FOR AI AGENTS
 
-# Игнорируем всё виртуальное окружение
+# Ignore the whole virtual environment
 .venv/
 venv/
 
-# Игнорируем всю документацию (тяжелые файлы и тексты)
+# Ignore all documentation (large files and texts)
 docs/
 
-# Игнорируем все логи и данные БД
+# Ignore all logs and database data
 **/log/
 **/data/
 *.log
 
-# Игнорируем артефакты сборки и кэши
+# Ignore build artifacts and caches
 __pycache__/
 *.pyc
 .pytest_cache/
 .git/
 
-# Игнорируем большие статические файлы фронтенда
+# Ignore large frontend static files
 dashboard/simple-dash/common/webfonts/

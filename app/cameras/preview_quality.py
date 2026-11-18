@@ -59,3 +59,10 @@ class DecodeGuard:
         if previous is not None:
             self.discarded += 1
         return None
+
+    def release(self, now):
+        """Admit a settled frame without waiting for the next low-rate source frame."""
+        if self.recovering(now) or self.pending is None or now - self.pending[1] < self.settle:
+            return None
+        accepted, self.pending = self.pending, None
+        return accepted

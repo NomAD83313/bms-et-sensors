@@ -2,6 +2,7 @@
 """Compare production camera models on saved JPEGs without changing live learning."""
 import argparse
 import gc
+import hashlib
 import json
 import math
 import os
@@ -11,14 +12,38 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.cameras.model_profiles import MODELS
+from app.cameras.model_profiles import INPUT_SIZES, MODELS
+from app.cameras.roi import validate_roi
+
+
+def parse_roi(value):
+    try:
+        return validate_roi(json.loads(value))
+    except (ValueError, TypeError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def validate_workload(work, configuration, frames):
+    """Refuse stale private banks when settings or JPEG content have changed."""
+    manifest = dict(configuration, frame_sha256=[hashlib.sha256(frame).hexdigest() for frame in frames])
+    path = work / 'workload.json'
+    if path.exists():
+        if json.loads(path.read_text()) != manifest:
+            raise ValueError('Frames or preprocessing changed; use a new --work directory')
+    elif any((work / 'banks').glob('*/baseline.npz')):
+        raise ValueError('Existing banks have no workload manifest; use a new --work directory')
+    else:
+        path.write_text(json.dumps(manifest, indent=2) + '\n')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', required=True, type=Path)
     parser.add_argument('--phase', required=True, choices=('prepare', 'isolated', 'capture'))
-    parser.add_argument('--size', default='1920x1080')
+    parser.add_argument('--size', default='1920x1080', choices=INPUT_SIZES)
+    parser.add_argument('--roi', type=parse_roi, default=None, help='Normalized ROI as a JSON rectangle; default: full frame')
+    parser.add_argument('--jpeg-draft', type=int, choices=(0, 1), default=0)
+    parser.add_argument('--top-k', type=int, choices=range(1, 21), default=1)
     parser.add_argument('--threads', type=int, default=2, choices=(1, 2, 3, 4))
     parser.add_argument('--samples', type=int, default=20)
     parser.add_argument('--models', nargs='+', choices=tuple(MODELS), default=list(MODELS))
@@ -26,17 +51,25 @@ def main():
     if args.samples < 10:
         parser.error('At least ten samples are required')
     from app.cameras.patchcore_lite import PatchCoreLite
-    import torch
 
     paths = sorted((args.work / 'frames').glob('*.jpg'))
     if len(paths) < 24:
         parser.error('Requires twenty training and four held-out frames')
     frames = [path.read_bytes() for path in paths]
+    configuration = dict(input_size=args.size, roi=args.roi, jpeg_draft=bool(args.jpeg_draft),
+                         score_top_k=args.top_k, coreset_size=1024)
+    try:
+        validate_workload(args.work, configuration, frames)
+    except ValueError as error:
+        parser.error(str(error))
     os.environ['CAMERA_ANOMALY_ONNX_PROVIDER'] = 'xnnpack'
 
     def model(key):
-        return PatchCoreLite(input_size=args.size, threads=args.threads,
-                             feature_engine='onnx', distance_engine='faiss', model_key=key)
+        instance = PatchCoreLite(input_size=args.size, threads=args.threads,
+                                feature_engine='onnx', distance_engine='faiss', model_key=key,
+                                jpeg_draft=bool(args.jpeg_draft), top_k=args.top_k, coreset_size=1024)
+        instance.set_roi(args.roi)
+        return instance
 
     if args.phase == 'prepare':
         for key in args.models:
@@ -44,14 +77,16 @@ def main():
             instance = model(key)
             bank = args.work / 'banks' / key
             bank.mkdir(parents=True, exist_ok=True)
-            if (bank / 'baseline.pt').exists():
-                instance.load(bank / 'baseline.pt')
+            if (bank / 'baseline.npz').exists():
+                instance.load(bank / 'baseline.npz')
                 print('REUSE', key, flush=True)
+                del instance
+                gc.collect()
                 continue
             features = [instance.features(frame) for frame in frames[:20]]
             instance.fit(features)
             del features
-            instance.save(bank / 'baseline.pt')
+            instance.save(bank / 'baseline.npz')
             print('BANK', key, list(instance.memory.shape), flush=True)
             del instance
             gc.collect()
@@ -60,7 +95,7 @@ def main():
     instances = {}
     for key in args.models:
         instance = model(key)
-        instance.load(args.work / 'banks' / key / 'baseline.pt')
+        instance.load(args.work / 'banks' / key / 'baseline.npz')
         for _ in range(2):
             instance.score(instance.features(frames[-1]))
         instances[key] = instance
@@ -117,6 +152,9 @@ def main():
                        temperature_start=temp_start, temperature_end=temperature(),
                        provider=instance.onnx_provider, memory_vectors=len(instance.memory),
                        heatmap_shape=list(heatmap.shape), samples_ms=elapsed)
+            row.update(roi=args.roi, source_size=list(instance.source_size),
+                       effective_input_size=list(instance.effective_input_size),
+                       jpeg_draft=instance.jpeg_draft, score_top_k=instance.top_k)
             rows.append(row)
             output = dict(phase=args.phase, input_size=args.size, threads=args.threads,
                           jpeg_bytes=[len(frame) for frame in frames[20:24]],

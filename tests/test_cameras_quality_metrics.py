@@ -10,6 +10,36 @@ spec.loader.exec_module(quality)
 
 
 class QualityMetricTests(unittest.TestCase):
+    def test_cache_rejects_changed_bytes_at_the_same_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            frame = work / 'normal.jpg'
+            frame.write_bytes(b'first')
+            policy = dict(models=['mobilenetv3'], training=[str(frame)], calibration=[], test=[])
+            digest = quality.validate_cache(work, 'quality', policy)
+            self.assertEqual(quality.validate_cache(work, 'quality', policy), digest)
+            with self.assertRaisesRegex(ValueError, 'new --prefix'):
+                quality.validate_cache(work, 'quality', dict(policy, jpeg_draft=True))
+            frame.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'new --prefix'):
+                quality.validate_cache(work, 'quality', policy)
+
+    def test_partial_results_without_a_manifest_are_not_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            (work / 'quality-mobilenetv3.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'no workload manifest'):
+                quality.validate_cache(work, 'quality', dict(models=['mobilenetv3'], training=[], calibration=[], test=[]))
+            self.assertFalse((work / 'quality-workload.json').exists())
+
+    def test_preprocessing_is_explicit_and_bounded(self):
+        self.assertEqual(quality.preprocessing_options({}),
+                         dict(jpeg_draft=False, score_top_k=1, coreset_size=1024))
+        self.assertEqual(quality.preprocessing_options(dict(jpeg_draft=1, score_top_k=3))['jpeg_draft'], True)
+        for policy in [dict(jpeg_draft='yes'), dict(score_top_k=True), dict(coreset_size=1)]:
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                quality.preprocessing_options(policy)
+
     def test_shortlist_drops_slower_duplicates_without_losing_quality_tradeoffs(self):
         rows = [dict(model='slow', events_detected=5, false_positives=0, hand_frames_detected=8, mean_ms=1000),
                 dict(model='balanced', events_detected=5, false_positives=0, hand_frames_detected=8, mean_ms=500),

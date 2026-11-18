@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY app/vibration/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app/shared/device-common.css .
+COPY app/vibration/wtvb01_protocol.py app/vibration/vibration_config.py app/vibration/vibration_bus.py app/vibration/vibration_fft.py app/vibration/vibration_app.py app/vibration/ui.html app/vibration/ui.js ./
+
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "vibration_app.py"]

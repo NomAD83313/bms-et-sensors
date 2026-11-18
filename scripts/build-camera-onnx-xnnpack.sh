@@ -26,6 +26,21 @@ com.microsoft;1;DynamicQuantizeMatMul,FusedConv,FusedGemm,MatMulIntegerToFloat,Q
 com.microsoft.nchwc;1;AveragePool,Conv,MaxPool,ReorderInput,ReorderOutput
 EOF
 cd onnxruntime
+# ORT 1.31.1 appends tools/python after tools/ci_build on sys.path. The latter
+# also contains a util package, so reduced-operator builds import the wrong
+# module and fail before CMake starts. Prefer the intended tools/python module.
+python - <<'PY'
+from pathlib import Path
+
+path = Path('tools/ci_build/reduce_op_kernels.py')
+original = 'sys.path.append(str(ORT_ROOT / "tools" / "python"))'
+replacement = 'sys.path.insert(0, str(ORT_ROOT / "tools" / "python"))'
+source = path.read_text()
+if source.count(original) == 1:
+    path.write_text(source.replace(original, replacement))
+elif source.count(replacement) != 1:
+    raise RuntimeError('Unexpected reduced-operator import layout')
+PY
 # ORT 1.31.1 unconditionally links KleidiAI in its XNNPACK CMake setup.
 # Honor --no_kleidiai for the Pi 5 build (GCC 12 fails on a BF16 kernel).
 python - <<'PY'

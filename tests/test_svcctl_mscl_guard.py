@@ -21,6 +21,7 @@ def _load_module():
     fake_svcctl_docker.set_container_running = lambda *_args, **_kwargs: "noop"
     fake_svcctl_docker.started_at_epoch = lambda *_args, **_kwargs: None
     fake_svcctl_docker.status_payload = lambda *_args, **_kwargs: {}
+    fake_svcctl_docker.discover_extra_cameras = lambda *_args, **_kwargs: []
 
     fake_svcctl_host = types.ModuleType("svcctl_host")
     fake_svcctl_host.cpu_percent = lambda *_args, **_kwargs: (0.0, 0, 0)

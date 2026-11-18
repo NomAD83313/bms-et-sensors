@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, List
+from urllib.request import Request, urlopen
 
 import docker
 from flask import Flask, jsonify
@@ -19,6 +20,31 @@ from svcctl_host import cpu_percent, memory_stats, serial_devices_by_id, usb_dev
 from svcctl_usb import build_usb_guard_state, usb_device_present
 
 app = Flask(__name__)
+# camera-media owns the camera list and per-camera start/stop (cam-<id> targets).
+CAMERA_MEDIA_CONTROL_URL = os.environ.get('CAMERA_MEDIA_CONTROL_URL', 'http://127.0.0.1:8082').rstrip('/')
+CAMERA_TARGET_PREFIX = 'cam-'
+
+
+def _shared_camera_request(path, body=None):
+    request = Request(CAMERA_MEDIA_CONTROL_URL + path,
+                      data=json.dumps(body).encode() if body is not None else None,
+                      headers={'Content-Type': 'application/json', 'X-Camera-Control': '1'})
+    with urlopen(request, timeout=20 if body is not None else 2) as response:
+        return json.load(response)
+
+
+def _shared_cameras():
+    try:
+        return _shared_camera_request('/api/cameras')
+    except (OSError, ValueError):
+        return None
+
+
+def _service_states():
+    result = status_payload(DOCKER_CLIENT, _camera_group_targets())
+    for camera in (_shared_cameras() or {}).get('cameras', []):
+        result[camera['target']] = camera['services']
+    return result
 SVCCTL_PORT = 3020
 MSCL_GUARD_ENABLED = True
 MSCL_GUARD_INTERVAL_SEC = 5.0
@@ -51,11 +77,12 @@ TARGET_MAP: Dict[str, List[str]] = {
     "pyrometer": ["pyrometer-collector"],
     "optris": ["pyrometer-collector"],
     "messkluppe": ["messkluppe-collector"],
+    "vibration": ["vibration-collector"],
     # Keep Grafana control isolated: InfluxDB is shared by other stacks.
     "grafana": ["grafana"],
-    # Start dependencies first; stop them in reverse order.
-    "cameras": ["camera-recorder", "camera-dashboard", "camera-anomaly"],
-    "pi-camera": ["pi-camera-recorder", "pi-camera-dashboard", "pi-camera-anomaly"],
+    # The camera application: media (all cameras) and the shared analysis worker.
+    # Start dependencies first; stop them in reverse order. camera-hub is added when enabled.
+    "cameras": ["camera-media", "camera-analysis"],
 }
 
 _CPU_PREV_TOTAL: int | None = None
@@ -135,6 +162,14 @@ def _mark_manual_pause_wait(target: str, action_attr: str, reason_attr: str) -> 
     globals()[action_attr] = "manual_pause"
     globals()[reason_attr] = "user_stopped"
     return True
+
+
+def _camera_group_targets() -> Dict[str, List[str]]:
+    """TARGET_MAP with the optional RTSP relay started before camera-media."""
+    targets = dict(TARGET_MAP)
+    if os.environ.get('CAMERA_HUB_ENABLED') == '1':
+        targets['cameras'] = ['camera-hub'] + targets['cameras']
+    return targets
 
 
 def _container_status(name: str) -> str:
@@ -548,13 +583,25 @@ def host_metrics():
 
 @app.route("/services", methods=["GET"])
 def services():
+    pauses = _manual_pause_snapshot()
+    pauses.update((_shared_cameras() or {}).get('manual_pauses', {}))
     return jsonify(
         success=True,
-        services=status_payload(DOCKER_CLIENT, TARGET_MAP),
-        manual_pauses=_manual_pause_snapshot(),
+        services=_service_states(),
+        manual_pauses=pauses,
         serial_devices_by_id=serial_devices_by_id(),
         usb_devices=usb_devices(),
     )
+
+
+@app.route("/cameras", methods=["GET"])
+def cameras():
+    """Every camera of camera-media with its route and services; empty while camera-media is down."""
+    snapshot = _shared_cameras()
+    # Keep application controls available even when the media container is stopped.
+    snapshot = dict(snapshot or {'success': False, 'cameras': [], 'manual_pauses': {}})
+    snapshot['control_targets'] = [{'target': 'cameras', 'label': 'Cameras'}]
+    return jsonify(snapshot)
 
 
 @app.route("/services/redlab/health", methods=["GET"])
@@ -574,12 +621,30 @@ def almemo_health():
 
 @app.route("/services/<target>/<action>", methods=["POST"])
 def service_action(target: str, action: str):
-    if target not in TARGET_MAP:
+    if target.startswith(CAMERA_TARGET_PREFIX):
+        if action not in {'start', 'stop', 'restart'}:
+            return jsonify(error='unknown action'), 400
+        snapshot = _shared_cameras()
+        if snapshot is None:
+            return jsonify(error='Camera manager unavailable'), 503
+        camera = next((c for c in snapshot['cameras'] if c['target'] == target), None)
+        if camera is None:
+            return jsonify(error='unknown target'), 404
+        try:
+            with ACTION_LOCK:
+                _shared_camera_request('/api/cameras/' + camera['id'] + '/' + action, {})
+            return jsonify(success=True, target=target, action=action, steps=[],
+                           manual_pauses=(_shared_cameras() or {}).get('manual_pauses', {}),
+                           services=_service_states())
+        except (OSError, ValueError):
+            return jsonify(error='Camera action could not be completed'), 503
+    targets = _camera_group_targets()
+    if target not in targets:
         return jsonify(error="unknown target"), 404
     if action not in {"start", "stop", "restart"}:
         return jsonify(error="unknown action"), 400
 
-    names = TARGET_MAP[target]
+    names = targets[target]
     try:
         with ACTION_LOCK:
             if action == "stop":
@@ -599,7 +664,7 @@ def service_action(target: str, action: str):
             action=action,
             steps=done,
             manual_pauses=_manual_pause_snapshot(),
-            services=status_payload(DOCKER_CLIENT, TARGET_MAP),
+            services=_service_states(),
         )
     except docker.errors.NotFound as exc:
         return jsonify(error=f"container not found: {exc}"), 404

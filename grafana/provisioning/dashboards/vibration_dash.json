@@ -1,0 +1,1421 @@
+{
+  "uid": "bms_vibration",
+  "title": "Vibration (WTVB01-485)",
+  "editable": true,
+  "schemaVersion": 38,
+  "version": 13,
+  "tags": [
+    "vibration",
+    "wtvb01"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "sensor",
+        "label": "Sensor",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "InfluxDB_Flux"
+        },
+        "query": "from(bucket: v.defaultBucket)\n  |> range(start: -30d)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> group(columns: [\"sensor\"])\n  |> count()\n  |> group()\n  |> map(fn: (r) => ({_value: r.sensor}))\n  |> sort(columns: [\"_value\"])",
+        "definition": "Sensors with actual wtvb01 data in the last 30 days",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "wtvb01-50"
+          ],
+          "value": [
+            "wtvb01-50"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "line_speed",
+        "label": "Line speed (m/min)",
+        "type": "textbox",
+        "query": "0",
+        "current": {
+          "selected": true,
+          "text": "0",
+          "value": "0"
+        }
+      },
+      {
+        "name": "roll_diameter",
+        "label": "Roll diameter (mm)",
+        "type": "textbox",
+        "query": "0",
+        "current": {
+          "selected": true,
+          "text": "0",
+          "value": "0"
+        }
+      },
+      {
+        "name": "expected_rpm",
+        "label": "Expected RPM",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "InfluxDB_Flux"
+        },
+        "query": "import \"array\"\nimport \"math\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nrpm = if speed > 0.0 and diameter > 0.0 then speed / (3.141592653589793 * (diameter / 1000.0)) else 0.0\narray.from(rows: [{_value: math.round(x: rpm * 10.0) / 10.0}])",
+        "definition": "Calculated roll speed in revolutions per minute",
+        "includeAll": false,
+        "multi": false,
+        "hide": 2,
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "0",
+          "value": "0"
+        }
+      },
+      {
+        "name": "expected_frequency",
+        "label": "Expected frequency (Hz)",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "InfluxDB_Flux"
+        },
+        "query": "import \"array\"\nimport \"math\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nrpm = if speed > 0.0 and diameter > 0.0 then speed / (3.141592653589793 * (diameter / 1000.0)) else 0.0\nhz = rpm / 60.0\narray.from(rows: [{_value: math.round(x: hz * 100.0) / 100.0}])",
+        "definition": "Calculated roll rotation frequency",
+        "includeAll": false,
+        "multi": false,
+        "hide": 2,
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "0",
+          "value": "0"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "id": 12,
+      "title": "Expected roll speed",
+      "type": "stat",
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:RPM",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"array\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nrpm = if speed > 0.0 and diameter > 0.0 then speed / (3.141592653589793 * (diameter / 1000.0)) else 0.0\narray.from(rows: [{_time: now(), _value: rpm}])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "id": 13,
+      "title": "Expected roll frequency",
+      "type": "stat",
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"array\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nrpm = if speed > 0.0 and diameter > 0.0 then speed / (3.141592653589793 * (diameter / 1000.0)) else 0.0\narray.from(rows: [{_time: now(), _value: rpm / 60.0}])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Instantaneous three-axis acceleration from the WTVB01 normal-mode registers.",
+      "id": 9,
+      "title": "Acceleration",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^acc_[xyz]_g$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"acc_x_g\" then \"X\" else if r._field == \"acc_y_g\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Energy in six frequency ranges relative to the fundamental vibration frequency.",
+      "id": 11,
+      "title": "Frequency bands",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^energy_[xyz]_band[1-6]$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"energy_x_band1\" then \"X · 0–0.5x\" else if r._field == \"energy_x_band2\" then \"X · 0.5–1x\" else if r._field == \"energy_x_band3\" then \"X · 1–2x\" else if r._field == \"energy_x_band4\" then \"X · 2–3x\" else if r._field == \"energy_x_band5\" then \"X · 3–4x\" else if r._field == \"energy_x_band6\" then \"X · 4–5x\" else if r._field == \"energy_y_band1\" then \"Y · 0–0.5x\" else if r._field == \"energy_y_band2\" then \"Y · 0.5–1x\" else if r._field == \"energy_y_band3\" then \"Y · 1–2x\" else if r._field == \"energy_y_band4\" then \"Y · 2–3x\" else if r._field == \"energy_y_band5\" then \"Y · 3–4x\" else if r._field == \"energy_y_band6\" then \"Y · 4–5x\" else if r._field == \"energy_z_band1\" then \"Z · 0–0.5x\" else if r._field == \"energy_z_band2\" then \"Z · 0.5–1x\" else if r._field == \"energy_z_band3\" then \"Z · 1–2x\" else if r._field == \"energy_z_band4\" then \"Z · 2–3x\" else if r._field == \"energy_z_band5\" then \"Z · 3–4x\" else \"Z · 4–5x\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Overall vibration severity per axis (ISO 10816/20816 use velocity RMS).",
+      "id": 1,
+      "title": "RMS vibration velocity",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:mm/s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^velocity_rms_[xyz]_mm_s$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"velocity_rms_x_mm_s\" then \"X\" else if r._field == \"velocity_rms_y_mm_s\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Instantaneous three-axis vibration velocity from the WTVB01 normal-mode registers.",
+      "id": 2,
+      "title": "Vibration velocity",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:mm/s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^velocity_[xyz]_mm_s$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"velocity_x_mm_s\" then \"X\" else if r._field == \"velocity_y_mm_s\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Instantaneous three-axis vibration displacement from the WTVB01 normal-mode registers.",
+      "id": 10,
+      "title": "Vibration displacement",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:µm",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^displacement_[xyz]_um$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"displacement_x_um\" then \"X\" else if r._field == \"displacement_y_um\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "point2 = 0.5x, point3 = 1x (fundamental), point4 = 2x. Raw sensor units; compare with normal operation.",
+      "id": 3,
+      "title": "Harmonic points: 0.5x / 1x / 2x",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^energy_[xyz]_point[234]$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"energy_x_point2\" then \"X · 0.5x\" else if r._field == \"energy_x_point3\" then \"X · 1x\" else if r._field == \"energy_x_point4\" then \"X · 2x\" else if r._field == \"energy_y_point2\" then \"Y · 0.5x\" else if r._field == \"energy_y_point3\" then \"Y · 1x\" else if r._field == \"energy_y_point4\" then \"Y · 2x\" else if r._field == \"energy_z_point2\" then \"Z · 0.5x\" else if r._field == \"energy_z_point3\" then \"Z · 1x\" else \"Z · 2x\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "2x/1x rising: misalignment or looseness. 0.5x/1x rising: rub or oil whirl.",
+      "id": 4,
+      "title": "Harmonic ratios",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 67
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^energy_[xyz]_ratio_(2x_1x|half_1x)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"energy_x_ratio_2x_1x\" then \"X · 2x/1x\" else if r._field == \"energy_x_ratio_half_1x\" then \"X · 0.5x/1x\" else if r._field == \"energy_y_ratio_2x_1x\" then \"Y · 2x/1x\" else if r._field == \"energy_y_ratio_half_1x\" then \"Y · 0.5x/1x\" else if r._field == \"energy_z_ratio_2x_1x\" then \"Z · 2x/1x\" else \"Z · 0.5x/1x\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Impact indicators; rising values can reveal rolling-bearing damage the 5-100 Hz range cannot resolve.",
+      "id": 5,
+      "title": "Kurtosis and crest factor",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kurtosis|crest_factor)_[xyz]$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"kurtosis_x\" then \"X · Kurtosis\" else if r._field == \"crest_factor_x\" then \"X · Crest factor\" else if r._field == \"kurtosis_y\" then \"Y · Kurtosis\" else if r._field == \"crest_factor_y\" then \"Y · Crest factor\" else if r._field == \"kurtosis_z\" then \"Z · Kurtosis\" else \"Z · Crest factor\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Detected dominant frequency per sensor axis, compared with expected roll rotation calculated from line speed and roll diameter.",
+      "id": 6,
+      "title": "Dominant vibration frequency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:Hz",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^frequency_[xyz]_hz$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"frequency_x_hz\" then \"X\" else if r._field == \"frequency_y_hz\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"array\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nvalid = speed > 0.0 and diameter > 0.0\nroll1x = if valid then speed / (3.141592653589793 * (diameter / 1000.0)) / 60.0 else 0.0\n\narray.from(rows: [\n  {_time: v.timeRangeStart, _value: roll1x, series: \"Expected roll 1x\"},\n  {_time: v.timeRangeStop, _value: roll1x, series: \"Expected roll 1x\"},\n  {_time: v.timeRangeStart, _value: roll1x * 2.0, series: \"Expected roll 2x\"},\n  {_time: v.timeRangeStop, _value: roll1x * 2.0, series: \"Expected roll 2x\"},\n  {_time: v.timeRangeStart, _value: roll1x * 3.0, series: \"Expected roll 3x\"},\n  {_time: v.timeRangeStop, _value: roll1x * 3.0, series: \"Expected roll 3x\"}\n])\n  |> filter(fn: (r) => valid)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "",
+      "id": 7,
+      "title": "Total spectrum energy",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^energy_[xyz]_total$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"energy_x_total\" then \"X\" else if r._field == \"energy_y_total\" then \"Y\" else \"Z\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "",
+      "id": 8,
+      "title": "Sensor temperature",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 83
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:°C",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisWidth": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^temperature_c$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Spectrum (FFT) · raw FIFO captures",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 91
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Strongest spectral line above 2 Hz per axis in the last capture series.",
+      "title": "Main peak · last capture",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^peak1_[xyz]_hz$/)\n  |> last()\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 6, end: 7))}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "id": 15,
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 92
+      }
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Amplitude of the strongest line (acceleration, g).",
+      "title": "Main peak amplitude · last capture",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "decimals": 5,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^peak1_[xyz]_g$/)\n  |> last()\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 6, end: 7))}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "id": 16,
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 92
+      }
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Velocity RMS from the spectrum, 10 Hz to Nyquist.",
+      "title": "Velocity RMS (FFT ≥10 Hz) · last capture",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:mm/s",
+          "decimals": 3,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^velocity_rms_[xyz]_mm_s$/)\n  |> last()\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 13, end: 14))}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "id": 17,
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 92
+      }
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Velocity RMS per axis computed from each capture series (10 Hz to Nyquist). One point per series; compare with the sensor's own RMS vibration velocity.",
+      "id": 18,
+      "title": "Velocity RMS from FFT (≥10 Hz)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:mm/s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 4
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^velocity_rms_[xyz]_mm_s$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 13, end: 14))}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Frequencies of the three strongest lines per axis and capture. Dashed: expected roll 1x/2x/3x from line speed and roll diameter.",
+      "id": 19,
+      "title": "Spectral peaks vs expected roll harmonics",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 104
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:Hz",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 6
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Expected roll.*"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^peak[123]_[xyz]_hz$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 6, end: 7)) + \" · peak\" + strings.substring(v: r._field, start: 4, end: 5)}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"array\"\n\nspeed = float(v: ${line_speed})\ndiameter = float(v: ${roll_diameter})\nvalid = speed > 0.0 and diameter > 0.0\nroll1x = if valid then speed / (3.141592653589793 * (diameter / 1000.0)) / 60.0 else 0.0\n\narray.from(rows: [\n  {_time: v.timeRangeStart, _value: roll1x, series: \"Expected roll 1x\"},\n  {_time: v.timeRangeStop, _value: roll1x, series: \"Expected roll 1x\"},\n  {_time: v.timeRangeStart, _value: roll1x * 2.0, series: \"Expected roll 2x\"},\n  {_time: v.timeRangeStop, _value: roll1x * 2.0, series: \"Expected roll 2x\"},\n  {_time: v.timeRangeStart, _value: roll1x * 3.0, series: \"Expected roll 3x\"},\n  {_time: v.timeRangeStop, _value: roll1x * 3.0, series: \"Expected roll 3x\"}\n])\n  |> filter(fn: (r) => valid)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Amplitude of the strongest line per axis and capture series (acceleration, g).",
+      "id": 20,
+      "title": "Main peak amplitude",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 113
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 4
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^peak1_[xyz]_g$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + strings.toUpper(v: strings.substring(v: r._field, start: 6, end: 7))}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Acceleration RMS per frequency band, axis X, stacked. Shows where the energy moves: 2–10 Hz unbalance/looseness at low speed, 50–100 Hz and above bearings and gears.",
+      "id": 21,
+      "title": "Band RMS (FFT) · X",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 121
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 4,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^band_x_[0-9a-z_]+_g$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if strings.hasSuffix(v: r._field, suffix: \"_2_10_g\") then \"1 · 2–10 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_10_25_g\") then \"2 · 10–25 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_25_50_g\") then \"3 · 25–50 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_50_100_g\") then \"4 · 50–100 Hz\" else \"5 · 100 Hz–Nyquist\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> sort(columns: [\"series\", \"_time\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Acceleration RMS per frequency band, axis Y, stacked. Shows where the energy moves: 2–10 Hz unbalance/looseness at low speed, 50–100 Hz and above bearings and gears.",
+      "id": 22,
+      "title": "Band RMS (FFT) · Y",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 121
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 4,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^band_y_[0-9a-z_]+_g$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if strings.hasSuffix(v: r._field, suffix: \"_2_10_g\") then \"1 · 2–10 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_10_25_g\") then \"2 · 10–25 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_25_50_g\") then \"3 · 25–50 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_50_100_g\") then \"4 · 50–100 Hz\" else \"5 · 100 Hz–Nyquist\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> sort(columns: [\"series\", \"_time\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Acceleration RMS per frequency band, axis Z, stacked. Shows where the energy moves: 2–10 Hz unbalance/looseness at low speed, 50–100 Hz and above bearings and gears.",
+      "id": 23,
+      "title": "Band RMS (FFT) · Z",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 121
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:g",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "always",
+            "spanNulls": true,
+            "axisWidth": 80,
+            "pointSize": 4,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^band_z_[0-9a-z_]+_g$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if strings.hasSuffix(v: r._field, suffix: \"_2_10_g\") then \"1 · 2–10 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_10_25_g\") then \"2 · 10–25 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_25_50_g\") then \"3 · 25–50 Hz\" else if strings.hasSuffix(v: r._field, suffix: \"_50_100_g\") then \"4 · 50–100 Hz\" else \"5 · 100 Hz–Nyquist\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> sort(columns: [\"series\", \"_time\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "InfluxDB_Flux"
+      },
+      "description": "Sample rate measured from the capture and number of averaged captures.",
+      "title": "Capture settings · last",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "InfluxDB_Flux"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01_fft\")\n  |> filter(fn: (r) => r[\"sensor\"] =~ /^${sensor:regex}$/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(sample_rate_hz|averages)$/)\n  |> last()\n  |> map(fn: (r) => ({r with series: r.sensor + \" · \" + (if r._field == \"sample_rate_hz\" then \"Sample rate, Hz\" else \"Averaged captures\")}))\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\", \"series\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"series\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "id": 24,
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 130
+      }
+    }
+  ]
+}

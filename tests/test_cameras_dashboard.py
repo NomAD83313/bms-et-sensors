@@ -151,7 +151,7 @@ class RecordingControlTests(unittest.TestCase):
                         self.assertEqual(response.status,200)
                     dashboard.source.configure_capture.assert_called_with(video)
                     self.assertEqual(dashboard.anomaly_control.read_json(root/'anomaly/command.json')['action'], 'invalidate')
-                    invalid = dict(video, width=3280, height=2464, fps=30)
+                    invalid = dict(video, width=3840, height=2160, fps=30)
                     request=urllib.request.Request(url,method='POST',headers={'X-Camera-Control':'1'},data=json.dumps(invalid).encode())
                     with self.assertRaises(urllib.error.HTTPError) as error:
                         urllib.request.urlopen(request,timeout=3)
@@ -329,6 +329,86 @@ class PreviewFreshnessTests(unittest.TestCase):
             args, substream = dashboard.decoder_command(main, True)
         self.assertFalse(substream)
         self.assertEqual(args[args.index('-vf') + 1], 'fps=10')
+
+    def test_shared_rtsp_preview_does_not_duplicate_slow_camera_frames(self):
+        with patch.dict(os.environ, {'CAMERA_SPARSE_PREVIEW': '1', 'CAMERA_PREVIEW_PATH': ''}):
+            args, sized = dashboard.decoder_command('rtsp://camera/live', False)
+        self.assertFalse(sized)
+        self.assertIn('select=isnan', args[args.index('-vf') + 1])
+        self.assertIn('floor(t*5+', args[args.index('-vf') + 1])
+        self.assertNotIn('fps=10', args[args.index('-vf') + 1])
+        self.assertEqual(args[args.index('-fps_mode') + 1], 'vfr')
+        self.assertLess(args.index('-threads'), args.index('-i'))
+
+
+
+
+    def test_pi_jpeg_encoding_is_parallel_without_decoder_frame_buffering(self):
+        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 3840, 'height': 2160}):
+            args, sized = dashboard.decoder_command('http://127.0.0.1:8084/stream.ts', False)
+        self.assertFalse(sized)
+        self.assertEqual(args[args.index('-threads') + 1], '1')
+        self.assertLess(args.index('-threads'), args.index('-i'))
+        output = args[args.index('-i') + 2:]
+        self.assertEqual(output[output.index('-threads') + 1], '2')
+        self.assertEqual(output[output.index('-thread_type') + 1], 'frame')
+        self.assertEqual(output[output.index('-huffman') + 1], 'default')
+        self.assertNotIn('scale=', output[output.index('-vf') + 1])
+        with patch.object(dashboard.source, 'capture_settings', return_value={'width': 1280, 'height': 720}):
+            low, _ = dashboard.decoder_command('http://127.0.0.1:8084/stream.ts', False)
+        low_output = low[low.index('-i') + 2:]
+        self.assertEqual(low_output[low_output.index('-threads') + 1], '1')
+
+    def test_slow_browser_resize_does_not_hold_the_native_frame_condition(self):
+        preview = dashboard.LivePreview()
+        preview.worker = Mock()
+        preview.worker.is_alive.return_value = True
+        preview.frame = preview.original_frame = b'native'
+        preview.updated, preview.frame_token = dashboard.time.monotonic(), preview.guard.token
+        entered, release, updated = threading.Event(), threading.Event(), threading.Event()
+        results = []
+
+        def resize(_):
+            entered.set()
+            release.wait(3)
+            return b'small'
+
+        def update():
+            with preview.condition:
+                preview.frame = preview.original_frame = b'new-native'
+                preview.updated = dashboard.time.monotonic()
+                updated.set()
+
+        with patch.object(dashboard, 'browser_preview', side_effect=resize):
+            browser = threading.Thread(target=lambda: results.append(preview.get()))
+            writer = threading.Thread(target=update)
+            browser.start()
+            try:
+                self.assertTrue(entered.wait(1))
+                writer.start()
+                self.assertTrue(updated.wait(1), 'A browser resize must not block native frame admission')
+                self.assertEqual(preview.get(full_resolution=True), b'new-native')
+            finally:
+                release.set(); browser.join(timeout=3)
+                if writer.ident is not None:
+                    writer.join(timeout=3)
+            self.assertEqual(results, [b'small'])
+            self.assertIsNone(preview.preview_source, 'Do not cache a resized frame over a newer native frame')
+
+    def test_error_during_browser_resize_rejects_the_old_image(self):
+        preview = dashboard.LivePreview()
+        preview.worker = Mock()
+        preview.worker.is_alive.return_value = True
+        preview.frame = preview.original_frame = b'native'
+        preview.updated, preview.frame_token = dashboard.time.monotonic(), preview.guard.token
+
+        def resize(_):
+            preview.decoder_error('decode_error')
+            return b'invalidated-small'
+
+        with patch.object(dashboard, 'browser_preview', side_effect=resize), \
+                self.assertLogs('camera-preview', level='WARNING'):
+            self.assertIsNone(preview.get())
 
     def test_jpeg_pair_parser_rejects_partial_or_unaligned_output(self):
         import io

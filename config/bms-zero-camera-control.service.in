@@ -1,0 +1,19 @@
+[Unit]
+Description=BMS Zero camera capture controls
+After=network.target bms-zero-camera.service
+
+[Service]
+Type=simple
+User=@CAMERA_USER@
+ExecStart=/usr/bin/python3 /opt/bms-zero-camera/zero_control.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bms-zero-camera
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

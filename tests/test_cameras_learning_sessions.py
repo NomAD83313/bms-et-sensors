@@ -26,19 +26,6 @@ JPEG = b'\xff\xd8confirmed-source\xff\xd9'
 
 
 class LearningStoreTests(unittest.TestCase):
-    def test_existing_sessions_without_color_mode_remain_rgb_and_can_be_extended(self):
-        with tempfile.TemporaryDirectory() as directory:
-            store = LearningSessions(directory)
-            store.publish(self.collect(store), 'original')
-            catalog = store.catalog()
-            catalog['configuration'].pop('color_mode')
-            anomaly_control.write_json(store.root / 'catalog.json', catalog)
-            self.assertEqual(store.catalog()['configuration']['color_mode'], 'rgb')
-            store.begin('add')
-            store.append(JPEG, CONFIG)
-            self.assertEqual(len(store.public()), 1)
-            with self.assertRaises(ValueError):
-                store.append(JPEG, dict(CONFIG, color_mode='grayscale'))
 
     def test_clear_removes_only_saved_learning_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -140,7 +127,6 @@ class LearningWorkerTests(unittest.TestCase):
     def test_only_incompatible_changes_clear_the_baseline_and_sessions(self):
         class Model(FakeModelGeometry):
             model_key, input_size = 'mobilenetv3', '768x432'
-            color_mode = 'rgb'
             roi = None
             memory = None
             baseline_frames = 20
@@ -148,7 +134,6 @@ class LearningWorkerTests(unittest.TestCase):
             def set_input_size(self, value): self.input_size, self.memory = value, None
             def set_model(self, value): self.model_key, self.memory = value, None
             def set_roi(self, value): self.roi, self.memory = value, None
-            def set_color_mode(self, value): self.color_mode, self.memory = value, None
             def load(self, path): self.memory, self.learning_revision = True, 'original'
             def features(self, jpeg): self.source_size = (1280, 720)
             def score(self, features): raise AssertionError('Do not score a changed source geometry')
@@ -156,14 +141,12 @@ class LearningWorkerTests(unittest.TestCase):
         cases = [
             ('roi', dict(roi=dict(x=.25, y=.25, width=.5, height=.5)), True),
             ('resize', dict(input_size='1024x576'), True),
-            ('model', dict(model_key='mobileone-s0'), True),
-            ('color', dict(color_mode='grayscale'), True),
+            ('model', dict(model_key='mobilenetv4-convsmall-x0.5'), True),
             ('invalidate', {}, True), ('source-geometry', {}, True), ('startup-settings', {}, True),
             ('pause', {}, False), ('configure', dict(multiplier=1.3), False),
             ('confirmation', dict(confirmation_frames=1), False),
             ('roi', dict(roi=None), False), ('resize', dict(input_size='768x432'), False),
             ('model', dict(model_key='mobilenetv3'), False), ('temporary-error', {}, False),
-            ('color', dict(color_mode='rgb'), False),
         ]
         for action, arguments, cleared in cases:
             with self.subTest(action=action, arguments=arguments), tempfile.TemporaryDirectory() as directory:
@@ -173,7 +156,7 @@ class LearningWorkerTests(unittest.TestCase):
                 for _ in range(20): store.append(JPEG, CONFIG)
                 store.publish(store.proposed(), 'original')
                 saved = store.path(store.public()[0]['id'])
-                (root / 'baseline.pt').write_bytes(b'baseline')
+                (root / 'baseline.npz').write_bytes(b'baseline')
                 anomaly_control.write_json(root / 'session.json', dict(
                     model_key='mobilenetv3', input_size='1024x576' if action == 'startup-settings' else '768x432',
                     monitoring=True))
@@ -193,14 +176,89 @@ class LearningWorkerTests(unittest.TestCase):
                         worker.apply_pending_command()
                     self.assertEqual(store.public() == [], cleared)
                     self.assertEqual(not saved.exists(), cleared)
-                    self.assertEqual(not (root / 'baseline.pt').exists(), cleared)
+                    self.assertEqual(not (root / 'baseline.npz').exists(), cleared)
                     if cleared:
                         self.assertIsNone(worker.model.memory)
                         self.assertFalse(worker.monitoring)
-                    if action == 'color':
-                        self.assertEqual(anomaly_control.read_json(root / 'session.json')['color_mode'], arguments['color_mode'])
-                        restored = worker_module.AnomalyWorker()
-                        self.assertEqual(restored.model.color_mode, arguments['color_mode'])
+
+    def test_pytorch_era_baseline_is_rebuilt_from_saved_sessions_once(self):
+        class Model(FakeModelGeometry):
+            model_key, input_size = 'mobilenetv3', '768x432'
+            source_size, effective_input_size = (1920, 1080), (768, 432)
+            threshold = 1
+
+            def set_input_size(self, value):
+                self.input_size, self.memory = value, None
+
+            def fit_sessions(self, groups, progress=None):
+                self.memory = True
+                self.baseline_frames = sum(map(len, groups))
+                return [dict(calibration_frames=len(paths) // 5, calibration_threshold=1) for paths in groups]
+
+            def save(self, path):
+                path.write_text(json.dumps(dict(revision=self.learning_revision, frames=self.baseline_frames)))
+
+            def load(self, path):
+                saved = json.loads(path.read_text())
+                self.learning_revision, self.baseline_frames = saved['revision'], saved['frames']
+                self.memory = True
+
+        for resume in (True, False):
+            with self.subTest(monitoring=resume), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                store = LearningSessions(root)
+                store.begin('new')
+                for _ in range(20):
+                    store.append(JPEG, CONFIG)
+                store.publish(store.proposed(), 'legacy')
+                for name in ('baseline.pt', 'baseline-previous.pt'):
+                    (root / name).write_bytes(b'pytorch pickle')
+                anomaly_control.write_json(root / 'session.json', dict(model_key='mobilenetv3', monitoring=resume))
+                module = types.ModuleType('patchcore_lite')
+                module.PatchCoreLite, module.overlay = Model, Mock()
+                with patch.object(anomaly_control, 'DATA', root), patch.object(control, 'CONTROL', root / 'control'):
+                    worker_module = load_isolated_module('app.cameras.anomaly_worker', {
+                        'control': control, 'anomaly_control': anomaly_control, 'patchcore_lite': module})
+                    worker = worker_module.AnomalyWorker()
+                    self.assertTrue(worker.pending_migration)
+                    self.assertIsNone(worker.model.memory)
+                    self.assertFalse(worker.monitoring)
+                    worker.fetch_analysis_frame = Mock(return_value=(JPEG, None, 0))
+                    worker.validate_frame_token = Mock()
+                    worker.step()
+                    self.assertFalse(worker.pending_migration)
+                    self.assertTrue((root / 'baseline.npz').exists())
+                    for name in ('baseline.pt', 'baseline-previous.pt'):
+                        self.assertFalse((root / name).exists())
+                    self.assertTrue(worker.model.memory)
+                    self.assertEqual(worker.monitoring, resume)
+                    self.assertFalse(worker.baseline_invalidated)
+                    self.assertEqual(worker.sessions.catalog()['revision'], worker.model.learning_revision)
+                    again = worker_module.AnomalyWorker()
+                    self.assertFalse(again.pending_migration)
+                    self.assertTrue(again.model.memory)
+
+    def test_pytorch_era_baseline_without_saved_sessions_requires_new_learning(self):
+        class Model(FakeModelGeometry):
+            model_key, input_size = 'mobilenetv3', '768x432'
+
+            def set_input_size(self, value):
+                self.input_size, self.memory = value, None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'baseline.pt').write_bytes(b'pytorch pickle')
+            anomaly_control.write_json(root / 'session.json', dict(model_key='mobilenetv3', monitoring=True))
+            module = types.ModuleType('patchcore_lite')
+            module.PatchCoreLite, module.overlay = Model, Mock()
+            with patch.object(anomaly_control, 'DATA', root), patch.object(control, 'CONTROL', root / 'control'):
+                worker_module = load_isolated_module('app.cameras.anomaly_worker', {
+                    'control': control, 'anomaly_control': anomaly_control, 'patchcore_lite': module})
+                worker = worker_module.AnomalyWorker()
+                self.assertFalse(worker.pending_migration)
+                self.assertFalse(worker.monitoring)
+                self.assertTrue(worker.baseline_invalidated)
+                self.assertFalse((root / 'baseline.pt').exists())
 
     def test_accumulation_rebuild_delete_and_failed_training_rollback(self):
         class Model(FakeModelGeometry):
@@ -277,7 +335,7 @@ class LearningWorkerTests(unittest.TestCase):
 
                 baseline = worker.model_path.read_bytes()
                 catalog = worker.sessions.catalog()
-                worker.model_path.with_name('baseline-previous.pt').write_bytes(baseline)
+                worker.model_path.with_name('baseline-previous.npz').write_bytes(baseline)
                 worker.model_path.write_text(json.dumps(dict(revision='interrupted', frames=90)))
                 recovered = worker_module.AnomalyWorker()
                 self.assertEqual(recovered.model_path.read_bytes(), baseline)
@@ -406,14 +464,11 @@ class LearningApiTests(unittest.TestCase):
                         post('remove-session', dict(session_id=identifier), authenticated=False)
                     self.assertEqual(error.exception.code, 403)
                     control.set_enabled(True)
-                    with post('color', dict(color_mode='grayscale')) as response:
-                        self.assertEqual(response.status, 202)
-                        self.assertEqual(json.load(response)['color_mode'], 'grayscale')
-                    self.assertFalse(control.enabled())
                     saved = (root / 'command.json').read_bytes()
                     with self.assertRaises(urllib.error.HTTPError) as error:
-                        post('color', dict(color_mode='gray'))
-                    self.assertEqual(error.exception.code, 400)
+                        post('color', {})
+                    self.assertEqual(error.exception.code, 404)
+                    self.assertTrue(control.enabled())
                     self.assertEqual((root / 'command.json').read_bytes(), saved)
                 finally:
                     server.shutdown()

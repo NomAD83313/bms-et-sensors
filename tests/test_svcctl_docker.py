@@ -53,33 +53,33 @@ class ComposeCameraTests(unittest.TestCase):
         self.client.containers.list.return_value = [self.camera]
 
     def test_camera_lookup_uses_project_and_service_labels(self):
-        self.assertEqual(self.mod.container_status(self.client, "camera-dashboard"), "running")
+        self.assertEqual(self.mod.container_status(self.client, "camera-media"), "running")
         self.client.containers.get.assert_called_once_with("service-controller")
         self.client.containers.list.assert_called_once_with(all=True, filters={"label": [
             "com.docker.compose.project=custom-stack",
-            "com.docker.compose.service=camera-dashboard",
+            "com.docker.compose.service=camera-media",
             "com.docker.compose.oneoff=False",
         ]})
-        self.mod.set_container_running(self.client, "camera-dashboard", False)
+        self.mod.set_container_running(self.client, "camera-media", False)
         self.camera.stop.assert_called_once_with(timeout=15)
 
     def test_absent_camera_profile_never_creates_containers(self):
         self.client.containers.list.return_value = []
-        self.assertEqual(self.mod.container_status(self.client, "camera-recorder"), "missing")
-        self.assertEqual(self.mod.set_container_running(self.client, "camera-recorder", True),
-                         "missing:camera-recorder:compose_up_required")
-        self.assertEqual(self.mod.set_container_running(self.client, "camera-recorder", False),
-                         "noop:camera-recorder:missing")
+        self.assertEqual(self.mod.container_status(self.client, "camera-analysis"), "missing")
+        self.assertEqual(self.mod.set_container_running(self.client, "camera-analysis", True),
+                         "missing:camera-analysis:compose_up_required")
+        self.assertEqual(self.mod.set_container_running(self.client, "camera-analysis", False),
+                         "noop:camera-analysis:missing")
         self.camera.start.assert_not_called()
         self.camera.stop.assert_not_called()
 
     def test_ambiguous_or_unscoped_camera_cannot_be_stopped(self):
         self.client.containers.list.return_value = [self.camera, Mock()]
         with self.assertRaises(RuntimeError):
-            self.mod.set_container_running(self.client, "camera-dashboard", False)
+            self.mod.set_container_running(self.client, "camera-media", False)
         self.controller.labels = {}
         with self.assertRaises(RuntimeError):
-            self.mod.set_container_running(self.client, "camera-dashboard", False)
+            self.mod.set_container_running(self.client, "camera-media", False)
         self.camera.stop.assert_not_called()
 
     def test_existing_named_service_lookup_is_unchanged(self):

@@ -1,4 +1,4 @@
-# Wi-Fi versus Raspberry Pi camera resource test
+# Camera resource test
 
 Run from the repository root on the Pi. The benchmark uses Python's standard
 library, Docker Compose and readable cgroup v2 CPU counters. It changes no
@@ -6,32 +6,28 @@ recording or detection settings. Results stay in ignored runtime storage.
 
 ## What is measured
 
-- Per-component and per-camera CPU use: 100% means one CPU core, up to 400% on Pi 5.
-- Mean and peak summed process RSS, using the same metric for both cameras.
-  Shared pages can be counted more than once; this is not unique physical memory.
-- Pi totals include `bms-pi-camera` and capture on the host: software H.264
-  encoding in Video mode or JPEG capture in Snapshot mode.
-- Recording/detection states and preview quality are saved for every sample.
+- CPU use of every camera component: `camera-media` (all cameras' recorders and
+  dashboards), `camera-analysis`, `camera-hub` when it runs, and the Pi host source
+  `bms-pi-camera` when the Pi camera is enabled. 100% means one CPU core, up to 400% on Pi 5.
+- Mean and peak summed process RSS per component and in total. Shared pages can be
+  counted more than once; this is not unique physical memory.
+- Recording/detection states and preview quality of every enabled camera, for every sample.
 
-The Wi-Fi camera encodes video on the external device. Its own CPU, RAM and power
-are outside this test. This compares resource use on the Raspberry Pi host.
-By default both camera groups are measured simultaneously; `--camera pi` or
-`--camera wifi` selects one group. Other workloads and competition for CPU/storage
-can affect results. Peaks are sampled, not absolute maxima.
-The script fails if services disappear or CPU counters reset; discard interrupted
-runs and repeat after services stabilize.
+All cameras share these processes, so the test measures the whole camera stack. To
+compare cameras, stop the others in the camera workspace and repeat the run.
+Remote cameras encode video on the external device; their own CPU, RAM and power are
+outside this test. Other workloads and competition for CPU/storage can affect results.
+Peaks are sampled, not absolute maxima. The script fails if a component disappears or
+its CPU counter resets; discard interrupted runs and repeat after services stabilize.
 
 ## Preparation
 
-1. Ensure the selected camera application(s) are running, including the host source
-   when testing Pi Camera. For isolated comparisons, stop the other application;
-   stop the Pi host source too while measuring Wi-Fi alone. Close other
-   preview tabs and avoid builds, exports or other heavy tasks during the test.
-2. Set BOTH cameras to the same recording mode for a recording comparison.
-   `CAMERA_RECORDING_MODE` controls Wi-Fi and, by default, Pi.
-   `PI_CAMERA_RECORDING_MODE` optionally overrides the Pi mode.
-   Changing these requires recreating the corresponding camera containers.
-3. Use both camera pages to choose the same detection state. For active analysis,
+1. Start the cameras (`./scripts/restart-cameras.sh`) and enable only the cameras
+   under test in the camera workspace. Close other preview tabs and avoid builds,
+   exports or other heavy tasks during the test.
+2. Cameras record event-only video; a comparison of recording load needs the same
+   detection state on every camera.
+3. Use the camera pages to choose the same detection state. For active analysis,
    learn a baseline separately for each camera first. Wait for learning to finish;
    do not include training in steady-state measurements.
 4. Keep lighting/scenes stable. Record source resolution, frame rate and bitrate.
@@ -41,7 +37,7 @@ runs and repeat after services stabilize.
    its own budget; verify enough free space for two streams.
 6. Record CPU affinity as well as analysis threads and quota. The optional
    `CAMERA_ANOMALY_CPUSET` and `CAMERA_MEDIA_CPUSET` settings separate detector
-   CPUs from dashboard/recorder CPUs; Pi-specific values can override them.
+   CPUs from dashboard/recorder CPUs.
    Empty defaults allow all CPUs. A Pi 5 experiment can compare unrestricted
    affinity with detector `2-3` and media `0-1`, keeping quotas, threads, capture,
    detection and recording unchanged. The native `bms-pi-camera.service` source
@@ -70,9 +66,7 @@ of warmup. Use the same command parameters for all repetitions:
 
 For idle measurements omit `--preview`. Warmup allows prior preview consumers to
 expire; use `--warmup 45` for idle immediately after closing preview tabs.
-If backend ports differ, pass `--wifi-url` and `--pi-url`.
-Use `--camera pi` or `--camera wifi` to measure only one camera without starting
-the other. The default `--camera both` requires both camera groups to be running.
+The cameras measured are those enabled in camera-media when the run starts.
 Single-camera and simultaneous runs have different contention conditions;
 record this distinction when comparing them.
 
@@ -81,7 +75,7 @@ Each run creates `runtime/camera-benchmarks/<timestamp>/` containing:
 - `metadata.json`: initial states, parameters and metric definitions.
 - `samples.csv`: per-component measurements, suitable for plotting.
 - `states.json`: recording/detection states, preview errors and request success.
-- `summary.json`: simultaneous totals for each camera, mean and peak CPU/RSS.
+- `summary.json`: mean and peak CPU/RSS in total and per component.
 
 Reject comparisons with learning, connecting/offline states, preview recovery,
 failed preview requests, service restarts or mismatched modes. Compare the three
@@ -119,41 +113,25 @@ Local raw samples and the detailed report are stored under the ignored directory
 `runtime/camera-benchmarks/isolated-20261106T191415/`. Both applications and the
 Pi source were restored to their initial states after the test.
 
-## IMX219 resolution/FPS matrix
+## Pi camera resolution/FPS matrix
 
-`./scripts/benchmark-camera-modes.py --duration 60 --warmup 15` measures the live
-Pi camera application at five output resolutions with 15 FPS. All outputs now
-use the same full-sensor field of view, with side bars for wide formats. Earlier
-30/42 FPS cases selected different sensor crops and are no longer part of this
-matrix. It temporarily writes `/run/bms-pi-camera-mode.json`,
-restarts the host source and Pi recorder/dashboard per mode, and restores the
-previous override in a `finally` block. It requires passwordless sudo for install,
-rm and systemctl, and all three Pi application containers to be running. Wi-Fi
-services are not changed. Existing detection continues using its baseline;
-resizing and side bars can still change scores and trigger events. Do not retrain or change controls during the run.
-
-Results are under ignored `runtime/camera-mode-tests/`. Each mode links to full
-benchmark samples. Stream FPS is checked from decoded frame timestamp spacing,
-not just the encoder's advertised FPS. CPU/RSS and preview failures are recorded.
-A short FPS probe does not prove sustained frame cadence for the entire minute.
-All modes use the same 2 Mbit/s target; high-resolution image quality is therefore
-not comparable at equal per-pixel quality. Preview stays 960 pixels wide / 10 fps,
-and model input processing is unchanged. This measures the deployed pipeline.
-
-Graceful interruption restores source settings. After power loss or SIGKILL,
-remove `/run/bms-pi-camera-mode.json` and restart `bms-pi-camera` plus the Pi
-recorder/dashboard. The override under `/run` also disappears at host reboot.
-The setup script installs `app/cameras/pi_source.py` on the host; update that
-installed source before using the matrix runner after a code change.
+The former matrix runner restarted the per-camera Pi containers and was removed with
+them on 2026-11-12. To compare Pi capture modes now, change the capture settings in the
+Pi camera page between `benchmark-cameras.py` runs.
 
 ## Production model speed comparison
 
 `scripts/benchmark-camera-models.py` measures the actual `PatchCoreLite.features()`
 and `score()` implementations for the production model profiles. Use `--models`
-to select MobileNetV3, MobileOne-S0 or MobileNetV4 ConvSmall ×0.5.
+to select MobileNetV3 or MobileNetV4 ConvSmall ×0.5.
 Run it inside the deployed anomaly image with a private, writable `--work`
 directory. Supply 24 distinct JPEGs in `frames/`; existing private
 `banks/<model>/` are validated and reused. Production learning is never replaced.
+Use `--size`, `--roi '{"x":0.1,"y":0.1,"width":0.8,"height":0.8}'`,
+`--jpeg-draft 0|1` and `--top-k` to match the live camera's preprocessing.
+The report includes source and effective ROI input dimensions. `workload.json`
+binds the private banks to JPEG content hashes and preprocessing settings;
+changed workloads or old banks without this manifest require a new work directory.
 
 Run `--phase prepare` once to create private banks from the first twenty frames.
 Then run `--phase isolated` with capture stopped, and `--phase capture` while
@@ -185,8 +163,11 @@ Each test record has `path`, `kind` (`normal` or `hand`), and an `episode` strin
 for positive frames from the same hand pass. Annotate frames visually before
 examining predictions. Training, calibration and test JPEG content must be
 disjoint; duplicate content across partitions causes an error.
+Optional `jpeg_draft` (0/1, default 0), `score_top_k` (1–20, default 1) and
+`coreset_size` (256–4096, default 1024) explicitly select production preprocessing.
+Match them to the camera being evaluated rather than relying on container defaults.
 
-Each profile learns a private 1024-vector bank from the training images. In
+Each profile learns a private bank (1024 vectors by default) from the training images. In
 `separate-p99` mode, the operating threshold is the 99th percentile of scores
 on separate normal calibration frames, multiplied by the manifest's fixed
 multiplier. Do not tune this multiplier against the anomaly test frames.
@@ -200,8 +181,10 @@ The shortlist requires at least 80% annotated event recall and at most 5%
 false-positive frames, then excludes models dominated in recall, false alerts
 and latency. These are selection criteria, not deployment acceptance guarantees.
 Small, correlated single-scene samples cannot establish general defect accuracy.
-Completed result files are reused; use a new `--prefix` whenever the manifest,
-images or benchmark settings change. Banks and reports stay under ignored
+Completed and partial results are reused only with the matching `<prefix>-workload.json`,
+which binds image content hashes, labels and policy settings. Use a new `--prefix`
+when any of these change or when old results lack a workload manifest.
+Banks and reports stay under ignored
 `runtime/` and never replace either camera's production learning.
 
 For an ROI test, include the normalized `roi` object and an explicit `models`
@@ -210,6 +193,10 @@ model and preserves the ROI proportions inside `input_size`. Its report records
 the resulting effective input dimensions. Capture immutable source frames with
 `scripts/capture-camera-model-dataset.py`; the first phase locks the current ROI,
 maximum input, source geometry, threads, multiplier and confirmation setting.
+The capture also locks model/preprocessing and source capture settings, rechecks
+them for every frame and validates the current decoder token. A changed decoder
+generation or duplicate frame aborts that phase. The canonical camera API base is
+`http://127.0.0.1:8082/view/<camera-id>`.
 Use separate `normal` and `challenge` phases. Visually annotate challenge frames
 before running any model, and keep training, threshold calibration and evaluation
 frames disjoint. Capturing does not replace the live baseline.

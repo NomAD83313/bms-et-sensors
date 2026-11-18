@@ -12,30 +12,32 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
 
 try:
-    from . import control, anomaly_control, history, source
+    from . import control, anomaly_control, environment, history, source
     from .capture_settings import validate_update
-    from .model_profiles import ANALYSIS_SOURCE
+    from .environment import recording_mode
+    from .model_profiles import ANALYSIS_SOURCE, geometry_fields
     from .preview_quality import DecodeGuard, decoder_error_kind
     from .roi import validate_roi, roi_input_dimensions, roi_bounds
     from .learning_sessions import LearningSessions, MAX_SESSIONS
-    from .source import preview_input_args
+    from .source import FFMPEG, MAX_FRAME_BYTES, preview_input_args, stop_process
 except ImportError:
     import control
     import anomaly_control
+    import environment
     import history
     import source
     from capture_settings import validate_update
-    from model_profiles import ANALYSIS_SOURCE
+    from environment import recording_mode
+    from model_profiles import ANALYSIS_SOURCE, geometry_fields
     from preview_quality import DecodeGuard, decoder_error_kind
     from roi import validate_roi, roi_input_dimensions, roi_bounds
     from learning_sessions import LearningSessions, MAX_SESSIONS
-    from source import preview_input_args
+    from source import FFMPEG, MAX_FRAME_BYTES, preview_input_args, stop_process
 
 ROOT = Path(__file__).resolve().parent
 RECORDINGS = Path(os.environ.get('RECORDING_DIR', ROOT / 'runtime/recordings')).resolve()
 WEB = ROOT / 'web'
 LOG = logging.getLogger('camera-preview')
-MAX_FRAME_BYTES = source.MAX_FRAME_BYTES
 
 
 def browser_preview(jpeg):
@@ -50,10 +52,6 @@ def browser_preview(jpeg):
     result = io.BytesIO()
     canvas.save(result, format='JPEG', quality=85)
     return result.getvalue()
-
-
-def recording_mode():
-    return os.environ.get('CAMERA_RECORDING_MODE', 'continuous')
 
 
 def clip_path(name):
@@ -83,7 +81,7 @@ def status():
     details = control.recording_details()
     analysis = anomaly_control.read_json(anomaly_control.DATA / 'status.json', {})
     analysis_state = analysis.get('state', 'offline') if anomaly_control.state_is_current(analysis) else 'offline'
-    clip_seconds = int(os.environ.get('CLIP_SECONDS', '60'))
+    clip_seconds = environment.clip_seconds()
     healthy = control.enabled() and state == 'recording' and time.time() - newest < clip_seconds + 60
     if mode == 'anomaly':
         healthy = control.enabled() and state in ('buffering', 'saving_event')
@@ -91,6 +89,7 @@ def status():
     if source.capture_url():
         capture = source.capture_settings()
         resolution = f"{capture['width']} × {capture['height']}"
+    pre_seconds, post_seconds = environment.event_windows()
     return dict(camera_name=os.environ.get('CAMERA_NAME', 'Camera 01'),
                 camera_description=os.environ.get('CAMERA_DESCRIPTION', 'Network camera'),
                 camera_resolution=resolution, service=state, healthy=healthy, recording_enabled=control.enabled(), recording_mode=mode,
@@ -102,11 +101,10 @@ def status():
                 baseline_ready=analysis.get('baseline_ready', False),
                 analysis_score=analysis.get('score'), analysis_threshold=analysis.get('threshold'),
                 preview_quality=browser_live().quality(),
-                pre_seconds=float(os.environ.get('CAMERA_EVENT_PRE_SEC', '7')),
-                post_seconds=float(os.environ.get('CAMERA_EVENT_POST_SEC', '10')),
+                pre_seconds=pre_seconds, post_seconds=post_seconds,
                 clips=clips, total_bytes=sum(p['bytes'] for p in clips), free_bytes=shutil.disk_usage(RECORDINGS).free,
-                clip_seconds=clip_seconds, max_storage_bytes=int(os.environ.get('MAX_STORAGE_MB', '10240'))*1024*1024,
-                max_age_hours=float(os.environ.get('MAX_AGE_HOURS', '24')), live_available=bool(os.environ.get('CAMERA_URL')))
+                clip_seconds=clip_seconds, max_storage_bytes=environment.max_storage_bytes(),
+                max_age_hours=environment.max_age_hours(), live_available=bool(os.environ.get('CAMERA_URL')))
 
 
 class LivePreview:
@@ -151,11 +149,20 @@ class LivePreview:
             if frame is None:
                 return (None, None) if with_token else None
             if not full_resolution and self.frame is self.original_frame:
-                if self.preview_source is not self.frame:
-                    self.preview_frame = browser_preview(self.frame)
-                    self.preview_source = self.frame
-                frame = self.preview_frame
-            return (frame, self.frame_token) if with_token else frame
+                if self.preview_source is self.frame:
+                    frame = self.preview_frame
+            token, generation = self.frame_token, self.guard.token
+            if full_resolution or self.frame is not self.original_frame or self.preview_source is self.frame:
+                return (frame, token) if with_token else frame
+        # Do not hold the decoder/analysis condition during a full-JPEG resize.
+        # A browser request must never stall the native frame reader.
+        resized = browser_preview(frame)
+        with self.condition:
+            if self.guard.token != generation or self.frame is None:
+                return (None, None) if with_token else None
+            if self.frame is frame:
+                self.preview_source, self.preview_frame = frame, resized
+            return (resized, token) if with_token else resized
 
     def quality(self):
         with self.condition:
@@ -233,7 +240,13 @@ class LivePreview:
         main_url = os.environ.get('CAMERA_URL')
         if not main_url:
             return
-        args, browser_substream = decoder_command(main_url, self.browser)
+        args, browser_sized = decoder_command(main_url, self.browser)
+        def admit(accepted):
+            # Called with the condition held, also by the settling timer.
+            if accepted is not None:
+                self.frame, self.updated, self.frame_token = accepted
+                self.original_frame = None if browser_sized else self.frame
+                self.condition.notify_all()
 
         try:
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -241,12 +254,15 @@ class LivePreview:
             progress = [time.monotonic()]
             first_frame = [False]
             def watchdog():
-                while not watchdog_stop.wait(.25):
+                while not watchdog_stop.wait(.02):
+                    now = time.monotonic()
+                    with self.condition:
+                        admit(self.guard.release(now))
                     # RTSP negotiation can take longer than a normal frame gap.
                     # Once frames arrive, stop a stalled decoder before its queue
                     # can turn into a multi-second browser delay.
                     timeout = 2 if first_frame[0] else 5
-                    if time.monotonic() - progress[0] > timeout:
+                    if now - progress[0] > timeout:
                         process.kill()
                         return
             errors = threading.Thread(target=self.read_errors, args=(process.stderr,), daemon=True)
@@ -260,21 +276,12 @@ class LivePreview:
                     if time.monotonic()-self.last_request >= 30 or source.capture_signature() != signature:
                         break
                     with self.condition:
-                        accepted = self.guard.feed(frame, time.monotonic())
-                        if accepted is not None:
-                            self.frame, self.updated, self.frame_token = accepted
-                            self.original_frame = None if browser_substream else self.frame
-                            self.condition.notify_all()
+                        admit(self.guard.feed(frame, time.monotonic()))
                 else:
                     self.decoder_error('stream_error')
             finally:
                 watchdog_stop.set()
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                stop_process(process)
                 process.stdout.close()
                 watchdog_thread.join(timeout=1)
                 errors.join(timeout=2)
@@ -291,10 +298,30 @@ def decoder_command(main_url, browser):
     frame_filter = ('fps=10,scale=960:540:force_original_aspect_ratio=decrease:'
                     'force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
                     if browser_substream else 'fps=5' if separate_analysis_stream else 'fps=10')
-    args = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'warning',
+    pi_video = source.is_pi_stream(url)
+    jpeg_threads = '1'
+    if pi_video:
+        settings = source.capture_settings()
+        if settings['width'] * settings['height'] > 1920 * 1080:
+            jpeg_threads = '2'
+    sparse = pi_video or os.environ.get('CAMERA_SPARSE_PREVIEW') == '1'
+    if sparse:
+        # Keep slow camera input sparse instead of manufacturing duplicate JPEGs.
+        # Full-resolution RTSP JPEG encoding competes with event exports. Match
+        # the analysis cadence instead of allowing a compressed-video backlog.
+        full_rtsp = not pi_video and not browser_substream
+        rate = 5 if full_rtsp or (separate_analysis_stream and not browser_substream) else 10
+        frame_filter = (f'select=isnan(prev_selected_t)+'
+                        rf'gt(floor(t*{rate}+0.000001)\,floor(prev_selected_t*{rate}+0.000001))')
+        if browser_substream:
+            frame_filter += ',scale=960:540:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=960:540:(ow-iw)/2:(oh-ih)/2'
+    args = [*FFMPEG, '-loglevel', 'warning',
             *preview_input_args(url, transport='tcp', strict=not browser_substream),
             '-map', '0:v:0', '-an', '-vf', frame_filter,
-            '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3', '-threads', '1',
+            '-c:v', 'mjpeg', '-q:v', '5' if browser_substream else '3',
+            '-threads', jpeg_threads,
+            *(['-thread_type', 'frame', '-huffman', 'default'] if pi_video else []),
+            *(['-fps_mode', 'vfr'] if sparse else []),
             '-f', 'image2pipe', 'pipe:1']
     return args, browser_substream
 
@@ -325,13 +352,8 @@ LIVE = LivePreview()
 BROWSER = LivePreview(browser=True)
 POST_PATHS = frozenset((
     '/api/capture',
-    '/api/anomaly/learn', '/api/anomaly/monitor', '/api/anomaly/pause',
-    '/api/anomaly/configure', '/api/anomaly/resize',
-    '/api/anomaly/confirmation', '/api/anomaly/model', '/api/anomaly/roi', '/api/anomaly/color',
-    '/api/anomaly/add-session', '/api/anomaly/replace-session',
-    '/api/anomaly/remove-session', '/api/anomaly/rename-session', '/api/anomaly/rebuild-sessions',
-    '/api/delete/event', '/api/delete/recording', '/api/delete/all-events',
-    '/api/delete/all-recordings', '/api/delete/history',
+    *('/api/anomaly/' + action for action in anomaly_control.PUBLIC_ACTIONS),
+    *('/api/delete/' + action for action in history.ACTIONS),
 ))
 ASSETS = {
     '/': ('index.html', 'text/html; charset=utf-8'),
@@ -417,11 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             confirmation_frames=body.get('confirmation_frames'),
             model_key=body.get('model_key'), roi=body.get('roi'),
             learning_seconds=body.get('learning_seconds'), session_id=body.get('session_id'),
-            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''),
-            color_mode=body.get('color_mode'))
-        if (recording_mode() == 'anomaly'
-                and action in ('pause', 'learn', 'resize', 'model', 'roi', 'color', 'add-session',
-                               'replace-session', 'remove-session', 'rebuild-sessions')):
+            session_name=body.get('session_name', ''), session_note=body.get('session_note', ''))
+        if recording_mode() == 'anomaly' and action in anomaly_control.MONITORING_STOPPING_ACTIONS:
             # Stopping the buffer must also work while the worker is offline.
             control.set_enabled(False)
         return self.send(json.dumps(command).encode(), 'application/json', 202)
@@ -479,12 +498,7 @@ class Handler(BaseHTTPRequestHandler):
                 width, height = roi_input_dimensions(
                     result.get('input_size', anomaly_control.DEFAULT_INPUT_SIZE),
                     *geometry, result.get('roi'))
-                model_key = anomaly_control.validate_model(
-                    result.get('model_key', anomaly_control.DEFAULT_MODEL))
-                heat_width, heat_height = anomaly_control.heatmap_dimensions(
-                    width, height, model_key)
-                result.update(effective_input_width=width, effective_input_height=height,
-                              heatmap_width=heat_width, heatmap_height=heat_height,
+                result.update(geometry_fields(width, height, result.get('model_key', anomaly_control.DEFAULT_MODEL)),
                               roi_geometry_valid=True)
             except ValueError:
                 # Keep area reset available after a source aspect-ratio change.
@@ -504,7 +518,7 @@ class Handler(BaseHTTPRequestHandler):
         return (state.get('model_key') == config['model_key']
                 and state.get('input_size') == config['input_size']
                 and state.get('roi') == config['roi']
-                and state.get('color_mode', 'rgb') == config['color_mode'])
+                and config['color_mode'] == 'rgb')
 
     def learning_thumbnail(self, identifier):
         from PIL import Image, ImageDraw
@@ -572,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
         clip = clip_path(path.removeprefix('/api/play/'))
         # Fragmented MP4 allows playback without a second copy of each clip.
         process = subprocess.Popen([
-            'ffmpeg', '-nostdin', '-loglevel', 'quiet', '-i', str(clip),
+            *FFMPEG, '-loglevel', 'quiet', '-i', str(clip),
             '-map', '0:v:0', '-an', '-c:v', 'copy',
             '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
             '-f', 'mp4', 'pipe:1'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -584,17 +598,13 @@ class Handler(BaseHTTPRequestHandler):
             shutil.copyfileobj(process.stdout, self.wfile)
         finally:
             process.stdout.close()
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            stop_process(process)
 
     def route(self):
         path = unquote(urlsplit(self.path).path)
         if path == '/api/capture':
-            result = dict(available=bool(source.capture_url()), settings=source.capture_settings())
+            result = dict(available=bool(source.capture_url()), settings=source.capture_settings(),
+                          capabilities=source.capture_capabilities())
             return self.send(json.dumps(result).encode(), 'application/json')
         if path == '/api/anomaly':
             return self.anomaly_status()
@@ -620,5 +630,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     RECORDINGS.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((os.environ.get('DASHBOARD_HOST', '0.0.0.0'), int(os.environ.get('DASHBOARD_PORT', '8082'))), Handler)
+    if os.environ.get('DASHBOARD_PORT_FILE'):
+        control.write_json(Path(os.environ['DASHBOARD_PORT_FILE']), dict(port=server.server_port, pid=os.getpid()))
     print('Camera dashboard listening on port', server.server_port, flush=True)
     server.serve_forever()

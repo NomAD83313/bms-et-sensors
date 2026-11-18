@@ -15,14 +15,15 @@ async function run(source) {
   };
   const change=(id,value)=>{element(id).value=value;element(id).listeners.change();};
   const document={hidden:false,activeElement:null,getElementById:element,addEventListener(){}};
+  let capabilities=null;
   let settings={capture_mode:'video',snapshot_interval_ms:200,shutter_us:0,width:1280,height:720,fps:15};
   const fetch=(url,options)=>{
     if(url!=='api/capture')return new Promise(()=>{});
     if(options){requests.push(JSON.parse(options.body));settings={...settings,...requests.at(-1)};
       return Promise.resolve({ok:true,json:async()=>({settings})});}
-    return Promise.resolve({ok:true,json:async()=>({available:true,settings})});
+    return Promise.resolve({ok:true,json:async()=>({available:true,settings,capabilities})});
   };
-  new Function('document','fetch','Image','setInterval','setTimeout','performance','window',source)(
+  const api=new Function('document','fetch','Image','setInterval','setTimeout','performance','window',source+'\nreturn {refreshCapture};')(
     document,fetch,class{},()=>{},()=>{},{now:()=>0},{});
   await new Promise(resolve=>setImmediate(resolve));
   assert(!element('capture-panel').hidden,'Native Pi capture controls should be visible');
@@ -45,17 +46,17 @@ async function run(source) {
     await element('capture-apply').onclick();
     assert(requests.at(-1).shutter_us===Number(shutter),'Send short exposure in microseconds');
   }
-  change('capture-mode','video');change('capture-resolution','1640x1232');change('capture-fps','15');
+  change('capture-mode','video');change('capture-resolution','2560x1440');change('capture-fps','15');
   await element('capture-apply').onclick();
   let sent=requests.at(-1);
-  assert(sent.width===1640&&sent.height===1232&&sent.fps===15,'Send selected video resolution and FPS');
+  assert(sent.width===2560&&sent.height===1440&&sent.fps===15,'Send selected video resolution and FPS');
   assert(sent.shutter_us===0,'Video uses Auto exposure');
-  change('capture-resolution','3280x2464');
+  change('capture-resolution','3840x2160');
   assert(element('capture-fps').value==='15','Clamp full resolution to 15 FPS');
   assert(element('capture-fps').options.every(x=>Number(x.value)<=15),'Only offer rates supported by full sensor readout');
   await element('capture-apply').onclick();
   sent=requests.at(-1);
-  assert(sent.width===3280&&sent.height===2464&&sent.fps===15,'Send clamped FPS with full resolution');
+  assert(sent.width===3840&&sent.height===2160&&sent.fps===15,'Send clamped FPS with full resolution');
   change('capture-mode','snapshots');change('capture-resolution','1280x720');
   await element('capture-apply').onclick();
   sent=requests.at(-1);
@@ -63,7 +64,19 @@ async function run(source) {
   const shutters=element('capture-exposure').options.map(option=>Number(option.value));
   assert(shutters.includes(200)&&shutters.includes(500),'Offer 1/5000 and 1/2000 s');
   assert(shutters.includes(40000)&&shutters.every(value=>value<=40000),'Manual exposure is limited to 1/25 s');
-  console.log('Video resolution/FPS, snapshot resolution/exposure, mode visibility and apply UI passed.');
+  capabilities={capture_modes:['video'],resolutions:['640x360','1280x720','1920x1080'],fps:[5,10,15],note:'Remote video controls'};
+  settings={...settings,capture_mode:'video',width:1280,height:720,fps:10,shutter_us:0};
+  await api.refreshCapture();
+  assert(element('capture-mode').options.find(x=>x.value==='snapshots').disabled,'Remote camera cannot select snapshots');
+  for(const value of ['2560x1440','3840x2160']) {
+    const option=element('capture-resolution').options.find(x=>x.value===value);
+    assert(option.disabled&&option.hidden,'Hide resolutions unsupported by the remote source');
+  }
+  assert(element('capture-note').textContent==='Remote video controls','Explain remote capture capabilities');
+  change('capture-resolution','1920x1080');
+  await element('capture-apply').onclick();
+  assert(requests.at(-1).width===1920&&requests.at(-1).fps===10,'Apply remote camera resolution with its current FPS');
+  console.log('Local and remote capture resolution, supported modes, FPS and apply UI passed.');
 }
 const fs=require('node:fs');
 run(fs.readFileSync('app/cameras/web/app.js','utf8')).catch(error=>{console.error(error);process.exitCode=1;});

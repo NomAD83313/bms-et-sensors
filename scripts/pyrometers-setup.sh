@@ -40,14 +40,14 @@ log_item()  { echo -e "    ${CYAN}→${NC} $1"; }
 
 require_root() {
     if [[ $EUID -ne 0 ]]; then
-        log_error "Требуются права root. Запустите: sudo bash $0 $*"
+        log_error "Root privileges required. Run: sudo bash $0 $*"
         exit 1
     fi
 }
 
 require_python() {
     if ! command -v python3 &>/dev/null; then
-        log_error "python3 не найден"
+        log_error "python3 not found"
         exit 1
     fi
 }
@@ -69,7 +69,7 @@ ensure_registry() {
 
 ensure_driver() {
     if ! lsmod | grep -q "^cp210x"; then
-        log_info "Загрузка модуля cp210x..."
+        log_info "Loading the cp210x module..."
         modprobe cp210x
         sleep 0.5
     fi
@@ -216,7 +216,7 @@ print('ok')
 }
 
 regenerate_udev() {
-    log_info "Обновление udev-правил: $UDEV_RULE"
+    log_info "Updating udev rules: $UDEV_RULE"
     {
         echo "# ============================================================="
         echo "# Pyrometers: Silicon Labs ${VENDOR}:${PRODUCT}"
@@ -242,7 +242,7 @@ except: pass
     udevadm control --reload-rules
     udevadm trigger --action=change --subsystem-match=tty
     sleep 1
-    log_ok "udev-правила обновлены"
+    log_ok "udev rules updated"
 }
 
 # -----------------------------------------------------------------------------
@@ -252,7 +252,7 @@ except: pass
 cmd_discover() {
     echo ""
     echo "================================================="
-    echo " Обнаружение USB пирометров (${VENDOR}:${PRODUCT})"
+    echo " USB pyrometer discovery (${VENDOR}:${PRODUCT})"
     echo "================================================="
     echo ""
 
@@ -263,20 +263,20 @@ cmd_discover() {
     while IFS=" " read -r port serial; do
         [[ -z "$port" ]] && continue
         count=$((count + 1))
-        local status="неизвестно"
+        local status="unknown"
         if echo "$known_serials" | grep -qx "$serial"; then
-            status="${GREEN}зарегистрировано${NC}"
+            status="${GREEN}registered${NC}"
         else
-            status="${YELLOW}НЕ зарегистрировано${NC}"
+            status="${YELLOW}NOT registered${NC}"
         fi
         echo -e "  $port  S/N: ${CYAN}${serial}${NC}  [$status]"
     done < <(get_connected_devices)
 
     if [[ $count -eq 0 ]]; then
-        log_warn "Устройства ${VENDOR}:${PRODUCT} не найдены. Проверьте подключение."
+        log_warn "No ${VENDOR}:${PRODUCT} devices found. Check the connection."
     else
         echo ""
-        log_info "Найдено устройств: $count"
+        log_info "Devices found: $count"
     fi
     echo ""
 }
@@ -284,7 +284,7 @@ cmd_discover() {
 cmd_list() {
     echo ""
     echo "================================================="
-    echo " Реестр пирометров"
+    echo " Pyrometer registry"
     echo "================================================="
     echo ""
 
@@ -294,17 +294,17 @@ cmd_list() {
 import json, os
 path = '$REGISTRY'
 if not os.path.exists(path):
-    print('  (реестр пуст или не найден)')
+    print('  (registry is empty or missing)')
     exit()
 data = json.load(open(path))
 if not data:
-    print('  (реестр пуст)')
+    print('  (registry is empty)')
     exit()
 for e in data:
     symlink = '/dev/' + e.get('symlink','?')
-    present = ' [подключено]' if os.path.exists(symlink) else ' [отключено]'
+    present = ' [connected]' if os.path.exists(symlink) else ' [disconnected]'
     print(f\"  {e['id']:12s}  S/N: {e['serial']:15s}  {symlink:20s}  {e['display_name']}{present}\")
-" 2>/dev/null || echo "  (ошибка чтения реестра)"
+" 2>/dev/null || echo "  (failed to read the registry)"
     echo ""
 }
 
@@ -314,18 +314,18 @@ cmd_add() {
     local display_name="$3"
 
     if [[ -z "$serial" || -z "$type" ]]; then
-        log_error "Использование: --add <serial> <microeps|optris> [display_name]"
+        log_error "Usage: --add <serial> <microeps|optris> [display_name]"
         exit 1
     fi
     if [[ "$type" != "microeps" && "$type" != "optris" ]]; then
-        log_error "Тип должен быть: microeps или optris"
+        log_error "Type must be: microeps or optris"
         exit 1
     fi
     ensure_registry
 
     # Check already registered
     if registry_serials | grep -qx "$serial"; then
-        log_warn "Устройство с S/N $serial уже зарегистрировано"
+        log_warn "Device with S/N $serial is already registered"
         cmd_list
         exit 0
     fi
@@ -343,17 +343,17 @@ cmd_add() {
 
     echo ""
     echo "================================================="
-    echo " Регистрация устройства"
+    echo " Device registration"
     echo "================================================="
     log_item "S/N:          $serial"
-    log_item "Тип:          $type"
+    log_item "Type:         $type"
     log_item "ID:           $device_id"
-    log_item "Симлинк:      /dev/$symlink"
+    log_item "Symlink:      /dev/$symlink"
     log_item "Display name: $display_name"
     echo ""
 
     registry_add "$serial" "$type" "$device_id" "$symlink" "$display_name"
-    log_ok "Добавлено в реестр: $REGISTRY"
+    log_ok "Added to registry: $REGISTRY"
 
     regenerate_udev
 
@@ -361,13 +361,13 @@ cmd_add() {
     local real_user="${SUDO_USER:-$USER}"
     if ! groups "$real_user" | grep -q "dialout"; then
         usermod -aG dialout "$real_user"
-        log_ok "$real_user добавлен в группу dialout"
+        log_ok "$real_user added to the dialout group"
     fi
 
     echo ""
-    log_ok "Готово! /dev/$symlink → устройство $serial"
+    log_ok "Done! /dev/$symlink -> device $serial"
     echo ""
-    log_info "Перезапусти контейнер чтобы применить:"
+    log_info "Restart the container to apply:"
     echo "    docker restart pyrometer-collector"
     echo ""
 }
@@ -375,7 +375,7 @@ cmd_add() {
 cmd_remove() {
     local device_id="$1"
     if [[ -z "$device_id" ]]; then
-        log_error "Использование: --remove <id>"
+        log_error "Usage: --remove <id>"
         exit 1
     fi
 
@@ -383,14 +383,14 @@ cmd_remove() {
     ensure_registry
     result=$(registry_remove "$device_id")
     if [[ "$result" == "id not found" ]]; then
-        log_error "ID '$device_id' не найден в реестре"
+        log_error "ID '$device_id' not found in the registry"
         exit 1
     fi
 
-    log_ok "Устройство '$device_id' удалено из реестра"
+    log_ok "Device '$device_id' removed from the registry"
     regenerate_udev
     echo ""
-    log_info "Перезапусти контейнер чтобы применить:"
+    log_info "Restart the container to apply:"
     echo "    docker restart pyrometer-collector"
     echo ""
 }
@@ -421,17 +421,17 @@ case "${1:-}" in
         ensure_registry
         ensure_driver
         regenerate_udev
-        log_ok "Готово"
+        log_ok "Done"
         ;;
     *)
         echo ""
-        echo "Использование:"
-        echo "  sudo bash $0 --discover                             # показать подключённые устройства"
-        echo "  sudo bash $0 --add <serial> <microeps|optris>       # зарегистрировать устройство"
-        echo "  sudo bash $0 --add <serial> <type> \"Display Name\"   # с кастомным именем"
-        echo "       bash $0 --list                                 # показать реестр"
-        echo "  sudo bash $0 --remove <id>                          # удалить из реестра"
-        echo "  sudo bash $0 --apply                                # применить реестр → udev (после ручной правки)"
+        echo "Usage:"
+        echo "  sudo bash $0 --discover                             # show connected devices"
+        echo "  sudo bash $0 --add <serial> <microeps|optris>       # register a device"
+        echo "  sudo bash $0 --add <serial> <type> \"Display Name\"   # with a custom name"
+        echo "       bash $0 --list                                 # show the registry"
+        echo "  sudo bash $0 --remove <id>                          # remove from the registry"
+        echo "  sudo bash $0 --apply                                # apply registry -> udev (after manual edits)"
         echo ""
         ;;
 esac

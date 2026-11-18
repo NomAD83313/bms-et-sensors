@@ -3,10 +3,8 @@ from datetime import datetime
 import docker
 
 
-COMPOSE_SERVICES = {
-    "camera-recorder", "camera-dashboard", "camera-anomaly",
-    "pi-camera-recorder", "pi-camera-dashboard", "pi-camera-anomaly",
-}
+# Camera services; looked up through their Compose labels within this stack.
+COMPOSE_SERVICES = {"camera-media", "camera-analysis", "camera-hub"}
 
 
 def container_status(client: docker.DockerClient, name: str) -> str:
@@ -22,7 +20,7 @@ def container_status(client: docker.DockerClient, name: str) -> str:
 
 def get_container(client: docker.DockerClient, name: str):
     if name in COMPOSE_SERVICES:
-        # Camera services retain Compose-generated names; scope lookup to this stack.
+        # Scope the lookup to this stack, so another project's container is never controlled.
         controller = client.containers.get("service-controller")
         project = controller.labels.get("com.docker.compose.project")
         if not project:

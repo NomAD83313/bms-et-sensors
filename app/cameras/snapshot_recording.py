@@ -1,8 +1,6 @@
 """Bounded JPEG pre-event buffer with asynchronous H.264 event encoding."""
 from concurrent.futures import ThreadPoolExecutor
-import json
 import logging
-import os
 from pathlib import Path
 import re
 import shutil
@@ -11,13 +9,21 @@ import time
 import uuid
 
 try:
-    from . import source
-    from .anomaly_control import analysis_available, read_json, valid_event_id, write_json
+    from . import control, environment, source
+    from .anomaly_control import analysis_available, valid_event_id
+    from .clips import prune
     from .event_recording import link_or_copy
+    from .files import read_json, write_json
+    from .source import FFMPEG
 except ImportError:
+    import control
+    import environment
     import source
-    from anomaly_control import analysis_available, read_json, valid_event_id, write_json
+    from anomaly_control import analysis_available, valid_event_id
+    from clips import prune
     from event_recording import link_or_copy
+    from files import read_json, write_json
+    from source import FFMPEG
 
 LOG = logging.getLogger('camera-snapshots')
 MIN_EXPORT_TIMEOUT_SECONDS = 180
@@ -56,7 +62,7 @@ def encode(directory, target):
     manifest.write_text('\n'.join(lines)+'\n')
     partial = target.with_suffix('.partial')
     try:
-        subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+        subprocess.run([*FFMPEG, '-loglevel', 'error',
             '-f', 'concat', '-safe', '0', '-i', str(manifest.resolve()),
             '-vf', 'fps=' + str(1000/metadata['snapshot_interval_ms']),
             '-r', str(1000/metadata['snapshot_interval_ms']), '-fps_mode', 'cfr',
@@ -157,11 +163,10 @@ class SnapshotBuffer:
         return directory, self.root / (event['name']+'.mkv')
 
 
-def run(directory, stop, max_bytes, max_age, prune, control, anomaly, recording_mode, seconds):
+def run(directory, stop, max_bytes, max_age, anomaly, recording_mode, seconds):
+    """Record from snapshots until `stop` or a capture-settings change; `seconds` sizes continuous clips."""
     settings = source.capture_settings()
-    manager = SnapshotBuffer(directory, settings,
-        pre=float(os.environ.get('CAMERA_EVENT_PRE_SEC', '7')),
-        post=float(os.environ.get('CAMERA_EVENT_POST_SEC', '10')))
+    manager = SnapshotBuffer(directory, settings, *environment.event_windows())
     signature = source.capture_signature(settings)
     pool = ThreadPoolExecutor(max_workers=1)
     pending = []

@@ -40,6 +40,40 @@ def validate_partitions(policy):
         raise ValueError('Training, calibration and test images must not overlap')
 
 
+def preprocessing_options(policy):
+    """Resolve preprocessing explicitly instead of inheriting container defaults."""
+    draft = policy.get('jpeg_draft', False)
+    if not isinstance(draft, (bool, int)) or draft not in (0, 1):
+        raise ValueError('Policy jpeg_draft must be 0 or 1')
+    options = dict(jpeg_draft=bool(draft))
+    for field, default, low, high in [('score_top_k', 1, 1, 20), ('coreset_size', 1024, 256, 4096)]:
+        value = policy.get(field, default)
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(f'Invalid policy {field}')
+        options[field] = value
+    return options
+
+
+def validate_cache(work, prefix, policy):
+    """Bind complete and partial results to image bytes, labels and settings."""
+    paths = [*policy['training'], *policy['calibration'], *[row['path'] for row in policy['test']]]
+    manifest = dict(method='quality-v2', policy=policy,
+                    frame_sha256={path: hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in paths})
+    digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    path = work / (prefix + '-workload.json')
+    if path.exists():
+        if json.loads(path.read_text()) != manifest:
+            raise ValueError('Dataset or settings changed; choose a new --prefix')
+    elif (work / (prefix + '-results.json')).exists() or any(
+            (work / (prefix + '-' + key + '.json')).exists() for key in policy['models']):
+        raise ValueError('Existing results have no workload manifest; choose a new --prefix')
+    else:
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(manifest, indent=2) + '\n')
+        temporary.replace(path)
+    return digest
+
+
 def rank_models(results, count=3):
     """Require 80% event recall and at most 5% false alarms before shortlisting."""
     ranked = sorted(results, key=lambda r: (
@@ -64,26 +98,20 @@ def main():
     args = parser.parse_args()
     policy = json.loads((args.work / args.policy).read_text())
     validate_partitions(policy)
-    summary_file = args.work / (args.prefix + '-results.json')
-    if summary_file.exists():
-        previous_policy = json.loads(summary_file.read_text())['policy']
-        for field in ('input_size', 'threads', 'multiplier', 'models', 'roi', 'threshold_mode',
-                      'training', 'calibration', 'test'):
-            if field not in policy and field not in previous_policy:
-                continue
-            if previous_policy.get(field) != policy.get(field):
-                parser.error('Dataset or settings changed; choose a new --prefix')
     import os
     os.environ['CAMERA_ANOMALY_ONNX_PROVIDER'] = 'xnnpack'
-    from app.cameras.patchcore_lite import PatchCoreLite
+    from app.cameras.patchcore_lite import PatchCoreLite, calibrated_threshold
     from app.cameras.model_profiles import MODELS, validate_model
     from app.cameras.roi import validate_roi
-    import torch
-
     roi = validate_roi(policy.get('roi'))
     threshold_mode = policy.get('threshold_mode', 'separate-p99')
     if threshold_mode not in ('separate-p99', 'production-held-out'):
         parser.error('Policy threshold_mode must be separate-p99 or production-held-out')
+    try:
+        options = preprocessing_options(policy)
+    except ValueError as error:
+        parser.error(str(error))
+    policy.update(options, roi=roi, threshold_mode=threshold_mode)
     training = [Path(p).read_bytes() for p in policy['training']]
     calibration = [Path(p).read_bytes() for p in policy['calibration']]
     if threshold_mode == 'separate-p99' and not calibration:
@@ -100,15 +128,25 @@ def main():
         keys = [validate_model(key) for key in keys]
     except ValueError as error:
         parser.error(str(error))
+    policy['models'] = keys
+    try:
+        workload_digest = validate_cache(args.work, args.prefix, policy)
+    except ValueError as error:
+        parser.error(str(error))
     for key in keys:
         result_file = args.work / (args.prefix + '-' + key + '.json')
         if result_file.exists():
-            output['results'].append(json.loads(result_file.read_text()))
+            cached = json.loads(result_file.read_text())
+            if cached.get('workload_digest') != workload_digest:
+                parser.error('Cached result does not match this workload; choose a new --prefix')
+            output['results'].append(cached)
             print('REUSE', key, flush=True)
             continue
         print('PREPARE', key, flush=True)
         model = PatchCoreLite(model_key=key, input_size=policy['input_size'],
-                              threads=policy['threads'], feature_engine='onnx', distance_engine='faiss')
+                              threads=policy['threads'], feature_engine='onnx', distance_engine='faiss',
+                              jpeg_draft=options['jpeg_draft'], top_k=options['score_top_k'],
+                              coreset_size=options['coreset_size'])
         model.set_roi(roi)
         directory = args.work / (args.prefix + '-banks') / key
         directory.mkdir(parents=True, exist_ok=True)
@@ -117,9 +155,8 @@ def main():
         model.fit(features)
         del features
         if threshold_mode == 'separate-p99':
-            scores = torch.tensor([model.score(model.features(jpeg))[0] for jpeg in calibration])
-            model.threshold = max(float(torch.quantile(scores, .99)), 1e-6)
-        model.save(directory / 'baseline.pt')
+            model.threshold = calibrated_threshold([model.score(model.features(jpeg))[0] for jpeg in calibration])
+        model.save(directory / 'baseline.npz')
         threshold = model.threshold * policy['multiplier']
         print('EVALUATE', key, 'threshold', threshold, flush=True)
         warmup = calibration[0] if calibration else training[0]
@@ -157,7 +194,8 @@ def main():
             predictions.append(dict(record, score=score, ratio=score/threshold, alarm=score > threshold))
             if (index+1) % 20 == 0:
                 print('PROGRESS', key, index+1, '/', len(test), flush=True)
-        row = dict(model=key, label=MODELS[key]['label'], **quality_metrics(predictions),
+        row = dict(model=key, label=MODELS[key]['label'], workload_digest=workload_digest,
+                   **quality_metrics(predictions),
                    mean_ms=statistics.mean(elapsed), median_ms=statistics.median(elapsed),
                    p95_ms=sorted(elapsed)[math.ceil(.95*len(elapsed))-1],
                    preparation_ms=statistics.mean(preparation), network_ms=statistics.mean(neural),

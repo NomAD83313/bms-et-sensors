@@ -41,3 +41,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.messkluppe
+
+  vibration-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.vibration

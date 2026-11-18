@@ -52,7 +52,7 @@ METRICS_LOCK = threading.Lock()
 # Global state
 BASE_STATION = None
 BAUDRATE = 3000000
-EXCLUDE_USB_IDS = os.getenv("MSCL_EXCLUDE_USB_IDS", "10c4:834b")
+EXCLUDE_USB_IDS = os.getenv("MSCL_EXCLUDE_USB_IDS", "10c4:834b,1a86:7523")
 LOG_BUFFER = []
 LOG_MAX = 200
 LAST_BASE_STATUS = {"connected": False, "port": "N/A", "message": "Not connected", "ts": None}

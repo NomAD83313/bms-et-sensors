@@ -4,15 +4,19 @@
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml)
+# Optional RTSP relay for the cameras, enabled by scripts/restart-camera-hub.sh.
+if [[ -f "${SCRIPT_DIR}/../runtime/camera-hub/enabled" ]]; then
+  COMPOSE+=(-f docker-compose.camera-hub.yml)
+fi
 DEFAULT_APP_BUILD_SERVICES=(mscl-collector redlab-collector graf-lite service-controller almemo-collector pyrometer-collector ap-control)
-OPTIONAL_APP_BUILD_SERVICES=(matter-collector)
-APP_BUILD_SERVICES=("${DEFAULT_APP_BUILD_SERVICES[@]}" "${OPTIONAL_APP_BUILD_SERVICES[@]}")
 
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/setup-common.sh"
 
 bms_cd_project() {
   cd "${PROJECT_ROOT}"
+  # Bind-mounted by Compose: create them as the current user, not as root.
+  mkdir -p runtime/camera-manager runtime/cameras-extra runtime/pi-camera
 }
 
 bms_build_services() {
@@ -48,8 +52,11 @@ bms_ensure_camera_onnx_runtime() {
     return 0
   fi
   if [[ "$image" != "bms-onnx-xnnpack:local" ]]; then
-    echo "ERROR: CAMERA_ONNX_RUNTIME_IMAGE=$image is missing and is not built by this project." >&2
-    echo "       Use onnx-cpu or bms-onnx-xnnpack:local." >&2
+    echo ">>> Pulling ONNX Runtime image: $image"
+    if docker pull "$image"; then
+      return 0
+    fi
+    echo "ERROR: CAMERA_ONNX_RUNTIME_IMAGE=$image could not be pulled." >&2
     return 1
   fi
   echo ">>> Building $image once: compiling ONNX Runtime with XNNPACK."

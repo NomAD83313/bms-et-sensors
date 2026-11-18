@@ -7,17 +7,24 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import time
 
 try:
-    from . import source
-    from .anomaly_control import analysis_available, read_json, valid_event_id, write_json
-    from .source import input_args
+    from . import control, environment, source
+    from .anomaly_control import analysis_available, valid_event_id
+    from .clips import StreamProgress, prune
+    from .files import read_json, write_json
+    from .source import FFMPEG, input_args, stop_process
 except ImportError:
+    import control
+    import environment
     import source
-    from anomaly_control import analysis_available, read_json, valid_event_id, write_json
-    from source import input_args
+    from anomaly_control import analysis_available, valid_event_id
+    from clips import StreamProgress, prune
+    from files import read_json, write_json
+    from source import FFMPEG, input_args, stop_process
 
 LOG = logging.getLogger('camera-events')
 SEGMENT_SECONDS = 5
@@ -42,7 +49,7 @@ def concatenate(paths, target):
     manifest.write_text(''.join("file '" + str(path.resolve()) + "'\n" for path in paths))
     partial = target.with_suffix('.partial')
     try:
-        subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'quiet',
+        subprocess.run([*FFMPEG, '-loglevel', 'quiet',
                         '-f', 'concat', '-safe', '0', '-i', str(manifest), '-map', '0:v:0',
                         '-an', '-c:v', 'copy', '-f', 'matroska', '-y', str(partial)],
                        check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -215,7 +222,7 @@ class EventBuffer:
 
 
 def segment_command(url, directory):
-    return ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'quiet',
+    return [*FFMPEG, '-loglevel', 'quiet',
             *input_args(url),
             '-map', '0:v:0', '-an', '-c:v', 'copy', '-progress', 'pipe:1', '-stats_period', '1',
             '-f', 'segment', '-segment_format', 'matroska', '-segment_time', str(SEGMENT_SECONDS),
@@ -224,9 +231,9 @@ def segment_command(url, directory):
             str(directory / 'seg-%Y%m%dT%H%M%SZ.mkv')]
 
 
-def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control, anomaly):
-    manager = EventBuffer(directory, pre=float(os.environ.get('CAMERA_EVENT_PRE_SEC', '7')),
-                          post=float(os.environ.get('CAMERA_EVENT_POST_SEC', '10')))
+def run(url, directory, stop, max_bytes, max_age, anomaly):
+    """Buffer segments and save event videos until `stop`, the mode or capture settings change."""
+    manager = EventBuffer(directory, *environment.event_windows())
     if min(manager.pre, manager.post) < 0 or manager.post == 0:
         raise ValueError('Event windows must be non-negative with positive post time')
     manager.recover()
@@ -240,7 +247,7 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
             continue
         process = subprocess.Popen(segment_command(url, manager.buffer), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         os.set_blocking(process.stdout.fileno(), False)
-        progress = progress_type()
+        progress = StreamProgress()
         started = time.monotonic()
         try:
             while process.poll() is None:
@@ -261,14 +268,8 @@ def run(url, directory, stop, max_bytes, max_age, progress_type, prune, control,
                 if stop.wait(1) or not control.enabled() or source.capture_settings()['capture_mode'] == 'snapshots' or time.monotonic() - last_progress > 30:
                     break
         finally:
-            if process.poll() is None:
-                # Let the segment muxer finalize the active segment on a clean stop.
-                process.send_signal(2)
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+            # SIGINT lets the segment muxer finalize the active segment on a clean stop.
+            stop_process(process, timeout=10, signal=signal.SIGINT)
             process.stdout.close()
             manager.read_index()
             now = time.time()

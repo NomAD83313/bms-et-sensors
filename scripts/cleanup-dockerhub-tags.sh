@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# /gemini: Утилита очистки Docker Hub через API v2 с поддержкой фильтрации тегов и JWT-авторизации.
 # Remove Docker Hub tags, keeping only selected ones.
 #
 # Required env:
@@ -41,15 +40,18 @@ require_cmd() {
 }
 
 extract_json_string() {
-  # Minimal extractor for a top-level string field in compact JSON.
-  # Works with Docker Hub responses used in this script.
   local key="$1"
-  sed -n "s/.*\"${key}\":\"\\([^\"]*\\)\".*/\\1/p"
+  python3 -c 'import json,sys; value=json.load(sys.stdin).get(sys.argv[1]); print(value or "")' "$key"
 }
 
 extract_json_strings_by_key() {
   local key="$1"
-  sed -n "s/.*\"${key}\":\"\\([^\"]*\\)\".*/\\1/p"
+  python3 -c 'import json,sys
+for row in json.load(sys.stdin)["results"]:
+    value=row[sys.argv[1]]
+    if not isinstance(value,str) or not value or "\n" in value:
+        raise ValueError("Invalid Docker Hub tag")
+    print(value)' "$key"
 }
 
 is_keep_tag() {
@@ -78,7 +80,7 @@ delete_tag() {
 }
 
 require_cmd curl
-require_cmd sed
+require_cmd python3
 
 log ">>> Docker Hub cleanup start"
 log "Namespace: ${DOCKERHUB_NS}"
@@ -87,9 +89,10 @@ log "Keep tags: ${KEEP_TAGS}"
 log "DRY_RUN=${DRY_RUN}"
 
 TOKEN="$(
-  curl -fsS -X POST "${api_base}/users/login/" \
+  python3 -c 'import json,os; print(json.dumps({"username":os.environ["DOCKERHUB_USER"],"password":os.environ["DOCKERHUB_PASS"]}))' \
+  | curl -fsS -X POST "${api_base}/users/login/" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"${DOCKERHUB_USER}\",\"password\":\"${DOCKERHUB_PASS}\"}" \
+    -d @- \
   | extract_json_string token
 )"
 
@@ -106,30 +109,25 @@ for repo in "${REPOS[@]}"; do
 
   log "=== ${DOCKERHUB_NS}/${repo} ==="
   next_url="${api_base}/repositories/${DOCKERHUB_NS}/${repo}/tags/?page_size=${PAGE_SIZE}"
+  tags=()
 
   while [[ -n "${next_url}" && "${next_url}" != "null" ]]; do
     json="$(curl -fsS -H "Authorization: JWT ${TOKEN}" "${next_url}")"
 
-    mapfile -t tags < <(printf '%s' "$json" | extract_json_strings_by_key name)
-    if [[ "${#tags[@]}" -eq 0 ]]; then
-      log "No tags found on current page."
+    tag_lines="$(printf '%s' "$json" | extract_json_strings_by_key name)"
+    if [[ -n "$tag_lines" ]]; then
+      mapfile -t page_tags <<< "$tag_lines"
+      tags+=("${page_tags[@]}")
     fi
+    next_url="$(printf '%s' "$json" | extract_json_string next)"
+  done
 
-    for tag in "${tags[@]}"; do
-      if is_keep_tag "$tag"; then
-        log "KEEP   ${DOCKERHUB_NS}/${repo}:${tag}"
-      else
-        delete_tag "$repo" "$tag"
-      fi
-    done
-
-    next_url="$(
-      printf '%s' "$json" \
-      | extract_json_string next \
-      | sed 's/\\u0026/\&/g'
-    )"
-    if [[ -z "${next_url}" ]]; then
-      next_url="null"
+  # Finish pagination before deleting: removals can shift subsequent pages.
+  for tag in "${tags[@]}"; do
+    if is_keep_tag "$tag"; then
+      log "KEEP   ${DOCKERHUB_NS}/${repo}:${tag}"
+    else
+      delete_tag "$repo" "$tag"
     fi
   done
 done

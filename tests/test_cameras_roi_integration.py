@@ -153,7 +153,7 @@ class RoiWorkerTests(unittest.TestCase):
             with patch.object(anomaly_control, 'DATA', root), \
                     patch.object(control, 'CONTROL', root / 'control'), \
                     patch.dict(os.environ, {'CAMERA_RECORDING_MODE': 'anomaly'}):
-                (root / 'baseline.pt').write_bytes(b'previous-learned-bank')
+                (root / 'baseline.npz').write_bytes(b'previous-learned-bank')
                 anomaly_control.write_json(root / 'session.json', dict(monitoring=True, multiplier=1.2))
                 anomaly_control.write_json(root / 'video-trigger.json', dict(id='old'))
                 command = anomaly_control.request('roi', 1.2, roi=ROI)
@@ -167,7 +167,7 @@ class RoiWorkerTests(unittest.TestCase):
                     self.assertEqual(state['last_request'], command['id'])
                     self.assertFalse(control.enabled())
                 self.assertEqual(calls, [ROI, ROI])
-                self.assertFalse((root / 'baseline.pt').exists())
+                self.assertFalse((root / 'baseline.npz').exists())
                 self.assertEqual(anomaly_control.read_json(root / 'video-trigger.json'), {})
                 self.assertEqual(anomaly_control.read_json(root / 'session.json')['roi'], ROI)
 
@@ -191,7 +191,7 @@ class RoiWorkerTests(unittest.TestCase):
             with patch.object(anomaly_control, 'DATA', root), \
                     patch.object(control, 'CONTROL', root / 'control'), \
                     patch.dict(os.environ, {'CAMERA_ANOMALY_CONFIRM_FRAMES': '1'}):
-                (root / 'baseline.pt').write_bytes(b'roi-bank')
+                (root / 'baseline.npz').write_bytes(b'roi-bank')
                 anomaly_control.write_json(root / 'session.json', dict(roi=ROI, monitoring=True, multiplier=1))
                 render = Mock(return_value=b'full-size-roi-heatmap')
                 self.run_worker(root, Model, render, jpeg)
@@ -214,7 +214,7 @@ class RoiWorkerTests(unittest.TestCase):
             with patch.object(anomaly_control, 'DATA', root), \
                     patch.object(control, 'CONTROL', root / 'control'), \
                     patch.dict(os.environ, {'CAMERA_RECORDING_MODE': 'anomaly'}):
-                (root / 'baseline.pt').write_bytes(b'roi-bank')
+                (root / 'baseline.npz').write_bytes(b'roi-bank')
                 anomaly_control.write_json(root / 'session.json', dict(roi=ROI, monitoring=True))
                 anomaly_control.write_json(root / 'video-trigger.json', dict(id='old-event'))
                 state = self.run_worker(root, Model, jpeg=b'\xff\xd8source\xff\xd9')

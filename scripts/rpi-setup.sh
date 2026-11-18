@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# /gemini: Оркестратор первичной настройки DAQ-стека с проверкой зависимостей и Docker-окружения.
+# Initial DAQ stack setup orchestrator; checks dependencies and the Docker environment.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
@@ -17,6 +17,7 @@ RETRY_ATTEMPTS="${RETRY_ATTEMPTS:-5}"
 RETRY_DELAY_SEC="${RETRY_DELAY_SEC:-8}"
 RPI_SETUP_ENABLE_PYROMETERS="${RPI_SETUP_ENABLE_PYROMETERS:-1}"
 RPI_SETUP_RUN_PYROMETERS_SETUP="${RPI_SETUP_RUN_PYROMETERS_SETUP:-${RPI_SETUP_ENABLE_PYROMETERS}}"
+RPI_SETUP_ALLOW_PLACEHOLDER_SECRETS="${RPI_SETUP_ALLOW_PLACEHOLDER_SECRETS:-0}"
 DOCKER_CMD=(docker)
 COMPOSE_CMD=(docker compose)
 STACK_SERVICES=(
@@ -57,6 +58,27 @@ maybe_disable_pyrometers() {
   remove_stack_service "pyrometer-collector"
 }
 
+validate_env_secrets() {
+  if [[ "${RPI_SETUP_ALLOW_PLACEHOLDER_SECRETS}" == "1" ]]; then
+    echo ">>> Placeholder-secret check disabled by RPI_SETUP_ALLOW_PLACEHOLDER_SECRETS=1"
+    return
+  fi
+
+  local key value
+  local invalid=()
+  for key in INFLUX_TOKEN INFLUX_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD AP_PASSWORD; do
+    value="$(read_env_var "$key" || true)"
+    case "${value,,}" in
+      ""|change-me|changeme12345) invalid+=("$key") ;;
+    esac
+  done
+  if [[ "${#invalid[@]}" -gt 0 ]]; then
+    echo "ERROR: edit .env and replace placeholder values for: ${invalid[*]}" >&2
+    echo "ERROR: rerun ./scripts/rpi-setup.sh after saving the host-specific secrets." >&2
+    return 1
+  fi
+}
+
 build_and_start_stack() {
   echo ">>> Building local ARM-compatible app images..."
   retry_cmd "docker compose build app services" \
@@ -89,6 +111,7 @@ disable_modemmanager_if_present
 disable_avahi_if_present
 prepare_repo
 prepare_env_file
+validate_env_secrets
 if [ "${RPI_SETUP_RUN_PYROMETERS_SETUP}" = "1" ]; then
   run_pyrometers_setup
 fi

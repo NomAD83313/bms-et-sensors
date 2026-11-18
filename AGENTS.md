@@ -3,9 +3,9 @@ EN: User wants answers in Russian. All code and comments must be in English.
 
 ## Purpose / Назначение
 
-EN: This file defines a shared operating guide for coding agents working in this repository. It complements `README.md` (product/runtime docs) and `CLAUDE.md` (assistant-specific context) with practical implementation rules that should stay model-agnostic.
+EN: This file defines a shared operating guide for coding agents working in this repository. It complements `README.md` (product/runtime docs) with practical implementation rules that should stay model-agnostic.
 
-RU: Этот файл задает общий рабочий регламент для кодовых агентов в данном репозитории. Он дополняет `README.md` (документация по продукту и рантайму) и `CLAUDE.md` (контекст для ассистента) практическими правилами, не привязанными к конкретной модели.
+RU: Этот файл задает общий рабочий регламент для кодовых агентов в данном репозитории. Он дополняет `README.md` (документация по продукту и рантайму) практическими правилами, не привязанными к конкретной модели.
 
 ## Project summary / Кратко о проекте
 
@@ -18,16 +18,26 @@ EN: Core custom services:
 - `redlab-collector`: MCC RedLab thermocouple collector.
 - `almemo-collector`: ALMEMO serial integration.
 - `pyrometer-collector`: thermoMETER CT / Optris serial integration.
+- `messkluppe-collector`: nRF24 payload collection and InfluxDB ingestion for Messkluppe nodes.
+- `vibration-collector`: WitMotion WTVB01-485 RS485/Modbus vibration sensors; Compose profile `vibration`.
+- `camera-media`: shared camera management, previews, recording, and retention.
+- `camera-analysis`: shared visual anomaly analysis for registered cameras.
 - `graf-lite`: lightweight dashboard for low-resource hosts.
-- `service-controller`: service control and recovery logic (RedLab, ALMEMO, and MSCL safeguards).
+- `ap-control`: Raspberry Pi access point state and connected-client UI.
+- `service-controller`: service control and recovery logic (RedLab, ALMEMO, and MSCL safeguards; `cameras` and `cam-<id>` targets).
 
 RU: Основные кастомные сервисы:
 - `mscl-collector`: API конфигурации и стриминга MicroStrain MSCL.
 - `redlab-collector`: сборщик термопар MCC RedLab.
 - `almemo-collector`: интеграция последовательных устройств ALMEMO.
 - `pyrometer-collector`: интеграция thermoMETER CT / Optris.
+- `messkluppe-collector`: сбор nRF24-пакетов узлов Messkluppe и запись в InfluxDB.
+- `vibration-collector`: вибродатчики WitMotion WTVB01-485 по RS485/Modbus; профиль `vibration`.
+- `camera-media`: общее управление камерами, предпросмотр, запись и хранение.
+- `camera-analysis`: общий визуальный анализ аномалий зарегистрированных камер.
 - `graf-lite`: облегченный дашборд для малоресурсных хостов.
-- `service-controller`: контроль сервисов и логика восстановления (защита RedLab, ALMEMO и MSCL).
+- `ap-control`: интерфейс состояния точки доступа Raspberry Pi и подключённых клиентов.
+- `service-controller`: контроль сервисов и логика восстановления (защита RedLab, ALMEMO и MSCL; цели `cameras` и `cam-<id>`).
 
 EN: Third-party services: `influxdb`, `grafana`, `dashboard` (`nginx` + simple-dash).
 
@@ -49,9 +59,15 @@ RU: Опциональные сервисы (профили Thread / Matter):
 - `app/redlab/`: EN RedLab collector. / RU сборщик RedLab.
 - `app/almemo/`: EN ALMEMO app and minimal UI. / RU ALMEMO-приложение и минимальный UI.
 - `app/pyrometers/`: EN pyrometer integration app. / RU приложение интеграции пирометров.
+- `app/messkluppe/`: EN Messkluppe collector and nRF24 protocol support. / RU коллектор Messkluppe и поддержка протокола nRF24.
+- `app/vibration/`: EN WTVB01-485 Modbus collector, bus tools and UI (`docs/vibration.md`). / RU коллектор WTVB01-485 по Modbus, инструменты шины и UI (`docs/vibration.md`).
+- `app/cameras/`: EN camera management, capture controls, and anomaly analysis. / RU управление камерами, настройки захвата и анализ аномалий.
+- `app/ap/`: EN Raspberry Pi access point operator UI. / RU интерфейс управления точкой доступа Raspberry Pi.
 - `app/graf/`: EN Graf App Lite. / RU Graf App Lite.
 - `app/matter/`: EN Matter collector app. / RU приложение-коллектор Matter.
 - `app/svcctl/`: EN internal service-control API. / RU внутреннее API управления сервисами.
+- `nodes/`: EN ESP32 Matter node firmware (own rules in `nodes/AGENTS.md`). / RU прошивки ESP32 Matter-узлов (свои правила в `nodes/AGENTS.md`).
+- `config/`: EN tracked install-time templates (`*.example.json`, systemd `*.service.in`). / RU отслеживаемые install-time шаблоны (`*.example.json`, systemd `*.service.in`).
 - `dashboard/`: EN nginx and simple-dash assets. / RU nginx и ресурсы simple-dash.
 - `grafana/`: EN provisioning for datasources and dashboards. / RU provisioning для источников данных и дашбордов.
 - `scripts/`: EN setup/build/restart/ops scripts. / RU скрипты настройки, сборки, перезапуска и эксплуатации.
@@ -62,6 +78,7 @@ RU: Опциональные сервисы (профили Thread / Matter):
 - `scripts/openthread-host-setup.sh`: EN host prereq checker/applier for OTBR (IPv6, TUN, runtime dir). / RU проверка и настройка хоста для OTBR.
 - `scripts/restart-openthread.sh`: EN start openthread-border-router (runs host check first). / RU запуск openthread-border-router.
 - `scripts/restart-matter-server.sh`: EN start matter profile services (`matter-server` + `matter-collector`). / RU запуск сервисов профиля matter (`matter-server` + `matter-collector`).
+- `docs/remote-access.md`, `scripts/restart-tunnel.sh`: EN Cloudflare Tunnel (profile `tunnel`); nginx rejects tunnel requests without a Cloudflare Access token. / RU Cloudflare Tunnel (профиль `tunnel`); nginx отклоняет запросы из туннеля без токена Cloudflare Access.
 
 ## Non-negotiable rules / Обязательные правила
 
@@ -193,6 +210,16 @@ RU: Dashboard/UI (`dashboard/simple-dash`, `app/graf`):
 - Держать ссылки/probe в синхронизации с реально доступными маршрутами.
 - Если поведение фронтенда меняется после пересборки, учитывать, что для проверки реально отгруженных ассетов может потребоваться hard refresh браузера.
 
+EN: Vibration (`app/vibration`, `docs/vibration.md`):
+- Register map and scaling live only in `wtvb01_protocol.py`; keep them traceable to the manual and covered by `tests/test_vibration_protocol.py`.
+- Never auto-select the serial port: other USB serial collectors share the host. Keep the CH340 ID (`1a86:7523`) in the MSCL/ALMEMO USB exclusion defaults.
+- Sensor writes follow unlock -> write -> save; keep them in `vibration_bus.py` and test them against `tests/vibration_fakes.py`.
+
+RU: Вибрация (`app/vibration`, `docs/vibration.md`):
+- Карта регистров и масштабы — только в `wtvb01_protocol.py`; держать их сверенными с руководством и покрытыми `tests/test_vibration_protocol.py`.
+- Никогда не выбирать последовательный порт автоматически: на хосте есть другие USB-serial коллекторы. CH340 (`1a86:7523`) должен оставаться в исключениях MSCL/ALMEMO по умолчанию.
+- Запись в датчик идёт по схеме unlock -> write -> save; держать её в `vibration_bus.py` и тестировать на `tests/vibration_fakes.py`.
+
 EN: Compose/infrastructure:
 - Keep service dependency intent explicit.
 - Avoid introducing host-specific assumptions without feature flags or env vars.
@@ -228,4 +255,5 @@ RU: Matter/Thread (`scripts/openthread-host-setup.sh`, `scripts/restart-openthre
 ## References / Ссылки
 
 - `README.md` — primary product documentation / основная документация по продукту.
-- `CLAUDE.md` — assistant context and architecture summary / контекст ассистента и сводка архитектуры.
+- `app/cameras/CLAUDE.md` — camera stack architecture and rules / архитектура и правила стека камер.
+- `nodes/AGENTS.md` — ESP32 node firmware rules / правила для прошивок ESP32-узлов.

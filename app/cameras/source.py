@@ -1,29 +1,55 @@
-"""FFmpeg input options shared by network and local Pi camera streams."""
+"""FFmpeg input options and process helpers shared by the camera services."""
 import json
 import math
 import os
-from pathlib import Path
+import subprocess
 import time
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 try:
-    from .anomaly_control import write_json
+    from . import control
     from .capture_settings import validate, DEFAULTS
+    from .files import write_json
 except ImportError:
-    from anomaly_control import write_json
+    import control
     from capture_settings import validate, DEFAULTS
+    from files import write_json
 
 MAX_FRAME_BYTES = 16 * 1024 * 1024
+# Common prefix of every FFmpeg command: no terminal input, no banner.
+FFMPEG = ['ffmpeg', '-nostdin', '-hide_banner']
 _CAPTURE_CACHE = None
 _CAPTURE_CACHE_AT = 0
+_CAPTURE_CAPABILITIES = None
+_CAPTURE_CAPABILITIES_AT = 0
+
+
+def stop_process(process, timeout=3, signal=None):
+    """Stop a child: terminate (or send `signal`), wait, and kill it if it does not exit."""
+    if process.poll() is not None:
+        return
+    if signal is None:
+        process.terminate()
+    else:
+        process.send_signal(signal)
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def is_pi_stream(url):
+    parsed = urlsplit(url)
+    return parsed.scheme == 'http' and parsed.hostname == '127.0.0.1' and parsed.path == '/stream.ts'
 
 
 def input_args(url):
     parsed = urlsplit(url)
     if parsed.scheme == 'rtsp' and parsed.hostname:
         return ['-rtsp_transport', 'tcp', '-timeout', '15000000', '-i', url]
-    if parsed.scheme == 'http' and parsed.hostname == '127.0.0.1' and parsed.path == '/stream.ts':
+    if is_pi_stream(url):
         return ['-rw_timeout', '15000000', '-i', url]
     raise ValueError('Use an RTSP camera URL or the loopback Pi camera /stream.ts endpoint')
 
@@ -38,6 +64,8 @@ def preview_input_args(url, transport='tcp', strict=True):
             '-fflags', '+discardcorrupt+nobuffer',
             '-flags', 'low_delay',
         ]
+        if os.environ.get('CAMERA_SPARSE_PREVIEW') == '1':
+            args += ['-threads', '1']
         if strict:
             args += ['-err_detect', 'explode']
         return args + [
@@ -49,7 +77,13 @@ def preview_input_args(url, transport='tcp', strict=True):
             '-timeout', '3000000',
             '-i', url,
         ]
-    return ['-fflags', '+discardcorrupt', '-err_detect', 'explode', *input_args(url)]
+    # Probe briefly: the default five-second probe delays the first frame of the Pi
+    # stream (measured 6-7 s at 3280x2464) past the preview watchdog, causing a restart loop.
+    # Automatic H.264 frame threading buffers multiple source frames. At camera frame
+    # rates this creates seconds of delay even when JPEGs arrive regularly afterward.
+    return ['-fflags', '+discardcorrupt', '-flags', 'low_delay', '-threads', '1',
+            '-err_detect', 'explode',
+            '-analyzeduration', '0', '-probesize', '32768', *input_args(url)]
 
 
 def browser_stream_url(url):
@@ -71,7 +105,7 @@ def capture_settings():
     global _CAPTURE_CACHE, _CAPTURE_CACHE_AT
     if not capture_url():
         return dict(DEFAULTS)
-    path = Path(os.environ.get('CAMERA_CONTROL_DIR', '/control')) / 'capture.json'
+    path = control.root() / 'capture.json'
     if path.exists():
         return validate(json.loads(path.read_text()))
     if _CAPTURE_CACHE is not None and time.monotonic()-_CAPTURE_CACHE_AT < 2:
@@ -89,14 +123,26 @@ def capture_signature(settings=None):
     return json.dumps(capture_settings() if settings is None else settings, sort_keys=True)
 
 
+def capture_capabilities():
+    """Remote capture agents advertise their supported subset of the shared UI."""
+    global _CAPTURE_CAPABILITIES, _CAPTURE_CAPABILITIES_AT
+    if not capture_url() or urlsplit(capture_url()).hostname == '127.0.0.1':
+        return None
+    if _CAPTURE_CAPABILITIES is None or time.monotonic() - _CAPTURE_CAPABILITIES_AT > 60:
+        with urlopen(capture_url() + '/api/capabilities', timeout=2) as response:
+            _CAPTURE_CAPABILITIES = json.load(response)
+        _CAPTURE_CAPABILITIES_AT = time.monotonic()
+    return _CAPTURE_CAPABILITIES
+
+
 def configure_capture(data):
     if not capture_url():
-        raise ValueError('Capture controls are only available for the Pi camera')
+        raise ValueError('This camera has no capture-control endpoint')
     request = Request(capture_url() + '/api/config', data=json.dumps(data).encode(),
         headers={'Content-Type': 'application/json', 'X-Camera-Control': '1'}, method='POST')
     with urlopen(request, timeout=10) as response:
         settings = json.load(response)
-    write_json(Path(os.environ.get('CAMERA_CONTROL_DIR', '/control')) / 'capture.json', settings)
+    write_json(control.root() / 'capture.json', settings)
     return settings
 
 

@@ -7,13 +7,13 @@
         {
           "alt": "Grafana",
           "icon": "fas fa-chart-line",
-          "link": "http://{{host}}/grafana/d/redlab_pro_dash/redlab-and-mscl-dashboard?orgId=1&from=now-5m&to=now&timezone=browser&refresh=5s",
+          "link": "/grafana/d/redlab_pro_dash/redlab-and-mscl-dashboard?orgId=1&from=now-5m&to=now&timezone=browser&refresh=5s",
           "probe": "/probe/grafana"
         },
         {
           "alt": "Graf App Lite",
           "icon": "fas fa-wave-square",
-          "link": "http://{{host}}/graf/",
+          "link": "/graf/",
           "probe": "/probe/grafapp"
         }
       ]
@@ -24,37 +24,43 @@
         {
           "alt": "System Health",
           "icon": "fas fa-stethoscope",
-          "link": "http://{{host}}/health.html"
+          "link": "/health.html"
         },
         {
           "alt": "MSCL Configurator",
           "icon": "fas fa-sliders-h",
-          "link": "http://{{host}}/mscl/",
+          "link": "/mscl/",
           "probe": "/probe/mscl"
         },
         {
           "alt": "RedLab Config",
           "icon": "fas fa-thermometer-half",
-          "link": "http://{{host}}/redlab/",
+          "link": "/redlab/",
           "probe": "/probe/redlab"
         },
         {
           "alt": "ALMEMO 2490",
           "icon": "fas fa-microchip",
-          "link": "http://{{host}}/almemo/",
+          "link": "/almemo/",
           "probe": "/probe/almemo"
         },
         {
           "alt": "Pyrometers",
           "icon": "fas fa-temperature-high",
-          "link": "http://{{host}}/pyrometer/",
+          "link": "/pyrometer/",
           "probe": "/probe/pyrometer"
         },
         {
           "alt": "Messkluppe",
           "icon": "fas fa-broadcast-tower",
-          "link": "http://{{host}}/messkluppe/",
+          "link": "/messkluppe/",
           "probe": "/probe/messkluppe"
+        },
+        {
+          "alt": "Vibration",
+          "icon": "fas fa-wave-square",
+          "link": "/vibration/",
+          "probe": "/probe/vibration"
         },
         {
           "alt": "InfluxDB",
@@ -63,16 +69,10 @@
           "probe": "/probe/influx"
         },
         {
-          "alt": "Camera WiFi",
+          "alt": "Cameras",
           "icon": "fas fa-video",
           "link": "/cameras/",
           "probe": "/probe/cameras"
-        },
-        {
-          "alt": "Raspberry Pi Camera",
-          "icon": "fas fa-camera",
-          "link": "/cameras/pi/",
-          "probe": "/probe/pi-camera"
         }
       ]
     },
@@ -82,19 +82,19 @@
         {
           "alt": "AP Control",
           "icon": "fas fa-wifi",
-          "link": "http://{{host}}/ap/",
+          "link": "/ap/",
           "probe": "/probe/ap"
         },
         {
           "alt": "Matter + Thread Console",
           "icon": "fas fa-satellite-dish",
-          "link": "http://{{host}}/matter/",
+          "link": "/matter/",
           "probe": "/probe/matterapp"
         },
         {
           "alt": "OpenThread Border Router",
           "icon": "fas fa-project-diagram",
-          "link": "http://{{host}}/otbr/",
+          "link": "/otbr/",
           "probe": "/probe/otbr"
         },
         {

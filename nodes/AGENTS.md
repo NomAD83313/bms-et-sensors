@@ -12,6 +12,9 @@ This repository contains firmware projects for BMS DOA Matter nodes.
 - `esp32c3SuperMini/matter-node` - Matter over Wi-Fi for `ESP32-C3-SuperMini`
 - `m5stickc/matter-node` - Matter over Wi-Fi for first-generation `M5StickC`
 - `m5stickcPlus2/matter-node` - Matter over Wi-Fi for `M5StickC Plus2`
+- `esp32sCam/camera-node` - Matter over Wi-Fi for `ESP32-S-CAM` (camera runtime intentionally disabled)
+- `lilygoTEnergyS3/matter-wifi-node` - Matter over Wi-Fi for `LILYGO T-Energy-S3`
+- `esp32c6zero/multinode` - Matter over Thread capability-platform firmware for `ESP32-C6-Zero` (own `README.md` and design notes in its folder)
 - root `README.md` and board-specific `*.md` files are the canonical docs
 
 ## Documentation Rules
@@ -24,6 +27,8 @@ This repository contains firmware projects for BMS DOA Matter nodes.
   - `ESP32-C3-SuperMini.md`
   - `M5StickC.md`
   - `M5StickC-Plus2.md`
+  - `ESP32-S-CAM.md`
+  - `LILYGO-T-Energy-S3.md`
 - Do not reintroduce ad hoc files like `*-HELP.md`, `*-QUICKREF.html`, or duplicate per-board READMEs unless explicitly requested.
 - The onboarding card PNG is the operator quick reference; do not maintain a parallel HTML quick reference.
 

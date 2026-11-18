@@ -15,16 +15,13 @@ class AnomalyControlTests(unittest.TestCase):
         for bad in ('', 'x' * 101, '../etc', 'a/b', 'a b', 'a.jpg', None, 5, b'abc'):
             self.assertFalse(anomaly_control.valid_event_id(bad), bad)
 
-    def test_color_mode_validates_before_replacing_the_command(self):
+
+    def test_removed_color_action_cannot_replace_a_command(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(anomaly_control, 'DATA', Path(directory)):
-            for mode in ('rgb', 'grayscale'):
-                saved = anomaly_control.request('color', color_mode=mode)
-                self.assertEqual(saved['color_mode'], mode)
-            for mode in (None, '', 'RGB', 'gray', True, 1, []):
-                with self.subTest(mode=mode), self.assertRaises(ValueError):
-                    anomaly_control.request('color', color_mode=mode)
+            saved = anomaly_control.request('pause')
+            with self.assertRaises(ValueError):
+                anomaly_control.request('color')
             self.assertEqual(anomaly_control.read_json(Path(directory) / 'command.json'), saved)
-            self.assertEqual(anomaly_control.command_mode('color', True, True, True), (False, False))
 
     def test_confirmation_requires_consecutive_scores_and_cooldown(self):
         confirmation = anomaly_control.Confirmation(required=3, cooldown=30)
