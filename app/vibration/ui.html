@@ -97,6 +97,8 @@
     .fft-chart text { font-size: 11px; fill: var(--muted); }
     .fft-chart .grid { stroke: var(--line); stroke-width: 1; }
     .fft-chart polyline { fill: none; stroke-width: 1.4; }
+    .fft-chart .order-mark { stroke: var(--err); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.7; }
+    .fft-chart .order-label { fill: var(--err); }
     .axis-x { stroke: #1f5f9a; color: #1f5f9a; }
     .axis-y { stroke: #1b7d4d; color: #1b7d4d; }
     .axis-z { stroke: #c2410c; color: #c2410c; }
@@ -111,6 +113,8 @@
   <span class="eyebrow">RS485 · Modbus RTU</span>
   <h1>Vibration sensors</h1>
   <p class="page-subtitle">WitMotion WTVB01-485: velocity, displacement, frequency, acceleration and statistics, written to InfluxDB.</p>
+  <p><a class="graf-link-button" href="/grafana/d/bms_vibration?orgId=1&amp;from=now-1h&amp;to=now&amp;refresh=10s" target="_blank" rel="noopener">Grafana dashboard</a>
+    <a class="graf-link-button" href="help" target="_blank" rel="noopener">Help: reading the data</a></p>
 
   <div class="summary">
     <div class="stat-block"><div class="stat-label">Status</div><div class="stat-value" id="sumStatus">-</div></div>

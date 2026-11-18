@@ -13,6 +13,9 @@ from app.vibration.vibration_bus import BusError, ModbusBus
 from tests.vibration_fakes import FakeSensor, FakeSerial, fifo_data_frame, fifo_progress_frame, opener_for
 
 
+REAL_PORT_EXISTS = vapp._port_exists
+
+
 def sine(frequency, amplitude, rate, n=1024, offset=0.0):
     return [offset + amplitude * math.sin(2 * math.pi * frequency * i / rate) for i in range(n)]
 
@@ -290,6 +293,77 @@ class FftAppTests(unittest.TestCase):
         self.configure()
         vapp._fft_work(0x50, averages=1)
         self.assertEqual([m for m, _n, _v in self.sink.points], ["wtvb01_fft"])
+
+    def comb_fifo(self, roll_hz, amplitudes_g=(0.004, 0.003, 0.002)):
+        """Raw FIFO with a roll comb 1x/2x/3x on X and gravity on Z (sensor sign convention)."""
+        import random
+        rng = random.Random(4)
+        rate = proto.FIFO_DEFAULT_SAMPLE_RATE
+        samples = []
+        for i in range(proto.FIFO_SAMPLES):
+            x = sum(a * math.sin(2 * math.pi * roll_hz * k * i / rate + k) for k, a in enumerate(amplitudes_g, start=1))
+            samples.append((round(-(x + rng.gauss(0, 0.0003)) * 2048), 0, -1961))
+        return samples
+
+    def test_roll_is_detected_without_any_input(self):
+        self.configure()
+        self.sensor.fifo = self.comb_fifo(5.0)
+        vapp._fft_work(0x50)
+        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
+        self.assertEqual(spectrum["roll_source"], "auto")
+        self.assertAlmostEqual(spectrum["roll_hz"], 5.0, delta=0.05)
+        self.assertAlmostEqual(spectrum["roll_rpm"], 300.0, delta=3)
+        self.assertEqual(set(spectrum["axes"]["x"]["orders"]), {"0_5x", "1x", "2x", "3x"})
+        self.assertEqual((spectrum["velocity_min_hz"], spectrum["velocity_min_auto"]), (2.0, True))  # 300 rpm.
+        summary = self.sink.points[-1][2]
+        self.assertEqual(summary["roll_source"], 2.0)
+        self.assertIn("order_1x_x_mm_s", summary)
+        self.assertAlmostEqual(summary["roll_rpm"], 300.0, delta=3)
+        brief = self.client.get("/api/status").get_json()["sensors"][0]["fft"]
+        self.assertEqual(brief["roll_source"], "auto")
+
+    def test_fast_roll_uses_the_10_hz_velocity_limit(self):
+        self.configure()
+        self.sensor.fifo = self.comb_fifo(15.0)  # 900 rpm.
+        vapp._fft_work(0x50)
+        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
+        self.assertAlmostEqual(spectrum["roll_hz"], 15.0, delta=0.05)
+        self.assertEqual(spectrum["velocity_min_hz"], 10.0)
+
+    def test_without_a_roll_comb_there_are_no_orders(self):
+        self.configure()  # The default fake FIFO is a lone 30 Hz sine.
+        vapp._fft_work(0x50)
+        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
+        self.assertEqual((spectrum["roll_source"], spectrum["roll_hz"]), ("none", None))
+        self.assertEqual(spectrum["axes"]["x"]["orders"], {})
+        self.assertEqual(spectrum["velocity_min_hz"], 2.0)  # Unknown speed: include low frequencies.
+        self.assertNotIn("order_1x_x_g", self.sink.points[-1][2])
+
+    def test_api_settings_without_machine_data(self):
+        self.configure()
+        vapp.OPERATION["running"] = True  # FFT settings never touch the bus.
+        self.assertEqual(self.client.post("/api/config", json={"fft_velocity_min_hz": 10}).status_code, 200)
+        self.assertEqual(self.client.post("/api/config", json={"roll_min_rpm": 100, "roll_max_rpm": 1200}).status_code, 200)
+        self.assertEqual(self.client.post("/api/config", json={"roll_min_rpm": 600, "roll_max_rpm": 900}).status_code, 400)
+        self.assertEqual(self.client.post("/api/config", json={"fft_velocity_min_hz": 5}).status_code, 400)
+        vapp.OPERATION["running"] = False
+        self.sensor.fifo = self.comb_fifo(5.0)
+        vapp._fft_work(0x50)
+        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
+        self.assertEqual((spectrum["velocity_min_hz"], spectrum["velocity_min_auto"]), (10.0, False))
+        self.assertEqual(spectrum["roll_search_hz"], [1.6667, 20.0])
+        sensor = self.client.get("/api/status").get_json()["sensors"][0]
+        self.assertNotIn("speed_mode", sensor)
+        self.assertNotIn("roll_diameter_mm", sensor)
+
+    def test_sim_port_is_listed_and_present(self):
+        ports = self.client.get("/api/ports").get_json()["ports"]
+        self.assertFalse(any(p["path"].startswith("sim://") for p in ports))  # Hidden by default.
+        with patch.object(vapp, "SIM_PORTS_LISTED", True):
+            ports = self.client.get("/api/ports").get_json()["ports"]
+        self.assertTrue(any(p["path"].startswith("sim://") for p in ports))
+        self.assertTrue(REAL_PORT_EXISTS("sim://roll"))
+        self.assertFalse(REAL_PORT_EXISTS("/dev/serial/by-id/not-there"))
 
     def test_capture_averages_validation(self):
         self.configure()

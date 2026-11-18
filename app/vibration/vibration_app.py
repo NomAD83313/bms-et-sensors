@@ -14,11 +14,13 @@ from flask import Flask, jsonify, request
 try:
     from . import vibration_config as cfg
     from . import vibration_fft as fft
+    from . import vibration_sim as sim
     from . import wtvb01_protocol as proto
     from .vibration_bus import BusError, ModbusBus
 except ImportError:  # Flat import inside the container.
     import vibration_config as cfg
     import vibration_fft as fft
+    import vibration_sim as sim
     import wtvb01_protocol as proto
     from vibration_bus import BusError, ModbusBus
 
@@ -37,6 +39,10 @@ OFFLINE_AFTER_FAILURES = 3
 OFFLINE_RETRY_SEC = 5.0
 PORT_RETRY_SEC = 2.0
 SERIAL_DIRS = ("/dev/serial/by-id",)
+SIM_PORT = "sim://roll?speed=600&diameter=600"
+SIM_FAULTS_PORT = "sim://roll?speed=600&diameter=600&scenario=faults"
+# The simulated ports are offered in the port list only for test sessions.
+SIM_PORTS_LISTED = os.getenv("VIBRATION_SIM_PORTS", "0") == "1"
 
 app = Flask(__name__)
 
@@ -197,7 +203,7 @@ def _set_bus_state(**kwargs: Any) -> None:
 
 
 def _port_exists(path: str) -> bool:
-    return os.path.exists(path)
+    return path.startswith(cfg.SIM_PORT_PREFIX) or os.path.exists(path)
 
 
 def poll_cycle(config: dict[str, Any], sink: InfluxSink, clock: Callable[[], float] = time.monotonic,
@@ -395,17 +401,30 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None)
     rates = [c["sample_rate"] for c in captures if c["sample_rate"]]
     measured = sum(rates) / len(rates) if rates else None
     sample_rate = measured or proto.FIFO_DEFAULT_SAMPLE_RATE
-    result = fft.analyze_average([c["samples"] for c in captures], sample_rate)
+    result = fft.analyze_average([c["samples"] for c in captures], sample_rate,
+                                 velocity_min_hz=config["fft_velocity_min_hz"] or None,
+                                 roll_search_hz=cfg.roll_search_hz(config))
+    roll_hz = result["roll_hz"]
+    detection = result["roll_detection"]
+    if roll_hz:
+        result["summary"]["roll_rpm"] = round(roll_hz * 60.0, 2)
     observed = datetime.now(timezone.utc)
     spectrum = {
         "captured_at": observed.isoformat(timespec="milliseconds"), "periodic": periodic, "error": None,
         "sample_rate_hz": round(sample_rate, 3), "sample_rate_measured": measured is not None,
         "samples": result["samples"], "duration_s": round(result["duration_s"], 3), "averages": result["averages"],
         "df_hz": round(result["df_hz"], 5), "nyquist_hz": round(result["nyquist_hz"], 3),
+        "velocity_min_hz": result["velocity_min_hz"], "roll_hz": round(roll_hz, 4) if roll_hz else None,
+        "roll_source": result["roll_source"], "roll_confidence": round(detection["confidence"], 3) if detection else None,
+        "roll_search_hz": [round(v, 4) for v in cfg.roll_search_hz(config)],
+        "velocity_min_auto": not config["fft_velocity_min_hz"],
+        "roll_rpm": round(roll_hz * 60.0, 1) if roll_hz else None,
         "axes": {axis: {"acc_g": _round_list(data["acc_g"], 6), "velocity_mm_s": _round_list(data["velocity_mm_s"], 4),
                         "peaks": [{"hz": round(f, 3), "g": round(a, 6)} for f, a in data["peaks"]],
                         "bands_g": {k: round(v, 6) for k, v in data["bands_g"].items()},
-                        "velocity_rms_mm_s": round(data["velocity_rms_mm_s"], 4)}
+                        "velocity_rms_mm_s": round(data["velocity_rms_mm_s"], 4),
+                        "orders": {name: {"hz": round(o["hz"], 3), "g": round(o["g"], 6), "mm_s": round(o["mm_s"], 4)}
+                                   for name, o in data["orders"].items()}}
                  for axis, data in result["axes"].items()},
         "summary": result["summary"],
     }
@@ -438,6 +457,11 @@ def _spectrum_brief(address: int) -> dict[str, Any] | None:
     axes = spectrum.get("axes") or {}
     brief["peaks"] = {axis: data["peaks"] for axis, data in axes.items()}
     brief["velocity_rms_mm_s"] = {axis: data["velocity_rms_mm_s"] for axis, data in axes.items()}
+    brief["velocity_min_hz"] = spectrum.get("velocity_min_hz")
+    brief["roll_hz"] = spectrum.get("roll_hz")
+    for key in ("roll_source", "roll_confidence", "roll_rpm"):
+        brief[key] = spectrum.get(key)
+    brief["orders"] = {axis: data.get("orders", {}) for axis, data in axes.items()}
     return brief
 
 
@@ -463,6 +487,9 @@ def list_ports(dirs: tuple[str, ...] = SERIAL_DIRS) -> list[dict[str, str]]:
         for entry in sorted(Path("/dev").glob(pattern)):
             if not any(p["device"] == str(entry) for p in ports):
                 ports.append({"path": str(entry), "device": str(entry)})
+    if SIM_PORTS_LISTED:
+        ports.append({"path": SIM_PORT, "device": "simulated WTVB01 (roll 600 m/min, Ø600 mm)"})
+        ports.append({"path": SIM_FAULTS_PORT, "device": "simulated WTVB01, 30 min fault scenario"})
     return ports
 
 
@@ -484,12 +511,18 @@ def health_payload() -> dict[str, Any]:
         "baud": config["baud"], "sensors_enabled": len(enabled), "sensors_online": len(online),
         "cycle_ms": bus["cycle_ms"], "last_error": bus["last_error"] or CONFIG_ERROR, "operation": busy,
         "influx_configured": _influx_enabled(), "influx_error": INFLUX.last_error,
+        "simulation": sim.scenario_status(config["port"]) if config["port"].startswith(cfg.SIM_PORT_PREFIX) else None,
     }
 
 
 @app.get("/")
 def index():
     return _no_cache(Path(__file__).with_name("ui.html").read_text(encoding="utf-8"), "text/html; charset=utf-8")
+
+
+@app.get("/help")
+def help_page():
+    return _no_cache(Path(__file__).with_name("help.html").read_text(encoding="utf-8"), "text/html; charset=utf-8")
 
 
 @app.get("/ui.js")
@@ -548,7 +581,7 @@ def _busy_response():
 
 # Settings that never touch the bus; they may change while a capture or scan runs
 # (Stop must work during a long averaged series).
-FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages")
+FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages", "fft_velocity_min_hz", "roll_min_rpm", "roll_max_rpm")
 
 
 def _update_config(mutator: Callable[[dict[str, Any]], None], allow_while_busy: bool = False):

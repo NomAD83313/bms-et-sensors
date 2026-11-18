@@ -36,6 +36,12 @@ class BusError(Exception):
 
 
 def pyserial_opener(port: str, baud: int) -> Any:
+    if port.startswith("sim://"):  # Built-in simulated sensor for test sessions without a machine.
+        try:
+            from . import vibration_sim
+        except ImportError:  # Flat import inside the container.
+            import vibration_sim
+        return vibration_sim.opener(port, baud)
     import serial  # Imported lazily so protocol tests do not need pyserial.
 
     return serial.Serial(port=port, baudrate=baud, bytesize=8, parity="N", stopbits=1,

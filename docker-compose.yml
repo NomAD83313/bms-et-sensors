@@ -343,6 +343,8 @@ services:
       - VIBRATION_INFLUX_MEASUREMENT=${VIBRATION_INFLUX_MEASUREMENT:-wtvb01}
       - VIBRATION_INFLUX_BATCH_SIZE=${VIBRATION_INFLUX_BATCH_SIZE:-500}
       - VIBRATION_INFLUX_FLUSH_MS=${VIBRATION_INFLUX_FLUSH_MS:-1000}
+      # 1 lists the simulated sensor ports (sim://...) for test sessions without a machine.
+      - VIBRATION_SIM_PORTS=${VIBRATION_SIM_PORTS:-0}
     # USB serial (ttyUSB, 188) and CDC-ACM (ttyACM, 166) adapters. /dev is mounted
     # instead of devices: so by-id paths survive adapter replugging.
     device_cgroup_rules:

@@ -188,6 +188,10 @@ class RouteTests(AppTestCase):
     def test_ui_assets_are_served(self):
         self.assertIn(b"Vibration sensors", self.client.get("/").data)
         self.assertEqual(self.client.get("/ui.js").status_code, 200)
+        help_page = self.client.get("/help")
+        self.assertEqual(help_page.status_code, 200)
+        self.assertIn(b"Fault patterns", help_page.data)
+        self.assertIn(b'href="help"', self.client.get("/").data)
 
 
 if __name__ == "__main__":

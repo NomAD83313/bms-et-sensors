@@ -13,14 +13,22 @@ const FFT_AVERAGE_CHOICES = [1, 2, 4, 8, 16];
 let pendingIntervalSec = null;
 // The table re-renders every second; a re-render between press and release would swallow the click.
 let pointerDown = false;
-const rollSetup = (() => {
-  const defaults = { lineSpeed: 450, rollDiameter: 550 };
-  try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem('vibrationRollSetup') || '{}') };
-  } catch (_) {
-    return defaults;
-  }
-})();
+const ORDER_LABELS = { '0_5x': '0.5x', '1x': '1x', '2x': '2x', '3x': '3x' };
+
+// Roll rotation found automatically from the last capture series (no machine data is entered).
+function rollRotation(sensor) {
+  const fft = sensor.fft || {};
+  return fft.roll_source === 'auto' && fft.roll_rpm ? { rpm: fft.roll_rpm, hz: fft.roll_rpm / 60, confidence: fft.roll_confidence } : null;
+}
+
+function rollInfo(sensor) {
+  const roll = rollRotation(sensor);
+  const fft = sensor.fft || {};
+  const text = roll
+    ? `<span>1x = ${fmt(roll.hz, 2)} Hz · confidence ${fmt(roll.confidence, 2)}</span><strong>${fmt(roll.rpm, 1)} rpm</strong>`
+    : `<span>${fft.roll_source ? 'no clear 1x in the last capture series' : 'waiting for a capture'}</span><strong>—</strong>`;
+  return `<div class="roll-setup"><strong>Roll speed (automatic)</strong><div class="roll-result">${text}</div></div>`;
+}
 
 function duration(seconds) {
   const s = Math.max(0, Math.round(seconds));
@@ -162,7 +170,8 @@ function valuesDetails(address, values, fields) {
     <div class="axis-values-wrap"><div class="axis-values-grid">${axes}</div></div></details>` : '';
 }
 
-function harmonicsPanel(address, values, harmonics) {
+function harmonicsPanel(sensor, values, harmonics) {
+  const address = sensor.address;
   if (!harmonics || !Number.isFinite(values.energy_x_point3)) return '';
   const pointMultipliers = [0.25, 0.5, 1, 2, 3, 4, 5, 6];
   const bandMultipliers = [[0, 0.5], [0.5, 1], [1, 2], [2, 3], [3, 4], [4, 5]];
@@ -172,16 +181,8 @@ function harmonicsPanel(address, values, harmonics) {
   const detectedBand = (frequency, bounds) => Number.isFinite(frequency) && frequency > 0
     ? `${fmt(frequency * bounds[0], 2)}–${fmt(frequency * bounds[1], 2)} Hz`
     : '—';
-  const rpm = rollSetup.lineSpeed > 0 && rollSetup.rollDiameter > 0
-    ? rollSetup.lineSpeed / (Math.PI * rollSetup.rollDiameter / 1000)
-    : null;
-  const expectedHz = rpm == null ? null : rpm / 60;
-  const rollForm = `<div class="roll-setup">
-    <strong>Expected roll rotation</strong>
-    <label>Line speed <span><input data-machine="lineSpeed" type="number" min="0" step="0.1" value="${escapeHtml(rollSetup.lineSpeed)}"> m/min</span></label>
-    <label>Roll diameter <span><input data-machine="rollDiameter" type="number" min="0" step="1" value="${escapeHtml(rollSetup.rollDiameter)}"> mm</span></label>
-    <div class="roll-result"><span>${rpm == null ? '—' : fmt(rpm, 1)} rpm</span><strong>${expectedHz == null ? '—' : fmt(expectedHz, 2) + ' Hz'}</strong></div>
-  </div>`;
+  const roll = rollRotation(sensor);
+  const rollForm = `<p class="note">Roll rotation (automatic): <strong>${roll ? `${fmt(roll.rpm, 1)} rpm · 1x = ${fmt(roll.hz, 2)} Hz` : 'unknown'}</strong></p>`;
   const axes = ['x', 'y', 'z'].map((axis) => {
     const frequency = values[`frequency_${axis}_hz`];
     const points = harmonics.points.map((label, i) => ({ label, value: values[`energy_${axis}_point${i + 1}`] }));
@@ -223,7 +224,7 @@ async function loadSpectrum(address, capturedAt) {
   if (lastStatus) renderSensors(lastStatus);
 }
 
-function spectrumChart(spectrum) {
+function spectrumChart(spectrum, roll) {
   const width = 1000;
   const height = 260;
   const pad = { left: 52, right: 12, top: 12, bottom: 28 };
@@ -241,10 +242,24 @@ function spectrumChart(spectrum) {
   }
   const gridY = [0, 0.25, 0.5, 0.75, 1].map((p) => `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${sy(top * p)}" y2="${sy(top * p)}"/>
     <text x="${pad.left - 6}" y="${sy(top * p) + 4}" text-anchor="end">${(top * p).toPrecision(2)}</text>`);
+  const markers = roll ? [0.5, 1, 2, 3].map((k) => k * roll.hz).filter((f) => f <= maxHz).map((f, i) =>
+    `<line class="order-mark" x1="${sx(f)}" x2="${sx(f)}" y1="${pad.top}" y2="${height - pad.bottom}"/><text class="order-label" x="${sx(f) + 3}" y="${pad.top + 10}">${['0.5x', '1x', '2x', '3x'][i]}</text>`) : [];
   const lines = series.map((points, i) => `<polyline class="axis-${'xyz'[i]}" points="${points.map(([f, v]) => `${sx(f).toFixed(1)},${sy(v).toFixed(1)}`).join(' ')}"/>`);
   return `<svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Amplitude spectrum">
-    ${gridX.join('')}${gridY.join('')}${lines.join('')}
+    ${gridX.join('')}${gridY.join('')}${markers.join('')}${lines.join('')}
     <text x="${width - pad.right}" y="${height - 10}" text-anchor="end">Hz</text></svg>`;
+}
+
+function ordersTable(spectrum) {
+  if (!spectrum.roll_hz) return '<p class="note">No clear roll 1x in this capture series, so no roll orders (a very smooth roll, strong foreign vibration or a stopped line).</p>';
+  const names = Object.keys(ORDER_LABELS);
+  const rows = ['x', 'y', 'z'].map((axis) => {
+    const orders = spectrum.axes[axis].orders || {};
+    const cells = names.map((n) => orders[n] ? `${fmt(orders[n].mm_s, 2)} mm/s<br><small>${fmt(orders[n].hz, 2)} Hz</small>` : '—').join('</td><td>');
+    return `<tr><td class="l"><span class="axis-${axis}">${axis.toUpperCase()}</span></td><td>${cells}</td></tr>`;
+  }).join('');
+  return `<table class="fft-peaks"><thead><tr><th class="l">Roll orders (1x = ${fmt(spectrum.roll_hz, 2)} Hz, automatic)</th>${names.map((n) => `<th>${ORDER_LABELS[n]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="note">Strongest line within ±3 % of each order (speed estimate tolerance), as velocity amplitude.</p>`;
 }
 
 function spectrumPanel(sensor, busy) {
@@ -285,14 +300,15 @@ function spectrumPanel(sensor, busy) {
         <span>Sample rate <strong>${rate}</strong></span>
         <span>Length <strong>${fmt(spectrum.duration_s, 2)} s</strong> · resolution <strong>${fmt(spectrum.df_hz, 3)} Hz</strong></span>
         <span>Averaged <strong>${spectrum.averages || 1} capture${(spectrum.averages || 1) > 1 ? 's' : ''}</strong></span>
+        ${spectrum.roll_hz ? `<span>Roll 1x <strong>${fmt(spectrum.roll_hz, 2)} Hz · ${fmt(spectrum.roll_hz * 60, 0)} rpm</strong> (${spectrum.roll_source}${spectrum.roll_confidence != null ? `, confidence ${fmt(spectrum.roll_confidence, 2)}` : ''})</span>` : ''}
         <span class="unit"><button data-unit="g" class="${spectrumUnit === 'g' ? 'on' : ''}">g</button><button data-unit="mm_s" class="${spectrumUnit === 'g' ? '' : 'on'}">mm/s</button></span>
       </div>
-      ${spectrumChart(spectrum)}
+      ${spectrumChart(spectrum, spectrum.roll_hz ? { hz: spectrum.roll_hz } : null)}
       <div class="fft-legend"><span class="axis-x">X</span><span class="axis-y">Y</span><span class="axis-z">Z</span><span>amplitude, ${unitLabel}</span></div>
-      <table class="fft-peaks"><thead><tr><th class="l">Axis</th><th class="l">Top peaks</th><th>Velocity RMS ≥10 Hz, mm/s</th><th class="l">Band RMS, g (Hz)</th></tr></thead><tbody>${peakRows}</tbody></table>`;
+      <table class="fft-peaks"><thead><tr><th class="l">Axis</th><th class="l">Top peaks</th><th>Velocity RMS ≥${fmt(spectrum.velocity_min_hz || 10, 0)} Hz${spectrum.velocity_min_auto ? ' (auto)' : ''}, mm/s</th><th class="l">Band RMS, g (Hz)</th></tr></thead><tbody>${peakRows}</tbody></table>${ordersTable(spectrum)}`;
   }
   return `<details class="values" data-addr="${key}"${open}><summary>Spectrum (FFT)</summary>
-    <div class="fft-head">${button}</div>${periodic}${error}${body}</details>`;
+    ${rollInfo(sensor)}<div class="fft-head">${button}</div>${periodic}${error}${body}</details>`;
 }
 
 function renderSensors(status) {
@@ -301,7 +317,7 @@ function renderSensors(status) {
     const v = s.values || {};
     const dot = !s.enabled ? 'off' : (s.online ? 'on' : '');
     const lastError = s.last_error ? `<div class="note">${escapeHtml(s.last_error)}</div>` : '';
-    const details = spectrumPanel(s, busy) + harmonicsPanel(s.address, v, status.harmonics) + valuesDetails(s.address, v, status.fields);
+    const details = spectrumPanel(s, busy) + harmonicsPanel(s, v, status.harmonics) + valuesDetails(s.address, v, status.fields);
     // Expandable panels get their own full-width row so opening them never moves the values.
     const detailRow = details ? `<tr class="detail-row"><td colspan="8" class="l">${details}</td></tr>` : '';
     return `<tr class="sensor-row">
@@ -357,7 +373,10 @@ function renderSummary(status) {
   const h = status.health;
   const kind = h.status === 'ok' ? 'status-ok' : (h.status === 'idle' ? 'status-warn' : 'status-err');
   $('sumStatus').innerHTML = `<span class="status-pill ${kind}">${escapeHtml(h.status)}</span>${h.last_error ? `<div class="note">${escapeHtml(h.last_error)}</div>` : ''}`;
-  $('sumPort').textContent = h.port ? `${h.port} @ ${h.baud}${h.port_present ? '' : ' (missing)'}` : 'not selected';
+  const simulation = h.simulation;
+  const simText = !simulation ? '' : simulation.scenario === 'steady' ? ' · SIMULATION'
+    : ` · SIMULATION: ${simulation.stage}${simulation.elapsed_s != null ? ` (${duration(simulation.elapsed_s)} of ${duration(simulation.length_s)})` : ''}`;
+  $('sumPort').textContent = (h.port ? `${h.port} @ ${h.baud}${h.port_present ? '' : ' (missing)'}` : 'not selected') + simText;
   $('sumOnline').textContent = `${h.sensors_online} / ${h.sensors_enabled}`;
   $('sumCycle').textContent = h.cycle_ms == null ? '-' : `${h.cycle_ms} ms`;
   const interval = status.config.fft_interval_sec;
@@ -388,7 +407,7 @@ async function refresh() {
     renderOperation(status.operation);
     lastStatus = status;
     renderSummary(status);
-    if (!pointerDown && !document.activeElement.matches('[data-machine], select[data-averages], input[data-fft-interval]')) renderSensors(status);
+    if (!pointerDown && !document.activeElement.matches('select[data-averages], input[data-fft-interval]')) renderSensors(status);
     if (!formLoaded) await loadForm(status);
   } catch (error) {
     $('sumStatus').textContent = `unreachable: ${error.message}`;
@@ -491,13 +510,6 @@ $('sensorRows').addEventListener('change', (event) => {
     run('sensorMsg', async () => { await api('POST', 'api/config', { fft_averages: value }); return `Average: ${value} capture(s).`; });
     return;
   }
-  const input = event.target.closest('input[data-machine]');
-  if (!input) return;
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value <= 0) return;
-  rollSetup[input.dataset.machine] = value;
-  try { localStorage.setItem('vibrationRollSetup', JSON.stringify(rollSetup)); } catch (_) { /* storage unavailable */ }
-  if (lastStatus) renderSensors(lastStatus);
 });
 
 $('refreshPorts').addEventListener('click', () => loadPorts($('port').value).catch((e) => setMsg('busMsg', e.message, 'err')));

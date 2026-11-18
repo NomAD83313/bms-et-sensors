@@ -151,7 +151,30 @@ behaviour below was measured on a WTVB01-485 at 115200 and 230400 baud:
 The collector measures the sample rate of every capture from the progress frames (falling back
 to 246 Hz, shown as "default") and computes per axis: mean removed, Hann window, amplitude
 spectrum in g and velocity spectrum in mm/s, the three strongest peaks above 2 Hz, band RMS in
-g (2–10, 10–25, 25–50, 50–100, 100 Hz–Nyquist) and velocity RMS from 10 Hz to Nyquist.
+g (2–10, 10–25, 25–50, 50–100, 100 Hz–Nyquist) and velocity RMS from a lower limit to Nyquist.
+
+No machine data is entered: line speed and roll diameter are not needed and not stored.
+
+- **Roll speed (1x)** is detected in every capture series. The velocity spectra of all axes are
+  combined, each line's prominence over a local noise floor (25th percentile within ±2 Hz) is
+  scored at 1x, 2x and 3x (weights 1 / 0.7 / 0.5) on a quarter-bin grid within `roll_min_rpm` …
+  `roll_max_rpm` (config/API, default 60–1500 rpm = 1–25 Hz), and the best candidate is refined
+  from the peak positions. Candidates at simple ratios of the best (f/2, 2f, f/3 …) belong to the
+  same harmonic family and are not counted as competitors. The result is accepted with comb /
+  local noise ≥ 4, confidence (1 − best unrelated / best) ≥ 0.25, a comb line of at least 3 % of
+  the strongest line and a 1x line of at least 15 % of the comb's strongest line; otherwise there
+  are no roll orders for that series. On the simulator every fault stage of rolls from Ø350 to
+  Ø900 mm at 200–1200 m/min (1.3–15.8 Hz) is found within 0.05 Hz, including a speed drop.
+  Limits: a very weak 1x with a strong 2x can double the rpm; neighbouring rolls can be seen.
+- **Roll orders**: for 0.5x, 1x, 2x and 3x of the detected frequency the strongest line within
+  ±3 % (at least 1.5 bins) is reported. The chart marks the orders.
+- **Velocity RMS lower limit** (`fft_velocity_min_hz`, config/API): 0 = automatic (default): 2 Hz
+  up to 600 rpm or when no roll speed was found, 10 Hz above, as ISO 10816-3 requires; 2 or 10
+  forces a limit.
+- Summary fields: `roll_hz`, `roll_rpm`, `roll_source` (0 none, 2 auto), `roll_confidence`,
+  `velocity_rms_min_hz`.
+- The sensor's own registers (velocity, frequency) are specified from 5 Hz; a slow roll's 1x can
+  be below that, so use the FFT values for it.
 
 Because the sensor transmits unprompted during a capture, a capture is an exclusive bus
 operation like a scan: polling of every sensor pauses for about 4.5 s. Within an averaged
@@ -178,7 +201,7 @@ gap is unknown, so joined records would add false lines. Instead several capture
 in a row, each is transformed on its own and the amplitudes are averaged in power (RMS
 averaging). Resolution stays 0.24 Hz; steady lines keep their amplitude while random noise
 and transients are smoothed (the noise floor fluctuates about √N less). The **Average** selector in
-the spectrum panel (`fft_averages`, 1–16, default 1) applies to manual and periodic captures;
+the spectrum panel (`fft_averages`, 1–16, default 1) applies to on-demand and periodic captures;
 the API also takes `{"averages": N}` in the POST body for one capture. Polling pauses for about 4.5 s per capture (16 captures: about 72 s); the UI shows
 `capture N/M`, and one failed capture fails the whole series. The summary field `averages`
 records the count.
@@ -186,15 +209,37 @@ records the count.
 Every capture writes one summary point to InfluxDB measurement `wtvb01_fft` (override with
 `VIBRATION_FFT_INFLUX_MEASUREMENT`), same tags as `wtvb01`, fields `sample_rate_hz`, `averages`,
 `peak{1..3}_{x,y,z}_hz`, `peak{1..3}_{x,y,z}_g`, `band_{x,y,z}_{2_10,10_25,25_50,50_100,100_nyq}_g`
-and `velocity_rms_{x,y,z}_mm_s`. The full spectrum is not stored.
+`velocity_rms_{x,y,z}_mm_s`, `velocity_rms_min_hz`, `roll_source` and, when a roll comb was
+found, `roll_hz`, `roll_rpm`, `roll_confidence` and `order_{0_5x,1x,2x,3x}_{x,y,z}_{hz,g,mm_s}`.
+The full spectrum is not stored.
 
 The Grafana dashboard **Vibration (WTVB01-485)** has a section **Spectrum (FFT) · raw FIFO
 captures** built from `wtvb01_fft`: last main peak, its amplitude and velocity RMS per axis;
 velocity RMS from FFT over time; the three strongest peaks per axis as points against the
-expected roll 1x/2x/3x (dashed, from the line speed and roll diameter variables); main peak
-amplitude; band RMS stacked per axis (bands numbered 1–5 from low to high frequency); and the
-sample rate and number of averaged captures of the last series. Each capture series is one
+roll 1x/2x/3x (dashed, from the detected `roll_hz`); main peak amplitude; band RMS stacked per axis (bands numbered 1–5 from low to high
+frequency); the sample rate and number of averaged captures of the last series; and roll order
+amplitudes 0.5x/1x/2x/3x per axis in mm/s; and the detected roll speed (rpm) with its
+confidence. The top tiles show the last detected roll rpm and 1x, and the dominant-frequency
+panel draws the detected 1x/2x/3x. The only dashboard variable is the sensor. Each capture series is one
 point, so these panels need periodic capture to show trends.
+
+## Simulation (test session without a machine)
+
+Set `VIBRATION_SIM_PORTS=1` in `.env` and rebuild the collector; the Bus form then lists
+`sim://roll?speed=600&diameter=600` and the fault scenario port next to the real ports (`speed`
+in m/min and `diameter` in mm only describe the simulated machine). Without it the simulated
+ports are not offered. `vibration_sim.py` then answers as
+one WTVB01 at address 0x50 with the real protocol and timing: register reads, and FIFO captures
+with progress frames every 250 ms and the data frame after 1024 / 246.3 s at the selected baud
+rate. It models a directly driven roll running 1 % below the nominal speed (slip) with ±0.3 %
+drift over 5 minutes; peak velocity at roll orders (X: 0.5x 0.15, 1x 2.5, 2x 1.0, 3x 0.4 mm/s;
+Y: 1x 1.8, 2x 1.4; Z: 1x 0.8, 2x 0.4), a foreign 24.5 Hz line on Z that does not follow the
+speed, gravity on Z and noise. Register values are approximations; the sensor's internal
+filtering is not modelled.
+
+The real sensor is not polled while the simulated port is selected. Rename the sensor for the
+session (e.g. `sim-roll-600`) so the simulated series stay apart from real data in InfluxDB,
+and select the real port and name again afterwards.
 
 ## Sensor configuration
 

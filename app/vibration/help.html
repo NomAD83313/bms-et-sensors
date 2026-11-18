@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vibration help</title>
+  <link rel="stylesheet" href="device-common.css">
+  <style>
+    .page { max-width: 1000px; margin: 0 auto; }
+    .section { padding: 18px 22px; margin: 0 0 18px; }
+    .section h2 { margin: 0 0 10px; font-size: 1.2rem; }
+    .section h3 { margin: 18px 0 6px; font-size: 1rem; color: var(--accent); }
+    .section p, .section li { line-height: 1.5; }
+    .toc { columns: 2; column-gap: 32px; margin: 0; padding-left: 20px; }
+    .toc li { break-inside: avoid; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 8px 0; }
+    th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .zone-a { color: var(--ok); font-weight: 700; }
+    .zone-b { color: #4d7d1b; font-weight: 700; }
+    .zone-c { color: var(--warn); font-weight: 700; }
+    .zone-d { color: var(--err); font-weight: 700; }
+    .callout { padding: 10px 14px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 6px; margin: 10px 0; }
+    .callout.warn { border-color: var(--warn); background: var(--warn-bg); }
+    code { font-size: 0.88em; background: var(--panel-soft); padding: 1px 4px; border-radius: 4px; }
+    .back { display: inline-block; margin-bottom: 8px; }
+    @media (max-width: 700px) { .toc { columns: 1; } body { padding: 16px; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <a class="back graf-link-button" href="./">← Vibration sensors</a>
+  <span class="eyebrow">WTVB01-485 · how to read the data</span>
+  <h1>Vibration help</h1>
+  <p class="page-subtitle">What each value means, how to read the spectrum and which patterns point to which fault.</p>
+
+  <div class="card section">
+    <h2>Contents</h2>
+    <ol class="toc">
+      <li><a href="#workflow">Recommended workflow</a></li>
+      <li><a href="#live">Live values</a></li>
+      <li><a href="#stats">Statistics: RMS, kurtosis, crest factor</a></li>
+      <li><a href="#spectrum">Spectrum (FFT)</a></li>
+      <li><a href="#orders">Roll orders 0.5x / 1x / 2x / 3x</a></li>
+      <li><a href="#faults">Fault patterns</a></li>
+      <li><a href="#severity">How severe is it? (ISO 10816-3)</a></li>
+      <li><a href="#harmonics">Sensor harmonics (spectrum energy)</a></li>
+      <li><a href="#limits">Limits of the sensor</a></li>
+      <li><a href="#grafana">Grafana dashboard</a></li>
+      <li><a href="#simulation">Simulation</a></li>
+    </ol>
+  </div>
+
+  <div class="card section" id="workflow">
+    <h2>Recommended workflow</h2>
+    <ol>
+      <li><strong>Nothing to enter.</strong> The roll speed (1x) is found from the vibration itself in every capture series, and the velocity RMS
+        range follows from it (2 Hz up to 600 rpm, 10 Hz above, per ISO 10816-3). Line speed and roll diameter are not needed.</li>
+      <li><strong>Start periodic capture</strong> (e.g. every 60–300 s, Average 2–4). Each capture series is one point in Grafana.</li>
+      <li><strong>Record a baseline</strong> with the machine in good condition at its usual speed (at least 20–30 minutes). Note velocity RMS,
+        1x and 2x amplitudes and the band distribution per axis.</li>
+      <li><strong>Watch the trends</strong>, not single values. A change against this machine's own baseline matters more than any absolute number.</li>
+      <li><strong>Check speed steps.</strong> Lines that move with the dashed 1x/2x/3x markers come from the roll; lines that stay put come from elsewhere.</li>
+    </ol>
+    <div class="callout">Rule of thumb used in condition monitoring: a value that doubles against the baseline deserves attention, a value that rises
+      four times needs action, whatever its absolute level.</div>
+  </div>
+
+  <div class="card section" id="live">
+    <h2>Live values (sensor registers)</h2>
+    <p>Read from the sensor about once per second (poll interval). The sensor computes them itself, specified for 5–100 Hz.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Value</th><th>Unit</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Vibration velocity</td><td>mm/s</td><td>Overall vibration velocity per axis. The best single indicator of mechanical condition for 10–1000 rpm machines.</td></tr>
+        <tr><td>Vibration displacement</td><td>µm</td><td>Movement amplitude. Large at low frequencies; useful for slow rolls and looseness.</td></tr>
+        <tr><td>Dominant frequency</td><td>Hz</td><td>Strongest frequency the sensor found. Compare with the roll 1x / 2x.</td></tr>
+        <tr><td>Acceleration</td><td>g</td><td>Heavily smoothed; mainly shows mounting orientation (≈1 g on the vertical axis). Not a vibration measure.</td></tr>
+        <tr><td>Temperature</td><td>°C</td><td>Chip temperature of the sensor, roughly the housing temperature. A slow rise can follow bearing problems.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card section" id="stats">
+    <h2>Statistics: RMS, kurtosis, crest factor</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Value</th><th>Normal</th><th>Watch for</th></tr></thead>
+      <tbody>
+        <tr><td>RMS vibration velocity</td><td>machine specific, see <a href="#severity">ISO zones</a></td><td>Steady rise: wear, unbalance, misalignment, looseness.</td></tr>
+        <tr><td>RMS acceleration</td><td>machine specific</td><td>Rises with high-frequency content: bearings, gears, impacts.</td></tr>
+        <tr><td>Kurtosis</td><td class="num">≈ 1.5 (pure sine) … 3 (random)</td><td>Clearly above 3–4: short impacts, typical of rolling-bearing damage or rubbing. Very early indicator.</td></tr>
+        <tr><td>Crest factor (peak / RMS)</td><td class="num">≈ 1.4 (sine) … 3–4 (random)</td><td>Rises with impacts; can fall again at an advanced bearing defect when the RMS grows too.</td></tr>
+        <tr><td>Skewness</td><td class="num">≈ 0</td><td>Asymmetric signal: knocking in one direction, rubbing, loose foot.</td></tr>
+        <tr><td>Waveform / peak / pulse index</td><td>stable</td><td>Shape factors; compare with the baseline only.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn">On a sensor at rest the statistics are noisy (for example kurtosis on the gravity axis). Judge them only with the machine running.</div>
+  </div>
+
+  <div class="card section" id="spectrum">
+    <h2>Spectrum (FFT)</h2>
+    <p>The collector reads 1024 raw acceleration samples per axis from the sensor (one capture, about 4.2 s) and computes the spectrum itself.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Item</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Sample rate</td><td>Measured for every capture (≈ 246 Hz). "(default)" means it could not be measured and 246 Hz was used.</td></tr>
+        <tr><td>Length / resolution</td><td>4.16 s of signal, 0.24 Hz between spectrum lines. Peaks closer than about 0.5 Hz merge.</td></tr>
+        <tr><td>Frequency range</td><td>0 to ≈ 123 Hz (half the sample rate). Peaks are reported from 2 Hz.</td></tr>
+        <tr><td>Averaged N captures</td><td>N captures in a row, averaged. Steady lines keep their height, noise and random spikes shrink (about √N). Resolution does not improve.</td></tr>
+        <tr><td>g / mm/s</td><td>Acceleration amplitude or velocity amplitude. Velocity emphasises low frequencies (roll orders), acceleration high ones (bearings, impacts).</td></tr>
+        <tr><td>Top peaks</td><td>Three strongest lines per axis with frequency and amplitude.</td></tr>
+        <tr><td>Velocity RMS</td><td>RMS of the velocity spectrum from 2 Hz (rolls up to 600 rpm or unknown speed) or 10 Hz (faster) to 123 Hz.</td></tr>
+        <tr><td>Band RMS</td><td>Acceleration RMS in 2–10, 10–25, 25–50, 50–100 and 100–123 Hz. Shows where the energy is and where it moves.</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Reading the chart</h3>
+    <ul>
+      <li>Red dashed lines mark 0.5x, 1x, 2x and 3x of the roll. A peak on a marker is caused by the roll rotation.</li>
+      <li>The markers come from the automatically found 1x; when no clear 1x is found there are no markers.</li>
+      <li>The rise at 0–1 Hz is window leakage of the removed gravity; ignore it.</li>
+      <li>Compare axes: the radial axes (perpendicular to the shaft) show unbalance; the axial axis shows misalignment more strongly.</li>
+    </ul>
+  </div>
+
+  <div class="card section" id="orders">
+    <h2>Roll orders 0.5x / 1x / 2x / 3x</h2>
+    <p>With the roll frequency known, the collector reports the velocity amplitude (mm/s) of the strongest line within ±3 % of each order.</p>
+    <h3>How the roll speed is found</h3>
+    <ul>
+      <li>In every capture series the collector searches 60–1500 rpm (1–25 Hz) for the harmonic comb 1x + 2x + 3x in the velocity spectrum of all
+        axes and refines it from the peak positions. Each roll is found on its own, whatever its diameter, and the result follows every speed change.</li>
+      <li>The result (rpm, 1x in Hz, confidence 0–1) is shown in the spectrum panel and stored in Grafana (<em>Roll speed from vibration</em>).</li>
+      <li>No clear comb (very smooth roll, strong foreign vibration, stopped line): no roll orders for that series.</li>
+      <li>If the 1x line is very weak and 2x strong, the 2x may be taken for 1x (rpm doubled). Check the rpm against the line once.</li>
+      <li>Sensors on neighbouring rolls can see each other's vibration; each sensor normally finds its own roll because that is strongest at its bearing.</li>
+      <li>Compare trends at similar speeds: unbalance grows roughly with the square of the speed.</li>
+    </ul>
+    <ul>
+      <li><strong>1x</strong> dominant and rising: unbalance or eccentricity.</li>
+      <li><strong>2x</strong> at or above 1x (ratio 2x/1x ≥ 0.5–1): misalignment, coupling problem, looseness.</li>
+      <li><strong>0.5x</strong> clearly present: rubbing or looseness.</li>
+      <li><strong>Orders missing</strong> while the overall level stays: no clear roll comb was found in that series (see above).</li>
+    </ul>
+  </div>
+
+  <div class="card section" id="faults">
+    <h2>Fault patterns</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fault</th><th>What you see</th><th>Where</th><th>Next check</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Unbalance</strong></td><td>1x high and rising, mostly radial (X/Y), little axial; sine-like signal (low kurtosis); grows with speed².</td>
+          <td>Roll orders 1x, velocity RMS, band 2–10 Hz (slow roll)</td><td>Balance the roll; check deposits or missing material.</td></tr>
+        <tr><td><strong>Eccentricity / bent roll</strong></td><td>Strong 1x, often also 2x; does not drop after balancing.</td>
+          <td>Roll orders 1x, 2x</td><td>Measure run-out.</td></tr>
+        <tr><td><strong>Misalignment</strong></td><td>2x comparable to or above 1x, also 3x; high axial vibration.</td>
+          <td>Roll orders 2x, peaks on the 2x marker</td><td>Check motor–roll alignment and coupling.</td></tr>
+        <tr><td><strong>Mechanical looseness</strong></td><td>Many harmonics (1x … 6x and more), half orders 0.5x, 1.5x, 2.5x; displacement up; values unstable.</td>
+          <td>Roll orders 0.5x, band 10–25 Hz, top peaks</td><td>Check bearing housings, foot bolts, base frame.</td></tr>
+        <tr><td><strong>Rolling-bearing damage</strong></td><td>Kurtosis and crest factor up first, then band 50–100 and 100+ Hz; bearing defect frequencies (several times 1x) or their modulation; temperature later.</td>
+          <td>Kurtosis, crest factor, Band RMS high bands</td><td>Lubrication, bearing inspection. Note the sensor sees only up to ≈ 123 Hz.</td></tr>
+        <tr><td><strong>Rub</strong></td><td>0.5x and harmonics, impacts (kurtosis), sometimes unstable phase.</td>
+          <td>Roll orders 0.5x, kurtosis</td><td>Check seals, doctor blades, guards.</td></tr>
+        <tr><td><strong>Resonance</strong></td><td>One frequency very high at a certain speed only; drops when the speed changes.</td>
+          <td>Peaks over a speed step</td><td>Avoid that speed or stiffen the structure.</td></tr>
+        <tr><td><strong>Foreign source</strong></td><td>A line that does not move when the line speed changes.</td>
+          <td>Spectral peaks vs roll harmonics</td><td>Look for pumps, fans or motors nearby.</td></tr>
+        <tr><td><strong>Motor electrical</strong></td><td>Lines at the supply or inverter frequency and its multiples, independent of load; vanish instantly when the motor is switched off.</td>
+          <td>Top peaks</td><td>Compare with motor data (poles, inverter frequency).</td></tr>
+        <tr><td><strong>Wrong roll speed</strong></td><td>Detected rpm twice or half the real one; markers on every second line.</td>
+          <td>Roll orders, peaks vs markers</td><td>Compare the detected rpm with the line once; a doubled rpm means the 2x was taken.</td></tr>
+        <tr><td><strong>Communication problem</strong></td><td>"capture N/M: CRC mismatch" or timeouts, reads/errors counter rising.</td>
+          <td>Sensor row, Spectrum (FFT) message</td><td>Check RS485 cable, termination, baud rate.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card section" id="severity">
+    <h2>How severe is it? (ISO 10816-3)</h2>
+    <p>Velocity RMS (mm/s, broadband) of machines 15 kW … 50 MW measured on bearing housings. For 120–600 rpm the range starts at 2 Hz, above 600 rpm at 10 Hz.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Machine</th><th>Foundation</th><th class="zone-a">A/B</th><th class="zone-b">B/C</th><th class="zone-c">C/D</th></tr></thead>
+      <tbody>
+        <tr><td>Group 2: 15–300 kW</td><td>rigid</td><td class="num">1.4</td><td class="num">2.8</td><td class="num">4.5</td></tr>
+        <tr><td>Group 2: 15–300 kW</td><td>flexible</td><td class="num">2.3</td><td class="num">4.5</td><td class="num">7.1</td></tr>
+        <tr><td>Group 1: 300 kW – 50 MW</td><td>rigid</td><td class="num">2.3</td><td class="num">4.5</td><td class="num">7.1</td></tr>
+        <tr><td>Group 1: 300 kW – 50 MW</td><td>flexible</td><td class="num">3.5</td><td class="num">7.1</td><td class="num">11.0</td></tr>
+      </tbody>
+    </table></div>
+    <p><span class="zone-a">A</span> newly commissioned · <span class="zone-b">B</span> unrestricted long-term operation ·
+      <span class="zone-c">C</span> limited operation, plan maintenance · <span class="zone-d">D</span> damage likely.</p>
+    <div class="callout warn">These limits are for whole machines on their bearings, not for every roll. Use them as orientation and rely on the trend
+      against the machine's own baseline. Rolls in paper, film and print lines often have stricter process limits (marks, gauge variation).</div>
+  </div>
+
+  <div class="card section" id="harmonics">
+    <h2>Sensor harmonics (spectrum energy)</h2>
+    <p>The sensor computes its own spectrum about once per second and reports energy at 8 focus points (0.25x … 6x), 6 bands and the total.
+      The manual does not say which frequency is 1x and it cannot be set; field tests suggest a fixed reference of about 50 Hz unrelated to the roll.
+      Energy units are not documented.</p>
+    <div class="callout">Treat these values as experimental. For roll diagnosis use the collector's own <a href="#spectrum">Spectrum (FFT)</a> and
+      <a href="#orders">roll orders</a>; the sensor's total energy and band distribution are still useful as a trend.</div>
+  </div>
+
+  <div class="card section" id="limits">
+    <h2>Limits of the sensor</h2>
+    <ul>
+      <li>Specified range 5–100 Hz. A slow roll's 1x (e.g. 5.3 Hz) is near the lower edge; the sensor's own registers may filter it out, the FFT shows it.</li>
+      <li>Spectrum up to ≈ 123 Hz: rolling-bearing defect frequencies and their resonances are often higher, so kurtosis and crest factor are the main bearing indicators.</li>
+      <li>One capture is 4.16 s and 0.24 Hz resolution; it cannot be made longer. Averaging reduces noise only.</li>
+      <li>During a capture (≈ 4.5 s) polling of all sensors on the bus pauses; within a series every sensor is polled once between captures.</li>
+      <li>Mount the sensor rigidly on the bearing housing (magnet on a flat, clean surface or screw). A loose mount looks like looseness.</li>
+    </ul>
+  </div>
+
+  <div class="card section" id="grafana">
+    <h2>Grafana dashboard</h2>
+    <p><a href="/grafana/d/bms_vibration" target="_blank" rel="noopener">Vibration (WTVB01-485)</a>: select the sensor at the top. Upper panels show the live
+      registers and statistics; the section <em>Spectrum (FFT) · raw FIFO captures</em> shows one point per capture series: main peak, velocity RMS,
+      peaks against the roll 1x/2x/3x, band RMS per axis, roll orders per axis and the capture settings.</p>
+  </div>
+
+  <div class="card section" id="simulation">
+    <h2>Simulation</h2>
+    <p>For tests without a machine set <code>VIBRATION_SIM_PORTS=1</code> in <code>.env</code>, rebuild the collector and select a <code>sim://</code> port in the Bus form. <code>sim://roll?speed=600&amp;diameter=600</code> simulates a healthy
+      directly driven roll; adding <code>&amp;scenario=faults</code> runs a 30 minute sequence: normal, unbalance, misalignment, speed 450 m/min, looseness,
+      bearing impacts, communication faults, normal. The current stage is shown in the Port tile. Rename the sensor for a session so simulated data
+      stay apart from real data, and select the real port afterwards — the real sensor is not polled meanwhile.</p>
+  </div>
+</div>
+</body>
+</html>
