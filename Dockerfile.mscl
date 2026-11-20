@@ -40,5 +40,6 @@ WORKDIR /app
 COPY app/mscl/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/mscl/ .
+COPY app/shared/usb_discovery.py .
 COPY app/shared/device-common.css static/device-common.css
 CMD ["python", "mscl_config.py"]

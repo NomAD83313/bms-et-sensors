@@ -6,19 +6,21 @@ from collections import deque
 from datetime import datetime, timezone
 
 import serial
-from influxdb_client import InfluxDBClient, Point, WritePrecision
-from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client import Point, WritePrecision
 
 if __package__:
     from . import almemo_settings as settings, almemo_protocol as protocol
+    from .almemo_influx import AlmemoInfluxWriter
 else:
     import almemo_settings as settings
     import almemo_protocol as protocol
+    from almemo_influx import AlmemoInfluxWriter
 
 
 class AlmemoStreaming:
     def __init__(self, session):
         self.session = session
+        self.influx_writer = AlmemoInfluxWriter()
         self.LIVE_LOCK = threading.Lock()
         self.LIVE_THREAD: threading.Thread | None = None
         self.LIVE_STOP = threading.Event()
@@ -150,18 +152,15 @@ class AlmemoStreaming:
             points.append(point)
         return points
 
-    def _write_record_to_influx(self, write_api, record: str, mode: str) -> None:
-        if write_api is None:
+    def _queue_record_for_influx(self, record: str, mode: str) -> None:
+        if not self._influx_enabled():
             return
         points = self._parse_record_points(record, mode)
-        if not points:
-            return
-        write_api.write(
-            bucket=settings.INFLUX_BUCKET,
-            org=settings.INFLUX_ORG,
-            record=points,
-            write_precision=WritePrecision.MS,
-        )
+        if points:
+            self.influx_writer.enqueue(points)
+
+    def influx_status(self) -> dict[str, int | bool]:
+        return {"enabled": self._influx_enabled(), **self.influx_writer.status()}
 
     def _reader_loop(self,
         stop_event: threading.Event,
@@ -178,14 +177,9 @@ class AlmemoStreaming:
         stall_timeout_sec: float = 0.0,
         stall_fallback_cmds: tuple = (),
     ) -> None:
-        influx_client = None
-        write_api = None
-        current_record = ""
         try:
-            if self._influx_enabled():
-                influx_client = InfluxDBClient(url=settings.INFLUX_URL, token=settings.INFLUX_TOKEN, org=settings.INFLUX_ORG)
-                write_api = influx_client.write_api(write_options=SYNCHRONOUS)
             while not stop_event.is_set():
+                current_record = ""
                 try:
                     ser, active_port = self.session._open_verified_serial(settings.ALMEMO_TIMEOUT_MS, xonxoff=True)
                     with ser:
@@ -193,7 +187,6 @@ class AlmemoStreaming:
                         for cmd in setup_cmds:
                             self.session._write_line(ser, cmd, sleep_sec=0.03)
                             time.sleep(setup_sleep)
-                        current_record = ""
                         last_data_at = time.monotonic()
                         fallback_sent = False
                         while not stop_event.is_set():
@@ -231,12 +224,12 @@ class AlmemoStreaming:
                             push_fn(clean_line if push_clean else line)
                             if protocol._record_start(clean_line):
                                 if current_record:
-                                    self._write_record_to_influx(write_api, current_record, mode)
+                                    self._queue_record_for_influx(current_record, mode)
                                 current_record = clean_line
                             elif current_record:
                                 current_record = f"{current_record} {clean_line}".strip()
                             elif channel_only_write:
-                                self._write_record_to_influx(write_api, clean_line, mode)
+                                self._queue_record_for_influx(clean_line, mode)
                         try:
                             for cmd in cleanup_cmds:
                                 self.session._write_line(ser, cmd, sleep_sec=0.03)
@@ -250,14 +243,10 @@ class AlmemoStreaming:
                     push_fn(f"ERROR: {exc}")
                     self.session._log_serial_event(f"{mode}: reconnect failed: {exc}")
                     time.sleep(0.5)
+                finally:
+                    if current_record:
+                        self._queue_record_for_influx(current_record, mode)
         finally:
-            if current_record:
-                try:
-                    self._write_record_to_influx(write_api, current_record, mode)
-                except Exception:
-                    pass
-            if influx_client is not None:
-                influx_client.close()
             stop_event.clear()
 
     def _live_reader(self, cycle: str) -> None:

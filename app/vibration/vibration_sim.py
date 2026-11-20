@@ -1,6 +1,6 @@
 """Simulated WTVB01-485 on a virtual serial port, for test sessions without a machine.
 
-Select the port `sim://roll?speed=600&diameter=600` (query optional) in the Bus form.
+Select the port `sim://frequency?hz=5.25` (query optional) in the Bus form.
 The object behaves like a pyserial port carrying one sensor at address 0x50:
 
 - register reads (0x03) and writes (0x06) answer at once with plausible values derived
@@ -9,11 +9,8 @@ The object behaves like a pyserial port carrying one sensor at address 0x50:
   data frame after 1024 / 246.3 s, delivered at the line rate of the selected baud, so the
   collector's real capture path, timing and sample-rate estimate are exercised.
 
-Machine model: a directly driven roll whose real speed is 1 % below the nominal line
-speed (slip) and drifts by +-0.3 % over 5 minutes. `scenario=faults` adds a 30 minute
-sequence of faults (FAULT_STAGES). Vibration (peak velocity, mm/s) at
-roll orders per axis, a foreign 24.5 Hz line on Z that does not follow the speed
-(e.g. a neighbouring pump), gravity on Z and white noise.
+Signal model: a drifting reference frequency with harmonic components on all axes,
+a fixed 24.5 Hz line on Z, and optional changes in the signal during a fault scenario.
 """
 
 from __future__ import annotations
@@ -35,16 +32,20 @@ PROGRESS_INTERVAL_SEC = 0.25
 REPLY_LATENCY_SEC = 0.004
 STANDARD_GRAVITY_MM_S2 = 9806.65
 NOISE_G = 0.0003
-SLIP = 0.99
+DEFAULT_FREQUENCY_HZ = 5.25
 DRIFT = 0.003
 DRIFT_PERIOD_SEC = 300.0
-# Peak velocity amplitude in mm/s per axis at multiples of the roll frequency.
+# Peak velocity amplitude in mm/s per axis at multiples of the reference frequency.
 ORDER_VELOCITY_MM_S = {
     "x": {0.5: 0.15, 1.0: 2.5, 2.0: 1.0, 3.0: 0.4},
     "y": {0.5: 0.10, 1.0: 1.8, 2.0: 1.4, 3.0: 0.5},
     "z": {0.5: 0.05, 1.0: 0.8, 2.0: 0.4, 3.0: 0.2},
 }
-FOREIGN_LINES = {"z": ((24.5, 0.3),)}  # (Hz, peak mm/s) independent of the roll speed.
+FOREIGN_LINES = {"z": ((24.5, 0.3),)}  # (Hz, peak mm/s) independent of the reference frequency.
+# Phase of each axis relative to X at a harmonic (degrees), so orbits have a physical
+# shape: 1x with Y 90 deg behind X is an ellipse (unbalance), 2x in anti-phase is a line.
+# Other orders and foreign lines get random phases per axis.
+AXIS_PHASE_DEG = {1.0: {"x": 0.0, "y": -90.0, "z": 0.0}, 2.0: {"x": 0.0, "y": 180.0, "z": 0.0}}
 
 # Fault scenario `scenario=faults` (30 min, counted from the first time the port is opened
 # by this process). Each fault appears in its own window and disappears afterwards, so a
@@ -53,7 +54,7 @@ FAULT_STAGES = (
     (0, 240, "normal"),
     (240, 540, "unbalance"),        # 1x X/Y ramps 2.5 -> 7 / 1.8 -> 5 mm/s
     (540, 840, "misalignment"),     # 2x ramps to the 1x level, 3x x2.5, mostly Y
-    (840, 1080, "speed 450 m/min"), # line slows to 75 %; machine data still says 600
+    (840, 1080, "frequency drop"),  # reference frequency falls to 75 %
     (1080, 1380, "looseness"),      # 0.5x, 1.5x, 2.5x and 4x-6x harmonics
     (1380, 1620, "bearing impacts"),  # impacts at 3.6x exciting a 90 Hz resonance
     (1620, 1740, "communication faults"),  # corrupted FIFO frames, lost register replies
@@ -76,15 +77,15 @@ def _crc(body: bytes) -> bytes:
     return body + bytes((crc & 0xFF, crc >> 8))
 
 
-def _parse(port: str) -> tuple[float, float, str]:
+def _parse(port: str) -> tuple[float, str]:
     query = parse_qs(urlparse(port).query)
-
-    def number(key: str, default: float) -> float:
-        try:
-            return float(query.get(key, [default])[0])
-        except ValueError:
-            return default
-    return number("speed", 600.0), number("diameter", 600.0), query.get("scenario", ["steady"])[0]
+    try:
+        frequency = float(query.get("hz", [DEFAULT_FREQUENCY_HZ])[0])
+    except ValueError:
+        frequency = DEFAULT_FREQUENCY_HZ
+    if not 0 < frequency < SIM_SAMPLE_RATE / 2:
+        frequency = DEFAULT_FREQUENCY_HZ
+    return frequency, query.get("scenario", ["steady"])[0]
 
 
 def stage_at(scenario: str, t: float) -> tuple[str, float]:
@@ -104,7 +105,7 @@ class SimulatedSerial:
         self.baudrate = baudrate
         self.timeout: float | None = None
         self.write_timeout = 1.0
-        self.line_speed_m_min, self.roll_diameter_mm, self.scenario = _parse(port)
+        self.base_frequency_hz, self.scenario = _parse(port)
         self._clock = clock
         self._sleep = sleep
         self._random = random.Random(seed)
@@ -117,15 +118,15 @@ class SimulatedSerial:
     def stage(self, t: float) -> tuple[str, float]:
         return stage_at(self.scenario, t)
 
-    def roll_hz(self, t: float) -> float:
-        nominal = self.line_speed_m_min / (math.pi * self.roll_diameter_mm / 1000.0) / 60.0
-        if self.stage(t)[0] == "speed 450 m/min":
-            nominal *= 0.75
-        return nominal * SLIP * (1 + DRIFT * math.sin(2 * math.pi * t / DRIFT_PERIOD_SEC))
+    def signal_hz(self, t: float) -> float:
+        frequency = self.base_frequency_hz
+        if self.stage(t)[0] == "frequency drop":
+            frequency *= 0.75
+        return frequency * (1 + DRIFT * math.sin(2 * math.pi * t / DRIFT_PERIOD_SEC))
 
     def components(self, t: float) -> dict[str, list[tuple[float, float]]]:
         """Per axis: (frequency Hz, peak velocity mm/s), including the active fault."""
-        f1 = self.roll_hz(t)
+        f1 = self.signal_hz(t)
         name, progress = self.stage(t)
         lines = {}
         for axis, orders in ORDER_VELOCITY_MM_S.items():
@@ -141,11 +142,32 @@ class SimulatedSerial:
             lines[axis] = [(f1 * k, v) for k, v in orders.items()] + list(FOREIGN_LINES.get(axis, ()))
         return lines
 
+    def _phases(self, t0: float, lines: dict[str, list[tuple[float, float]]]) -> dict[str, list[float]]:
+        """Per-capture phase of every component: a common random phase per harmonic plus a
+        fixed axis offset (AXIS_PHASE_DEG); misalignment turns the 1x Y offset towards 180 deg."""
+        f1 = self.signal_hz(t0)
+        name, progress = self.stage(t0)
+        base: dict[float, float] = {}
+        phases: dict[str, list[float]] = {}
+        for axis, comps in lines.items():
+            phases[axis] = []
+            for frequency, _velocity in comps:
+                multiple = round(frequency / f1, 2)
+                offsets = dict(AXIS_PHASE_DEG.get(multiple, {}))
+                if multiple == 1.0 and name == "misalignment":
+                    offsets["y"] = -90.0 - 90.0 * progress
+                if multiple in AXIS_PHASE_DEG and axis in offsets:
+                    common = base.setdefault(multiple, self._random.uniform(0, 2 * math.pi))
+                    phases[axis].append(common + math.radians(offsets[axis]))
+                else:
+                    phases[axis].append(self._random.uniform(0, 2 * math.pi))
+        return phases
+
     def _impacts(self, t0: float) -> list[float]:
         """Bearing impact signal in g per sample (decaying 90 Hz bursts at 3.6x)."""
         if self.stage(t0)[0] != "bearing impacts":
             return [0.0] * proto.FIFO_SAMPLES
-        period = 1.0 / (BEARING_ORDER * self.roll_hz(t0))
+        period = 1.0 / (BEARING_ORDER * self.signal_hz(t0))
         offset = self._random.uniform(0, period)
         out = []
         for i in range(proto.FIFO_SAMPLES):
@@ -157,7 +179,7 @@ class SimulatedSerial:
         """1024 raw FIFO samples as the sensor sends them (sign inverted, 2048 LSB per g)."""
         lines = self.components(t0)
         impacts = self._impacts(t0)
-        phases = {axis: [self._random.uniform(0, 2 * math.pi) for _ in comps] for axis, comps in lines.items()}
+        phases = self._phases(t0, lines)
         raw = []
         for i in range(proto.FIFO_SAMPLES):
             t = i / SIM_SAMPLE_RATE
@@ -196,7 +218,7 @@ class SimulatedSerial:
             for offset, value in enumerate(stats):
                 regs[base + offset] = round(value * 1000) & 0xFFFF
             energy = (0x6E, 0x7D, 0x8C)[index]
-            f1 = self.roll_hz(t)
+            f1 = self.signal_hz(t)
             for point, multiple in enumerate((0.25, 0.5, 1, 2, 3, 4, 5, 6)):
                 regs[energy + point] = round(sum(v * v for f, v in comps if abs(f - f1 * multiple) < 0.2) * 100)
             edges = ((0, 0.5), (0.5, 1), (1, 2), (2, 3), (3, 4), (4, 5))
@@ -288,7 +310,7 @@ def opener(port: str, baud: int) -> Any:
 
 def scenario_status(port: str, now: float | None = None) -> dict[str, Any] | None:
     """Current scenario stage for the status API, or None for a steady simulation."""
-    _speed, _diameter, scenario = _parse(port)
+    _, scenario = _parse(port)
     if scenario == "steady":
         return {"scenario": "steady"}
     started = _SCENARIO_START.get(port)

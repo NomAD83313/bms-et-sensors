@@ -10,7 +10,12 @@ echo "==========================================="
 echo " Raspberry Pi DAQ Stack Setup Utility"
 echo "==========================================="
 
-PROJECT_DIR="${PROJECT_DIR:-$HOME/bms-et-sensors}"
+# Default to the checkout this script runs from, so a clone elsewhere is not cloned twice.
+if [[ -d "${PROJECT_ROOT}/.git" ]]; then
+  PROJECT_DIR="${PROJECT_DIR:-${PROJECT_ROOT}}"
+else
+  PROJECT_DIR="${PROJECT_DIR:-$HOME/bms-et-sensors}"
+fi
 REPO_URL="${REPO_URL:-https://github.com/NomAD83313/bms-et-sensors.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 RETRY_ATTEMPTS="${RETRY_ATTEMPTS:-5}"
@@ -39,8 +44,8 @@ pull_base_images() {
   local images=(
     "python:3.12-slim"
     "influxdb:2.7"
-    "grafana/grafana-oss"
-    "nginx:latest"
+    "grafana/grafana-oss:13.0.2"
+    "nginx:1.31.3"
   )
 
   echo ">>> Pre-pulling base images (with retries)..."
@@ -80,9 +85,16 @@ validate_env_secrets() {
 }
 
 build_and_start_stack() {
-  echo ">>> Building local ARM-compatible app images..."
-  retry_cmd "docker compose build app services" \
-    "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.override.yml build --no-cache mscl-collector redlab-collector graf-lite ap-control service-controller almemo-collector pyrometer-collector
+  local app_services=(mscl-collector redlab-collector graf-lite ap-control service-controller almemo-collector pyrometer-collector)
+  if [[ "$(bms_image_source)" == "pull" ]]; then
+    echo ">>> Pulling prebuilt app images from Docker Hub (BMS_IMAGE_SOURCE=pull)..."
+    retry_cmd "docker compose pull app services" \
+      "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.override.yml pull "${app_services[@]}"
+  else
+    echo ">>> Building local ARM-compatible app images..."
+    retry_cmd "docker compose build app services" \
+      "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.override.yml build --no-cache "${app_services[@]}"
+  fi
 
   maybe_disable_pyrometers
 
@@ -112,6 +124,7 @@ disable_avahi_if_present
 prepare_repo
 prepare_env_file
 validate_env_secrets
+bms_image_source >/dev/null
 if [ "${RPI_SETUP_RUN_PYROMETERS_SETUP}" = "1" ]; then
   run_pyrometers_setup
 fi

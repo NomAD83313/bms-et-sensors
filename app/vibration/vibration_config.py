@@ -28,14 +28,9 @@ MAX_SENSORS = 32
 # for about 4.5 s, so the interval has a lower bound.
 MIN_FFT_INTERVAL_SEC = 5.0
 MAX_FFT_INTERVAL_SEC = 86400.0
-# Captures averaged into one spectrum; each adds about 4.5 s of paused polling.
-# Lower limit of the velocity RMS computed from the spectrum. ISO 10816-3 uses 10 Hz for
-# machines above 600 rpm and 2 Hz for 120-600 rpm (slow rolls). 0 = automatic from the
-# detected roll speed (default).
-VELOCITY_RMS_MIN_HZ_CHOICES = (0.0, 2.0, 10.0)
-# The roll rotation (1x) is always detected from the spectrum within this rpm range; no
-# machine data is entered. The range is a config/API setting, not shown in the UI.
-ROLL_RPM_LIMITS = (30.0, 6000.0)
+# Lower frequency bound for velocity RMS computed from the spectrum.
+DEFAULT_VELOCITY_MIN_HZ = 2.0
+VELOCITY_RMS_MIN_HZ_CHOICES = (2.0, 10.0)
 # A port of this form is the built-in simulated sensor bus (vibration_sim).
 SIM_PORT_PREFIX = "sim://"
 MIN_FFT_AVERAGES = 1
@@ -50,9 +45,7 @@ DEFAULTS: dict[str, Any] = {
     "fft_periodic": False,
     "fft_interval_sec": 300.0,
     "fft_averages": 1,
-    "fft_velocity_min_hz": 0.0,
-    "roll_min_rpm": 60.0,
-    "roll_max_rpm": 1500.0,
+    "fft_velocity_min_hz": DEFAULT_VELOCITY_MIN_HZ,
     "sensors": [],
 }
 
@@ -125,25 +118,11 @@ def parse_velocity_min_hz(value: Any) -> float:
         number = float(value)
     except (TypeError, ValueError):
         raise ValueError("fft_velocity_min_hz must be a number") from None
+    if number == 0.0:  # Normalize the former automatic setting in saved configurations.
+        return DEFAULT_VELOCITY_MIN_HZ
     if number not in VELOCITY_RMS_MIN_HZ_CHOICES:
         raise ValueError(f"fft_velocity_min_hz must be one of {', '.join(f'{c:g}' for c in VELOCITY_RMS_MIN_HZ_CHOICES)}")
     return number
-
-
-def parse_rpm(value: Any, label: str) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{label} must be a number") from None
-    low, high = ROLL_RPM_LIMITS
-    if not low <= number <= high:
-        raise ValueError(f"{label} must be {low:g}..{high:g}")
-    return number
-
-
-def roll_search_hz(config: dict[str, Any]) -> tuple[float, float]:
-    """Roll frequency range of the automatic 1x detection."""
-    return config["roll_min_rpm"] / 60.0, config["roll_max_rpm"] / 60.0
 
 
 def validate(data: Any) -> dict[str, Any]:
@@ -178,10 +157,6 @@ def validate(data: Any) -> dict[str, Any]:
     config["fft_periodic"] = False if legacy_off else periodic
     config["fft_averages"] = parse_fft_averages(data.get("fft_averages", config["fft_averages"]))
     config["fft_velocity_min_hz"] = parse_velocity_min_hz(data.get("fft_velocity_min_hz", config["fft_velocity_min_hz"]))
-    config["roll_min_rpm"] = parse_rpm(data.get("roll_min_rpm", config["roll_min_rpm"]), "roll_min_rpm")
-    config["roll_max_rpm"] = parse_rpm(data.get("roll_max_rpm", config["roll_max_rpm"]), "roll_max_rpm")
-    if config["roll_min_rpm"] * 2 > config["roll_max_rpm"]:
-        raise ValueError("roll_max_rpm must be at least twice roll_min_rpm")
     sensors = data.get("sensors", [])
     if not isinstance(sensors, list) or len(sensors) > MAX_SENSORS:
         raise ValueError(f"sensors must be a list of at most {MAX_SENSORS}")

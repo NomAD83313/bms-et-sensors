@@ -81,6 +81,13 @@ class AnomalyWorker:
         self.control_dir = None if control_dir is None else Path(control_dir)
         self.data.mkdir(parents=True, exist_ok=True)
         self._lock = acquire_directory_lock(self.data / '.worker.lock') if exclusive else None
+        try:
+            self._initialize(preview_url, recording_mode, settings)
+        except BaseException:
+            self.close()
+            raise
+
+    def _initialize(self, preview_url, recording_mode, settings):
         (self.data / 'events').mkdir(exist_ok=True)
         self.preview = preview_url or os.environ.get(
             'CAMERA_ANOMALY_PREVIEW_URL', 'http://127.0.0.1:8082/api/live.jpg')
@@ -725,7 +732,10 @@ def main():
             # of exiting, so a restart policy cannot turn the conflict into a restart loop.
             LOG.warning('%s; waiting for it to stop', error)
             time.sleep(LOCK_RETRY_SECONDS)
-    worker.run()
+    try:
+        worker.run()
+    finally:
+        worker.close()
 
 
 if __name__ == '__main__':

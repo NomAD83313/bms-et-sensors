@@ -15,9 +15,10 @@ except ImportError:
 RESOLUTIONS = ((640, 360), (1280, 720), (1920, 1080))
 IMX415_MODE = '3864:2192:10:P'
 CAPABILITIES = dict(device='bms-zero-camera', capture_modes=['video'], resolutions=[f'{w}x{h}' for w, h in RESOLUTIONS],
-                    fps=[5, 10, 15],
+                    fps=[5, 10, 15], rotations=[0, 180],
                     note='Zero camera: video up to 1920 × 1080, with automatic exposure. '
                          'The 16:9 view is preserved when changing resolution. '
+                         'Rotate 180° corrects a camera mounted upside down. '
                          'Applying settings pauses detection and event recording. '
                          'After changing resolution, check the image and learn a new normal view.')
 
@@ -40,7 +41,8 @@ class CaptureControl:
         with self.lock:
             camera = self.config()['paths']['cam']
             return dict(DEFAULTS, width=camera['rpiCameraWidth'], height=camera['rpiCameraHeight'],
-                        fps=camera['rpiCameraFPS'], bitrate=camera['rpiCameraBitrate'])
+                        fps=camera['rpiCameraFPS'], bitrate=camera['rpiCameraBitrate'],
+                        rotation=180 if camera.get('rpiCameraHFlip') and camera.get('rpiCameraVFlip') else 0)
 
     def update(self, body):
         with self.lock:
@@ -58,6 +60,10 @@ class CaptureControl:
             camera.update(rpiCameraWidth=settings['width'], rpiCameraHeight=settings['height'],
                           rpiCameraFPS=settings['fps'], rpiCameraIDRPeriod=int(settings['fps']),
                           rpiCameraMode=mode)
+            # Both flips are a 180-degree rotation relative to the libcamera default,
+            # which already compensates the device-tree mounting rotation.
+            flipped = settings['rotation'] == 180
+            camera.update(rpiCameraHFlip=flipped, rpiCameraVFlip=flipped)
             # The publisher watches this file and reloads the camera path automatically.
             # Rename within the same directory prevents partial configurations.
             with tempfile.NamedTemporaryFile(mode='w', dir=self.path.parent, delete=False) as stream:

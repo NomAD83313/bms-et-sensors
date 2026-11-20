@@ -95,6 +95,8 @@ def command(settings=None):
             '--framerate', str(float(fps))]
     if settings['shutter_us']:
         args += ['--shutter', str(settings['shutter_us'])]
+    if settings.get('rotation'):
+        args += ['--rotation', str(settings['rotation'])]
     if padded:
         # Libav packs the ISP's padded rows and carries dimensions/timestamps.
         # Bare --codec yuv420 exposes hardware stride, corrupting narrow frames.

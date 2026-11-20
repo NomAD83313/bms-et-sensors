@@ -744,13 +744,19 @@ function captureDraft() {
     shutter_us: snapshots ? Number($('capture-exposure').value) : 0};
   [draft.width, draft.height] = $('capture-resolution').value.split('x').map(Number);
   if (!snapshots) draft.fps = Number($('capture-fps').value);
+  if (rotationSupported()) draft.rotation = Number($('capture-rotation').value);
   return draft;
+}
+// Local sources and agents that advertise rotations support turning the image.
+function rotationSupported() {
+  return !captureCapabilities || (captureCapabilities.rotations || []).includes(180);
 }
 function syncCaptureOptions() {
   const snapshots = $('capture-mode').value === 'snapshots';
   $('capture-interval-label').hidden = !snapshots;
   $('capture-exposure-label').hidden = !snapshots;
   $('capture-resolution-label').hidden = false;
+  $('capture-rotation-label').hidden = !rotationSupported();
   $('capture-fps-label').hidden = snapshots;
   for (const option of $('capture-mode').options) {
     option.disabled = option.hidden = !!captureCapabilities && !captureCapabilities.capture_modes.includes(option.value);
@@ -771,7 +777,7 @@ function syncCaptureOptions() {
     $('capture-exposure').value = '0';
     $('capture-status').textContent = 'Previous exposure does not fit this interval. Auto exposure selected; apply to save.';
   }
-  for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).disabled = capturePending || analysisConfiguring();
+  for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure', 'capture-rotation']) $(id).disabled = capturePending || analysisConfiguring();
   $('capture-apply').disabled = capturePending || analysisConfiguring() || !captureDirty || ['learning', 'training'].includes(latestAnomalyState) || pendingModel !== null || pendingInputSize !== null || pendingConfirmation !== null || pendingMultiplier !== null;
 }
 async function refreshCapture() {
@@ -795,7 +801,9 @@ async function refreshCapture() {
       $('capture-resolution').value = `${captureApplied.width}x${captureApplied.height}`;
       $('capture-fps').value = String(captureApplied.fps);
       $('capture-exposure').value = String(captureApplied.shutter_us);
-      const exposure = captureApplied.shutter_us ? `${captureApplied.shutter_us/1000} ms requested exposure` : 'Auto exposure';
+      $('capture-rotation').value = String(captureApplied.rotation || 0);
+      const exposure = (captureApplied.shutter_us ? `${captureApplied.shutter_us/1000} ms requested exposure` : 'Auto exposure')
+        + (captureApplied.rotation ? ` · rotated ${captureApplied.rotation}°` : '');
       $('capture-status').textContent = captureApplied.capture_mode === 'snapshots'
         ? `Snapshots: ${1000/captureApplied.snapshot_interval_ms} FPS · ${captureApplied.width} × ${captureApplied.height} · ${exposure}`
         : `Video: ${captureApplied.width} × ${captureApplied.height} · ${captureApplied.fps} FPS · ${exposure}`;
@@ -805,7 +813,7 @@ async function refreshCapture() {
     if (captureApplied) $('capture-status').textContent = 'Capture controls unavailable. Please retry.';
   } finally { capturePolling = false; }
 }
-for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure']) $(id).addEventListener('change', () => {
+for (const id of ['capture-mode', 'capture-resolution', 'capture-fps', 'capture-interval', 'capture-exposure', 'capture-rotation']) $(id).addEventListener('change', () => {
   captureDirty = true; syncCaptureOptions();
   $('capture-status').textContent = 'Not applied. Applying pauses detection; check the new image and learn the normal view again.';
 });

@@ -153,6 +153,40 @@ def block_valid(first_register: int, registers: list[int]) -> bool:
                for r in BLOCK_SENTINEL_REGISTERS.get(first_register, ()))
 
 
+# Shape statistics divide by the squared variance. On an axis that carries gravity
+# (|mean| about 1 g) and is at rest, the sensor reports variance 0.000 and its kurtosis,
+# skewness and velocity kurtosis are overflow noise of either sign (observed: kurtosis -29.7
+# and +28.8, skewness 25.5, velocity kurtosis -23.1). An axis near 0 g with variance 0.000 stays
+# valid. Any real signal also satisfies Pearson's inequality kurtosis >= skewness^2 + 1.
+# An axis failing either check loses only its shape statistics.
+GRAVITY_AXIS_MIN_G = 0.5
+PEARSON_TOLERANCE = 0.01  # Values are rounded to 0.001.
+SHAPE_FIELD_PREFIXES = ("kurtosis_", "skewness_", "velocity_kurtosis_")
+
+
+def shape_stats_valid(values: dict[str, float], axis: str) -> bool:
+    kurtosis = values.get(f"kurtosis_{axis}")
+    if kurtosis is None:
+        return True
+    variance = values.get(f"acc_variance_{axis}")
+    mean = values.get(f"acc_abs_mean_{axis}_g", 0.0)
+    if variance == 0 and abs(mean) >= GRAVITY_AXIS_MIN_G:
+        return False
+    skewness = values.get(f"skewness_{axis}", 0.0)
+    return kurtosis >= skewness * skewness + 1 - PEARSON_TOLERANCE
+
+
+def drop_invalid_shape_stats(values: dict[str, float]) -> list[str]:
+    """Remove the shape statistics of axes that fail shape_stats_valid; returns those axes."""
+    dropped = []
+    for axis in "xyz":
+        if not shape_stats_valid(values, axis):
+            for prefix in SHAPE_FIELD_PREFIXES:
+                values.pop(f"{prefix}{axis}", None)
+            dropped.append(axis)
+    return dropped
+
+
 BLOCK_REFRESH_SEC = {BLOCK_BASIC[0]: 0.0, BLOCK_STATS[0]: 0.1, BLOCK_ENERGY[0]: 1.0}
 
 # Focus points per manual 10.3: point1 = 1/4, point2 = 1/2, point3 = 1x (fundamental),

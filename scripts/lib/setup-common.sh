@@ -86,6 +86,18 @@ prepare_repo() {
   cd "$PROJECT_DIR"
   echo ">>> Updating repository ($REPO_BRANCH)..."
   retry_cmd "git fetch" git fetch --all --tags --prune
+  local local_head remote_head
+  local_head="$(git rev-parse HEAD)"
+  remote_head="$(git rev-parse "origin/${REPO_BRANCH}")"
+  if [[ "$local_head" != "$remote_head" ]] \
+    && { ! git merge-base --is-ancestor "$local_head" "$remote_head" \
+         || [[ -n "$(git status --porcelain --untracked-files=no)" ]]; }; then
+    # Local commits, local edits or a rewritten (squashed) GitHub history: a plain
+    # fast-forward pull fails. The updater backs up .env and local changes first.
+    echo ">>> Local checkout cannot fast-forward to origin/${REPO_BRANCH}; running the updater."
+    REPO_BRANCH="$REPO_BRANCH" "$PROJECT_DIR/scripts/update-from-github.sh" --no-restart
+    return
+  fi
   retry_cmd "git checkout ${REPO_BRANCH}" git checkout "$REPO_BRANCH"
   retry_cmd "git pull ${REPO_BRANCH}" git pull --ff-only origin "$REPO_BRANCH"
 }
@@ -113,6 +125,28 @@ read_env_var() {
     return 1
   fi
   awk -F= -v k="$key" '$1==k{val=substr($0, index($0,"=")+1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", val); gsub(/^"|"$/, "", val); gsub(/^'\''|'\''$/, "", val); print val; exit}' .env
+}
+
+# Where project app images come from: "build" (compile from this checkout, the default)
+# or "pull" (prebuilt arm64 images from Docker Hub). A shell value overrides .env.
+# Hosts that are not arm64 always build: the published images are arm64 only.
+bms_image_source() {
+  local image_source="${BMS_IMAGE_SOURCE:-$(read_env_var BMS_IMAGE_SOURCE || true)}"
+  case "${image_source:-build}" in
+    build) echo build ;;
+    pull)
+      if [[ "$(uname -m)" =~ ^(aarch64|arm64)$ ]]; then
+        echo pull
+      else
+        echo "WARN: BMS_IMAGE_SOURCE=pull needs an arm64 host; building locally instead." >&2
+        echo build
+      fi
+      ;;
+    *)
+      echo "ERROR: BMS_IMAGE_SOURCE must be build or pull, not '${image_source}'." >&2
+      return 1
+      ;;
+  esac
 }
 
 remove_stack_service() {

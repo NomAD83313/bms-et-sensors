@@ -7,6 +7,10 @@ production-process alarm. Cameras record event-only video:
 **Start detection & recording** starts analysis and the video buffer together, and
 **Pause detection & recording** stops both. Retention and live preview remain independent.
 
+Each analysis worker holds an exclusive lock on its camera data directory. The
+analysis scheduler waits for active steps before releasing the locks when its
+loop exits. If initialization fails, the lock is released for the next attempt.
+
 ## Saved normal sessions
 
 Analysis uses RGB for both learning and detection. JPEG preparation crops the analysis
@@ -262,9 +266,11 @@ Settings in `.env.example`:
   4096. A camera's own model settings in the registry take precedence over
   these defaults. A newly configured coreset size takes effect at the next learning run.
 - `CAMERA_ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local` (installation template): ONNX
-  Runtime compiled with XNNPACK. `restart-cameras.sh`
-  builds this wheel image automatically when it is missing; the one-time compile is
-  resource intensive on Pi. Set `onnx-cpu` to use the standard PyPI wheel instead
+  Runtime compiled with XNNPACK. When this wheel image is missing, `restart-cameras.sh`
+  pulls the published `nomad375/bms-onnx-xnnpack:ort-1.31.1-arm64` on arm64 hosts and
+  compiles locally only if the pull fails (the one-time compile takes hours on a Pi).
+  `CAMERA_ONNX_PREBUILT_IMAGE=` (empty) skips the pull, as does
+  `./scripts/03-rpi-cameras-setup.sh --rebuild-onnx`. Set `onnx-cpu` to use the standard PyPI wheel instead
   (also the Compose default when the variable is unset). To force a rebuild, remove
   the image and rerun a camera start script. Manual equivalent:
 

@@ -26,7 +26,7 @@ StreamHub('runtime/camera-hub/mediamtx.yml', 'config/camera-hub.example.json',
 PY
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.camera-hub.yml)
 "${COMPOSE[@]}" --profile cameras pull camera-hub
-"${COMPOSE[@]}" --profile cameras build camera-media service-controller
+bms_build_services --profile cameras camera-media service-controller
 "${COMPOSE[@]}" --profile cameras up -d --no-deps --no-build camera-hub
 touch runtime/camera-hub/enabled
 "${COMPOSE[@]}" --profile cameras up -d --no-deps --no-build camera-media service-controller

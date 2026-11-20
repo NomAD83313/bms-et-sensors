@@ -24,8 +24,10 @@ class VibrationDashboardTests(unittest.TestCase):
         self.assertEqual(variable["refresh"], 1)
         # No machine data is entered anywhere: the sensor is the only variable.
         self.assertEqual([v["name"] for v in self.dashboard["templating"]["list"]], ["sensor"])
-        self.assertNotIn("line_speed", json.dumps(self.dashboard))
-        self.assertNotIn("roll_diameter", json.dumps(self.dashboard))
+        dashboard_text = json.dumps(self.dashboard)
+        self.assertNotRegex(dashboard_text.lower(), r"\broll\b|roll_|orbit_1x|phase_1x")
+        self.assertNotIn("line_speed", dashboard_text)
+        self.assertNotIn("rpm", dashboard_text)
 
     def test_panel_ids_are_unique(self):
         ids = [p["id"] for p in self.dashboard["panels"]]
@@ -35,8 +37,6 @@ class VibrationDashboardTests(unittest.TestCase):
         for panel in self.panels:
             for target in panel["targets"]:
                 query = target["query"]
-                if "from(bucket" not in query:
-                    continue  # Expected-roll helpers computed from dashboard variables.
                 self.assertRegex(query, r'r\["_measurement"\] == "wtvb01(_fft)?"', panel["title"])
                 self.assertIn(SENSOR_FILTER, query, panel["title"])
                 self.assertIn('pivot(rowKey: ["_time"], columnKey: ["series"], valueColumn: "_value")', query)
@@ -48,8 +48,8 @@ class VibrationDashboardTests(unittest.TestCase):
             "RMS vibration velocity": "velocity_rms_[xyz]_mm_s",
             "Vibration displacement": "displacement_[xyz]_um",
             "Dominant vibration frequency": "frequency_[xyz]_hz",
-            "Harmonic points: 0.5x / 1x / 2x": "energy_[xyz]_point[234]",
-            "Harmonic ratios": "energy_[xyz]_ratio_(2x_1x|half_1x)",
+            "Sensor spectrum focus points": "energy_[xyz]_point[234]",
+            "Sensor spectrum focus bands": "energy_[xyz]_band[1-6]",
             "Kurtosis": "/^kurtosis_[xyz]$/",
             "Crest factor": "/^crest_factor_[xyz]$/",
         }
@@ -71,29 +71,23 @@ class VibrationDashboardTests(unittest.TestCase):
         self.assertTrue(any("FFT" in r["title"] for r in rows))
         fft = {title: field for title, field in {
             "Velocity RMS from FFT": "velocity_rms_[xyz]_mm_s",
-            "Spectral peaks vs roll harmonics": "peak[123]_[xyz]_hz",
+            "FFT peak frequencies": "peak[123]_[xyz]_hz",
             "Main peak amplitude": "peak1_[xyz]_g",
             "Main peak · last capture": "peak1_[xyz]_hz",
             "Capture settings · last": "(sample_rate_hz|averages)",
-            "Roll speed from vibration": 'r["_field"] == "roll_rpm"',
-            "Roll speed · detected": 'r["_field"] == "roll_rpm"',
-            "Roll 1x · detected": 'r["_field"] == "roll_hz"',
+            "Orbit axis ratio (FFT)": "/^orbit_(xy|xz|yz)_ratio$/",
         }.items()}
         for title, field_pattern in fft.items():
             query = self.query(title)
             self.assertIn('"wtvb01_fft"', query, title)
             self.assertIn(field_pattern, query, title)
-        # Peaks are drawn against the roll harmonics the collector derives from the sensor's machine data.
-        roll = self.query("Spectral peaks vs roll harmonics", "B")
-        self.assertIn('r["_field"] == "roll_hz"', roll)
-        self.assertIn("r._value * 3.0", roll)
+        for title in ("Dominant vibration frequency", "FFT peak frequencies"):
+            self.assertEqual([t["refId"] for t in self.titles[title]["targets"]], ["A"])
         for axis in "xyz":
             query = self.query(f"Band RMS (FFT) · {axis.upper()}")
             self.assertIn(f"band_{axis}_", query)
             self.assertIn("1 · 2–10 Hz", query)
             self.assertIn('sort(columns: ["series", "_time"])', query)
-            orders = self.query(f"Roll orders · {axis.upper()}")
-            self.assertIn(f"order_(0_5x|1x|2x|3x)_{axis}_mm_s", orders)
 
     def test_layout_has_no_overlaps(self):
         cells = set()
@@ -104,6 +98,35 @@ class VibrationDashboardTests(unittest.TestCase):
                 for col in range(pos["x"], pos["x"] + pos["w"]):
                     self.assertNotIn((row, col), cells, panel["title"])
                     cells.add((row, col))
+
+    def test_fft_peak_tooltip_uses_amplitude_at_capture_time(self):
+        title = "FFT peak frequencies"
+        panel = self.titles[title]
+        query = self.query(title)
+        self.assertIn("peak[123]_[xyz]_g", query)
+        self.assertIn('timeSrc: "_time"', query)
+        custom = panel["fieldConfig"]["defaults"]["custom"]
+        self.assertEqual(custom["drawStyle"], "points")
+        self.assertFalse(custom["spanNulls"])
+        amplitude = panel["fieldConfig"]["overrides"][0]
+        self.assertEqual(amplitude["matcher"]["options"], " · amplitude$")
+        properties = {p["id"]: p["value"] for p in amplitude["properties"]}
+        self.assertEqual(properties["unit"], "suffix:g")
+        self.assertEqual(properties["custom.hideFrom"], {"viz": True, "legend": True, "tooltip": False})
+
+    def test_fft_amplitude_and_rms_use_soft_ranges(self):
+        for title in ("Main peak amplitude", "Velocity RMS from FFT", "Band RMS (FFT) · X",
+                      "Band RMS (FFT) · Y", "Band RMS (FFT) · Z"):
+            defaults = self.titles[title]["fieldConfig"]["defaults"]
+            self.assertNotIn("max", defaults)
+            self.assertEqual(defaults["custom"]["axisSoftMin"], 0)
+            self.assertGreater(defaults["custom"]["axisSoftMax"], 0)
+
+    def test_orbit_axis_ratio_has_fixed_scale_and_capture_points(self):
+        defaults = self.titles["Orbit axis ratio (FFT)"]["fieldConfig"]["defaults"]
+        self.assertEqual((defaults["min"], defaults["max"]), (0, 1))
+        self.assertEqual(defaults["custom"]["drawStyle"], "points")
+        self.assertFalse(defaults["custom"]["spanNulls"])
 
 
 if __name__ == "__main__":

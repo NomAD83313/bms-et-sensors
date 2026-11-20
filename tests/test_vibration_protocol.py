@@ -112,6 +112,24 @@ class DecodeTests(unittest.TestCase):
         self.assertFalse(proto.block_valid(first, registers))
         self.assertTrue(proto.block_valid(proto.BLOCK_BASIC[0], [0xFFFF] * proto.BLOCK_BASIC[1]))
 
+    def test_invalid_shape_stats_drop_only_that_axis(self):
+        # Rows read from a real sensor at rest; Y carries gravity.
+        rest = {"acc_variance_x": 0.0, "acc_abs_mean_x_g": 0.032, "kurtosis_x": 2.707, "skewness_x": 0.1,
+                "acc_variance_y": 0.0, "acc_abs_mean_y_g": 1.003, "kurtosis_y": 28.848, "skewness_y": 0.373,
+                "velocity_kurtosis_y": 14.424, "velocity_rms_y_mm_s": 0.466,
+                "acc_variance_z": 0.0, "acc_abs_mean_z_g": 0.028, "kurtosis_z": 2.972, "skewness_z": 0.2}
+        self.assertEqual(proto.drop_invalid_shape_stats(rest), ["y"])
+        self.assertNotIn("kurtosis_y", rest)
+        self.assertNotIn("velocity_kurtosis_y", rest)
+        self.assertEqual((rest["kurtosis_x"], rest["velocity_rms_y_mm_s"]), (2.707, 0.466))
+        # Running machine: same gravity axis, small variance, plausible values are kept.
+        running = {"acc_variance_y": 0.002, "acc_abs_mean_y_g": 1.003, "kurtosis_y": 1.955, "skewness_y": -0.094}
+        self.assertEqual(proto.drop_invalid_shape_stats(running), [])
+        # Negative kurtosis or a Pearson violation fails on any axis.
+        self.assertFalse(proto.shape_stats_valid({"kurtosis_x": -18.5, "skewness_x": 0.0}, "x"))
+        self.assertFalse(proto.shape_stats_valid({"kurtosis_x": 16.256, "skewness_x": 9.831}, "x"))
+        self.assertTrue(proto.shape_stats_valid({"velocity_rms_x_mm_s": 1.0}, "x"))
+
 
 class DerivedTests(unittest.TestCase):
     def _energy(self, axis, half, one, two):

@@ -2,14 +2,16 @@
 import math
 
 DEFAULTS = dict(capture_mode='video', width=1280, height=720, fps=15,
-                bitrate=2000000, snapshot_interval_ms=200, shutter_us=0)
+                bitrate=2000000, snapshot_interval_ms=200, shutter_us=0, rotation=0)
 INTERVALS = (100, 200, 500, 1000)
 # Sony IMX415 (3864x2192 full readout, at most 15.75 fps): 16:9 outputs that keep the
 # full sensor field of view. The largest output is the full-width 4K picture.
 MAX_WIDTH, MAX_HEIGHT = 3864, 2192
 VIDEO_MAX_FPS = {(640, 360): 15, (1280, 720): 15, (1920, 1080): 15,
                  (2560, 1440): 15, (3840, 2160): 15}
-UPDATE_FIELDS = {'capture_mode', 'snapshot_interval_ms', 'shutter_us', 'width', 'height', 'fps'}
+UPDATE_FIELDS = {'capture_mode', 'snapshot_interval_ms', 'shutter_us', 'width', 'height', 'fps', 'rotation'}
+# Image rotation in degrees, applied by the camera source (sensor flips).
+ROTATIONS = (0, 180)
 SHUTTERS = (0, 200, 500, 1000, 2000, 4000, 8000, 10000, 20000, 40000)
 
 
@@ -28,6 +30,7 @@ def validate(data):
             or not 100000 <= result['bitrate'] <= 50000000
             or result['snapshot_interval_ms'] not in INTERVALS
             or result['shutter_us'] not in SHUTTERS
+            or isinstance(result['rotation'], bool) or result['rotation'] not in ROTATIONS
             or (result['capture_mode'] == 'video' and
                 (VIDEO_MAX_FPS.get((result['width'], result['height'])) is None
                  or result['fps'] > VIDEO_MAX_FPS[(result['width'], result['height'])]))):

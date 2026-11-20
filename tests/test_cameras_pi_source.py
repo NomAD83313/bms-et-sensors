@@ -197,6 +197,17 @@ class ModeTests(unittest.TestCase):
         self.assertNotIn('--low-latency', snapshots)
         self.assertEqual(snapshots[snapshots.index('--codec') + 1], 'mjpeg')
 
+    def test_rotation_is_passed_to_rpicam_only_when_requested(self):
+        from app.cameras.capture_settings import validate
+        from app.cameras.pi_source import command
+        self.assertNotIn('--rotation', command(validate(dict(width=1280, height=720, fps=10))))
+        for mode in ('video', 'snapshots'):
+            with self.subTest(mode=mode):
+                args = command(validate(dict(capture_mode=mode, width=1280, height=720, fps=10, rotation=180)))
+                self.assertEqual(args[args.index('--rotation') + 1], '180')
+        with self.assertRaises(ValueError):
+            validate(dict(rotation=90))
+
     def test_imx415_outputs_crop_the_sensor_slightly_instead_of_padding(self):
         from app.cameras.capture_settings import VIDEO_MAX_FPS, validate
         from app.cameras.pi_source import command, geometry, padding_command

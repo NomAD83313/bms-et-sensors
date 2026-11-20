@@ -129,6 +129,17 @@ class PollTests(AppTestCase):
         vapp.poll_cycle(config, sink, clock=tick, port_exists=lambda _p: True)
         self.assertEqual(sink.points[-1][1]["velocity_rms_x_mm_s"], 1.3)
 
+    def test_impossible_kurtosis_is_not_written(self):
+        self.sensors[0].registers.update({0x48: 2500, 0x54: 0x10000 - 18512, 0x60: 1500, 0x5B: 1000})  # kurtosis x, y, z; skewness y
+        sink = RecordingSink()
+        vapp.poll_cycle(self.configure(read_profile="extended"), sink, port_exists=lambda _p: True)
+        written = sink.points[-1][1]
+        self.assertEqual(written["kurtosis_x"], 2.5)
+        self.assertNotIn("kurtosis_y", written)
+        self.assertNotIn("skewness_y", written)
+        self.assertIn("velocity_rms_y_mm_s", written)
+        self.assertEqual(vapp.SENSOR_STATE[0x50]["invalid_shape_axes"], 1)
+
     def test_disabled_sensor_is_not_polled(self):
         config = self.configure(sensors=[{"address": 0x50, "name": "pump-1", "enabled": False}])
         vapp.poll_cycle(config, RecordingSink(), port_exists=lambda _p: True)

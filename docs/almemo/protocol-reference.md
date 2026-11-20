@@ -64,3 +64,17 @@ From `Command overview V7 protocol`:
 - `Sensor Info` now uses the fast path `G00; Mxx; f2 P00; P32` instead of polling a larger set of per-field commands.
 - Peak values and peak timestamps (`P02`, `P03`, `P28`, `P29`) are no longer fetched by the button and must be queried manually when needed.
 - Remaining issue: latency under active live streaming is still higher than the no-stream baseline and should be treated as a performance task, not as the original cable-loss defect.
+
+## Live writes to InfluxDB
+
+Both streaming modes share a background writer. A slow or unavailable InfluxDB
+does not delay serial reads or live display updates. Records keep their original
+timestamps when retried. The in-memory queue holds up to 256 waiting records plus
+one being written. When the queue fills, newer records replace the oldest waiting
+records. Restarting the collector discards pending data.
+InfluxDB may reject individual records (for example, a field type conflict).
+These count as dropped so later records can still be written.
+
+`/api/health` reports the writer under `influx_write` with its enabled and retry
+status, pending and dropped record counts, and failed write attempts. An InfluxDB
+outage leaves the serial device status independent of the writer.

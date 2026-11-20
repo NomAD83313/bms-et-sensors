@@ -59,7 +59,11 @@ def _cache_health_result(res: dict[str, Any]):
     with session.HEALTH_CACHE_LOCK:
         session._LAST_HEALTH_DATA = enriched
         session._LAST_HEALTH_AT = time.monotonic()
-    return jsonify(enriched)
+    return _health_response(enriched)
+
+
+def _health_response(res: dict[str, Any]):
+    return jsonify({**res, "influx_write": streams.influx_status()})
 
 
 @app.get("/health")
@@ -72,7 +76,7 @@ def health():
     with session.HEALTH_CACHE_LOCK:
         now = time.monotonic()
         if not force_refresh and session._LAST_HEALTH_DATA and (now - session._LAST_HEALTH_AT) < settings.HEALTH_CACHE_TTL:
-            return jsonify(session._LAST_HEALTH_DATA)
+            return _health_response(session._LAST_HEALTH_DATA)
 
     port = session._resolve_port()
     port_present = os.path.exists(port)
@@ -95,7 +99,7 @@ def health():
     if not probe_acquired:
         with session.HEALTH_CACHE_LOCK:
             if session._LAST_HEALTH_DATA:
-                return jsonify(session._LAST_HEALTH_DATA)
+                return _health_response(session._LAST_HEALTH_DATA)
         status = "ok" if session._device_recently_ok(max_age_sec=max(5.0, float(settings.ALMEMO_TIMEOUT_MS) / 300.0)) else "cable_only"
         return _cache_health_result({"status": status, "port": port, "port_present": True, "reason": "probe_busy"})
 
@@ -104,7 +108,7 @@ def health():
         with session.HEALTH_CACHE_LOCK:
             now = time.monotonic()
             if not force_refresh and session._LAST_HEALTH_DATA and (now - session._LAST_HEALTH_AT) < settings.HEALTH_CACHE_TTL:
-                return jsonify(session._LAST_HEALTH_DATA)
+                return _health_response(session._LAST_HEALTH_DATA)
 
         acquired = session.SERIAL_LOCK.acquire(timeout=3.0)
         if not acquired:

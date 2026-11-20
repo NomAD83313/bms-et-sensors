@@ -8,27 +8,24 @@ const openDetails = new Set();
 // Full spectra fetched per sensor address, refreshed when a new capture appears.
 const spectra = new Map();
 let spectrumUnit = 'g';
+// View per sensor: spectrum, waveform or orbit; waveform data is fetched only when shown.
+const spectrumViews = new Map();
+const waveformsCache = new Map();
+let waveQuantity = 'displacement_um';
+const WAVE_QUANTITIES = { acc_g: 'acceleration, g', velocity_mm_s: 'velocity, mm/s', displacement_um: 'displacement, µm' };
+const scaleModes = new Map();
+const compareLimits = new Map();
+// Display ranges only. These values are not alarm thresholds.
+const COMPARE_MINIMUMS = {
+  spectrum: { acc_g: 0.01, velocity_mm_s: 1 },
+  waveform: { acc_g: 0.02, velocity_mm_s: 1, displacement_um: 50 },
+  orbit: { displacement_um: 50 },
+};
 const FFT_AVERAGE_CHOICES = [1, 2, 4, 8, 16];
 // Interval typed but not yet applied, in seconds; survives the 1 s re-render.
 let pendingIntervalSec = null;
 // The table re-renders every second; a re-render between press and release would swallow the click.
 let pointerDown = false;
-const ORDER_LABELS = { '0_5x': '0.5x', '1x': '1x', '2x': '2x', '3x': '3x' };
-
-// Roll rotation found automatically from the last capture series (no machine data is entered).
-function rollRotation(sensor) {
-  const fft = sensor.fft || {};
-  return fft.roll_source === 'auto' && fft.roll_rpm ? { rpm: fft.roll_rpm, hz: fft.roll_rpm / 60, confidence: fft.roll_confidence } : null;
-}
-
-function rollInfo(sensor) {
-  const roll = rollRotation(sensor);
-  const fft = sensor.fft || {};
-  const text = roll
-    ? `<span>1x = ${fmt(roll.hz, 2)} Hz · confidence ${fmt(roll.confidence, 2)}</span><strong>${fmt(roll.rpm, 1)} rpm</strong>`
-    : `<span>${fft.roll_source ? 'no clear 1x in the last capture series' : 'waiting for a capture'}</span><strong>—</strong>`;
-  return `<div class="roll-setup"><strong>Roll speed (automatic)</strong><div class="roll-result">${text}</div></div>`;
-}
 
 function duration(seconds) {
   const s = Math.max(0, Math.round(seconds));
@@ -170,45 +167,31 @@ function valuesDetails(address, values, fields) {
     <div class="axis-values-wrap"><div class="axis-values-grid">${axes}</div></div></details>` : '';
 }
 
-function harmonicsPanel(sensor, values, harmonics) {
+function sensorEnergyPanel(sensor, values, harmonics) {
   const address = sensor.address;
   if (!harmonics || !Number.isFinite(values.energy_x_point3)) return '';
-  const pointMultipliers = [0.25, 0.5, 1, 2, 3, 4, 5, 6];
-  const bandMultipliers = [[0, 0.5], [0.5, 1], [1, 2], [2, 3], [3, 4], [4, 5]];
-  const detectedHz = (frequency, multiplier) => Number.isFinite(frequency) && frequency > 0
-    ? `${fmt(frequency * multiplier, 2)} Hz`
-    : '—';
-  const detectedBand = (frequency, bounds) => Number.isFinite(frequency) && frequency > 0
-    ? `${fmt(frequency * bounds[0], 2)}–${fmt(frequency * bounds[1], 2)} Hz`
-    : '—';
-  const roll = rollRotation(sensor);
-  const rollForm = `<p class="note">Roll rotation (automatic): <strong>${roll ? `${fmt(roll.rpm, 1)} rpm · 1x = ${fmt(roll.hz, 2)} Hz` : 'unknown'}</strong></p>`;
   const axes = ['x', 'y', 'z'].map((axis) => {
     const frequency = values[`frequency_${axis}_hz`];
-    const points = harmonics.points.map((label, i) => ({ label, value: values[`energy_${axis}_point${i + 1}`] }));
+    const points = harmonics.points.map((_, i) => ({ label: `Point ${i + 1}`, value: values[`energy_${axis}_point${i + 1}`] }));
     const pointMax = Math.max(1, ...points.map((p) => p.value || 0));
-    const pointBars = points.map((p, i) => `<div class="hbar${i === 2 ? ' fund' : ''}"><span class="hlabel">${escapeHtml(p.label)}<small>${detectedHz(frequency, pointMultipliers[i])}</small></span>
+    const pointBars = points.map((p) => `<div class="hbar"><span class="hlabel">${escapeHtml(p.label)}</span>
       <div class="track"><div class="fill" style="width:${Math.round(100 * (p.value || 0) / pointMax)}%"></div></div>
       <span>${p.value ?? '-'}</span></div>`).join('');
-    const bands = harmonics.bands.map((label, i) => ({ label, value: values[`energy_${axis}_band${i + 1}`] }));
+    const bands = harmonics.bands.map((_, i) => ({ label: `Band ${i + 1}`, value: values[`energy_${axis}_band${i + 1}`] }));
     const bandMax = Math.max(1, ...bands.map((band) => band.value || 0));
-    const bandBars = bands.map((band, i) => `<div class="hbar band"><span class="hlabel">${escapeHtml(band.label)}<small>${detectedBand(frequency, bandMultipliers[i])}</small></span>
+    const bandBars = bands.map((band) => `<div class="hbar band"><span class="hlabel">${escapeHtml(band.label)}</span>
       <div class="track"><div class="fill" style="width:${Math.round(100 * (band.value || 0) / bandMax)}%"></div></div>
       <span>${band.value ?? '-'}</span></div>`).join('');
-    const r21 = values[`energy_${axis}_ratio_2x_1x`];
-    const rh = values[`energy_${axis}_ratio_half_1x`];
     return `<div><h4>Axis ${axis.toUpperCase()} · total ${values[`energy_${axis}_total`] ?? '-'}</h4>
       <div class="detected-frequency">Detected dominant frequency: <strong>${Number.isFinite(frequency) && frequency > 0 ? fmt(frequency, 2) + ' Hz' : '—'}</strong></div>
-      <section class="harmonic-group"><h5>Harmonic points</h5>${pointBars}
-        <div class="ratios">2x/1x <strong>${fmt(r21, 2)}</strong> · 0.5x/1x <strong>${fmt(rh, 2)}</strong></div>
+      <section class="harmonic-group"><h5>Focus points</h5>${pointBars}
       </section>
-      <section class="harmonic-group"><h5>Frequency bands</h5>${bandBars}</section>
+      <section class="harmonic-group"><h5>Focus bands</h5>${bandBars}</section>
     </div>`;
   }).join('');
   const key = `h${address}`;
   const open = openDetails.has(key) ? ' open' : '';
-  return `<details class="values" data-addr="${key}"${open}><summary>Harmonics (spectrum energy)</summary>${rollForm}<div class="harmonics">${axes}</div>
-    <div class="note">1x = fundamental vibration frequency. Rising 1x suggests unbalance; rising 2x/1x misalignment or looseness; 0.5x/1x rub or whirl. Compare with this machine's normal values.</div></details>`;
+  return `<details class="values" data-addr="${key}"${open}><summary>Sensor spectrum energy</summary><div class="harmonics">${axes}</div></details>`;
 }
 
 async function loadSpectrum(address, capturedAt) {
@@ -224,7 +207,26 @@ async function loadSpectrum(address, capturedAt) {
   if (lastStatus) renderSensors(lastStatus);
 }
 
-function spectrumChart(spectrum, roll) {
+function scaleLimit(address, view, quantity, peak) {
+  const required = Math.max(1e-9, Number.isFinite(peak) ? peak * 1.05 : 0);
+  if (scaleModes.get(address) === 'auto') return required;
+  const key = `${address}:${view}:${quantity}`;
+  let limit = compareLimits.get(key) ?? COMPARE_MINIMUMS[view][quantity];
+  while (limit < required) limit *= 2;
+  compareLimits.set(key, limit);
+  return limit;
+}
+
+function scaleControls(address, view, quantity) {
+  const compare = scaleModes.get(address) !== 'auto';
+  return `<span class="unit scale-controls" role="group" aria-label="Chart scale">
+    <button type="button" data-scale="compare" data-addr="${address}" class="${compare ? 'on' : ''}" aria-pressed="${compare}" title="Keep the scale between captures">Compare</button>
+    <button type="button" data-scale="auto" data-addr="${address}" class="${compare ? '' : 'on'}" aria-pressed="${!compare}" title="Fit the current capture">Auto</button>
+    <button type="button" data-scale-reset="${address}:${view}:${quantity}" title="Reset the scale for this chart and unit" ${compare ? '' : 'disabled'}>Reset scale</button>
+  </span>`;
+}
+
+function spectrumChart(address, spectrum) {
   const width = 1000;
   const height = 260;
   const pad = { left: 52, right: 12, top: 12, bottom: 28 };
@@ -233,7 +235,7 @@ function spectrumChart(spectrum, roll) {
   const maxHz = spectrum.nyquist_hz;
   const series = ['x', 'y', 'z'].map((axis) => spectrum.axes[axis][key]
     .map((value, k) => [k * spectrum.df_hz, value]).filter(([f]) => f >= minHz && f <= maxHz));
-  const top = Math.max(1e-9, ...series.flat().map(([, v]) => v)) * 1.05;
+  const top = scaleLimit(address, 'spectrum', key, Math.max(...series.flat().map(([, v]) => v)));
   const sx = (f) => pad.left + (f / maxHz) * (width - pad.left - pad.right);
   const sy = (v) => height - pad.bottom - (v / top) * (height - pad.top - pad.bottom);
   const gridX = [];
@@ -242,24 +244,76 @@ function spectrumChart(spectrum, roll) {
   }
   const gridY = [0, 0.25, 0.5, 0.75, 1].map((p) => `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${sy(top * p)}" y2="${sy(top * p)}"/>
     <text x="${pad.left - 6}" y="${sy(top * p) + 4}" text-anchor="end">${(top * p).toPrecision(2)}</text>`);
-  const markers = roll ? [0.5, 1, 2, 3].map((k) => k * roll.hz).filter((f) => f <= maxHz).map((f, i) =>
-    `<line class="order-mark" x1="${sx(f)}" x2="${sx(f)}" y1="${pad.top}" y2="${height - pad.bottom}"/><text class="order-label" x="${sx(f) + 3}" y="${pad.top + 10}">${['0.5x', '1x', '2x', '3x'][i]}</text>`) : [];
   const lines = series.map((points, i) => `<polyline class="axis-${'xyz'[i]}" points="${points.map(([f, v]) => `${sx(f).toFixed(1)},${sy(v).toFixed(1)}`).join(' ')}"/>`);
   return `<svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Amplitude spectrum">
-    ${gridX.join('')}${gridY.join('')}${markers.join('')}${lines.join('')}
+    ${gridX.join('')}${gridY.join('')}${lines.join('')}
     <text x="${width - pad.right}" y="${height - 10}" text-anchor="end">Hz</text></svg>`;
 }
 
-function ordersTable(spectrum) {
-  if (!spectrum.roll_hz) return '<p class="note">No clear roll 1x in this capture series, so no roll orders (a very smooth roll, strong foreign vibration or a stopped line).</p>';
-  const names = Object.keys(ORDER_LABELS);
-  const rows = ['x', 'y', 'z'].map((axis) => {
-    const orders = spectrum.axes[axis].orders || {};
-    const cells = names.map((n) => orders[n] ? `${fmt(orders[n].mm_s, 2)} mm/s<br><small>${fmt(orders[n].hz, 2)} Hz</small>` : '—').join('</td><td>');
-    return `<tr><td class="l"><span class="axis-${axis}">${axis.toUpperCase()}</span></td><td>${cells}</td></tr>`;
+async function loadWaveform(address, capturedAt) {
+  const cached = waveformsCache.get(address);
+  if (cached && (cached.loading || cached.captured_at === capturedAt)) return;
+  waveformsCache.set(address, { ...(cached || {}), loading: true });
+  try {
+    waveformsCache.set(address, await api('GET', `api/sensors/${address}/waveform`));
+  } catch (_) {
+    waveformsCache.delete(address);
+  }
+  if (lastStatus) renderSensors(lastStatus);
+}
+
+function waveformChart(address, wave) {
+  const width = 1000;
+  const height = 260;
+  const pad = { left: 56, right: 12, top: 12, bottom: 28 };
+  const series = ['x', 'y', 'z'].map((axis) => wave.axes[axis][waveQuantity]);
+  const top = scaleLimit(address, 'waveform', waveQuantity, Math.max(...series.flat().map(Math.abs)));
+  const duration = wave.samples / wave.sample_rate_hz;
+  const sx = (i) => pad.left + (i / (wave.samples - 1)) * (width - pad.left - pad.right);
+  const sy = (v) => pad.top + (1 - (v + top) / (2 * top)) * (height - pad.top - pad.bottom);
+  const gridX = [];
+  for (let t = 0; t <= duration; t += 0.5) {
+    const x = pad.left + (t / duration) * (width - pad.left - pad.right);
+    gridX.push(`<line class="grid" x1="${x}" x2="${x}" y1="${pad.top}" y2="${height - pad.bottom}"/><text x="${x}" y="${height - 10}" text-anchor="middle">${t.toFixed(1)}</text>`);
+  }
+  const gridY = [-1, -0.5, 0, 0.5, 1].map((p) => `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${sy(top * p)}" y2="${sy(top * p)}"/>
+    <text x="${pad.left - 6}" y="${sy(top * p) + 4}" text-anchor="end">${(top * p).toPrecision(2)}</text>`);
+  const lines = series.map((values, i) => `<polyline class="axis-${'xyz'[i]}" points="${values.map((v, k) => `${sx(k).toFixed(1)},${sy(v).toFixed(1)}`).join(' ')}"/>`);
+  const buttons = Object.entries(WAVE_QUANTITIES).map(([key, label]) =>
+    `<button data-wave="${key}" class="${waveQuantity === key ? 'on' : ''}">${label.split(',')[0]}</button>`).join('');
+  return `<div class="fft-head"><span>Time signal of the last capture · velocity and displacement integrated above <strong>${fmt(wave.integration_min_hz, 1)} Hz</strong></span>
+      ${scaleControls(address, 'waveform', waveQuantity)}<span class="unit">${buttons}</span></div>
+    <svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Time waveform">
+      ${gridX.join('')}${gridY.join('')}${lines.join('')}<text x="${width - pad.right}" y="${height - 10}" text-anchor="end">s</text></svg>
+    <div class="fft-legend"><span class="axis-x">X</span><span class="axis-y">Y</span><span class="axis-z">Z</span><span>${WAVE_QUANTITIES[waveQuantity]}</span></div>
+    <p class="note">Look for short spikes (impacts: bearings), beating (two close frequencies) and clipped or asymmetric shapes (looseness, rub).</p>`;
+}
+
+function orbitCharts(address, wave) {
+  const size = 240;
+  const pad = 24;
+  const pairs = [['x', 'y'], ['x', 'z'], ['y', 'z']];
+  const peak = Math.max(...Object.values(wave.axes).flatMap((axis) => axis.displacement_um.map(Math.abs)));
+  const range = scaleLimit(address, 'orbit', 'displacement_um', peak);
+  const plots = pairs.map(([a, b]) => {
+    const pair = a + b;
+    const overallA = wave.axes[a].displacement_um;
+    const overallB = wave.axes[b].displacement_um;
+    const s = (v) => pad + ((v + range) / (2 * range)) * (size - 2 * pad);
+    const sv = (v) => size - s(v);
+    const path = (xs, ys) => xs.map((v, k) => `${s(v).toFixed(1)},${sv(ys[k]).toFixed(1)}`).join(' ');
+    const ratio = wave.orbits[pair]?.overall?.ratio;
+    const info = `ratio <strong>${fmt(ratio, 2)}</strong>`;
+    return `<figure class="orbit"><svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Orbit ${pair}">
+        <line class="grid" x1="${size / 2}" x2="${size / 2}" y1="${pad}" y2="${size - pad}"/><line class="grid" x1="${pad}" x2="${size - pad}" y1="${size / 2}" y2="${size / 2}"/>
+        <polyline class="orbit-all" points="${path(overallA, overallB)}"/>
+        <text x="${size - pad}" y="${size / 2 - 4}" text-anchor="end">${a.toUpperCase()}</text><text x="${size / 2 + 4}" y="${pad + 8}">${b.toUpperCase()}</text>
+        <text x="${pad}" y="${size - 6}">±${range.toPrecision(2)} µm</text></svg>
+      <figcaption><strong>${a.toUpperCase()}${b.toUpperCase()}</strong> · ${info}</figcaption></figure>`;
   }).join('');
-  return `<table class="fft-peaks"><thead><tr><th class="l">Roll orders (1x = ${fmt(spectrum.roll_hz, 2)} Hz, automatic)</th>${names.map((n) => `<th>${ORDER_LABELS[n]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
-    <p class="note">Strongest line within ±3 % of each order (speed estimate tolerance), as velocity amplitude.</p>`;
+  return `<div class="fft-head"><span>Broadband displacement paths of the last capture</span>${scaleControls(address, 'orbit', 'displacement_um')}</div>
+    <div class="orbits">${plots}</div>
+    <p class="note">Each path shows displacement in the plane of two axes. A ratio of 1 is circular; a ratio near 0 is nearly a straight line.</p>`;
 }
 
 function spectrumPanel(sensor, busy) {
@@ -286,7 +340,17 @@ function spectrumPanel(sensor, busy) {
     <span class="state">${state}</span>
     <span class="note" style="flex-basis:100%;margin:0">Applies to all enabled sensors, one after another, with the Average setting above. The interval counts from the end of a capture series; each capture pauses polling for about 4.5 s. Stop also ends a running series after the current capture.</span></div>`;
   let body = '<p class="note">No capture yet. A capture reads 1024 raw samples per axis (about 4.2 s) and pauses polling meanwhile.</p>';
-  if (spectrum && spectrum.axes) {
+  const view = spectrumViews.get(sensor.address) || 'spectrum';
+  const tabs = `<span class="unit view-tabs">${[['spectrum', 'Spectrum'], ['waveform', 'Waveform'], ['orbit', 'Orbit']].map(([v, label]) =>
+    `<button data-view="${v}" data-addr="${sensor.address}" class="${view === v ? 'on' : ''}">${label}</button>`).join('')}</span>`;
+  if (spectrum && spectrum.axes && view !== 'spectrum') {
+    loadWaveform(sensor.address, spectrum.captured_at);
+    const wave = waveformsCache.get(sensor.address);
+    const content = wave && wave.axes
+      ? (view === 'waveform' ? waveformChart(sensor.address, wave) : orbitCharts(sensor.address, wave))
+      : '<p class="note">Loading…</p>';
+    body = `<div class="fft-head"><span>Captured <strong>${escapeHtml(new Date(spectrum.captured_at).toLocaleString())}</strong></span>${tabs}</div>${content}`;
+  } else if (spectrum && spectrum.axes) {
     const unitLabel = spectrumUnit === 'g' ? 'g' : 'mm/s';
     const rate = `${fmt(spectrum.sample_rate_hz, 1)} Hz${spectrum.sample_rate_measured ? '' : ' (default)'}`;
     const peakRows = ['x', 'y', 'z'].map((axis) => {
@@ -300,15 +364,15 @@ function spectrumPanel(sensor, busy) {
         <span>Sample rate <strong>${rate}</strong></span>
         <span>Length <strong>${fmt(spectrum.duration_s, 2)} s</strong> · resolution <strong>${fmt(spectrum.df_hz, 3)} Hz</strong></span>
         <span>Averaged <strong>${spectrum.averages || 1} capture${(spectrum.averages || 1) > 1 ? 's' : ''}</strong></span>
-        ${spectrum.roll_hz ? `<span>Roll 1x <strong>${fmt(spectrum.roll_hz, 2)} Hz · ${fmt(spectrum.roll_hz * 60, 0)} rpm</strong> (${spectrum.roll_source}${spectrum.roll_confidence != null ? `, confidence ${fmt(spectrum.roll_confidence, 2)}` : ''})</span>` : ''}
+        ${tabs}${scaleControls(sensor.address, 'spectrum', spectrumUnit === 'g' ? 'acc_g' : 'velocity_mm_s')}
         <span class="unit"><button data-unit="g" class="${spectrumUnit === 'g' ? 'on' : ''}">g</button><button data-unit="mm_s" class="${spectrumUnit === 'g' ? '' : 'on'}">mm/s</button></span>
       </div>
-      ${spectrumChart(spectrum, spectrum.roll_hz ? { hz: spectrum.roll_hz } : null)}
+      ${spectrumChart(sensor.address, spectrum)}
       <div class="fft-legend"><span class="axis-x">X</span><span class="axis-y">Y</span><span class="axis-z">Z</span><span>amplitude, ${unitLabel}</span></div>
-      <table class="fft-peaks"><thead><tr><th class="l">Axis</th><th class="l">Top peaks</th><th>Velocity RMS ≥${fmt(spectrum.velocity_min_hz || 10, 0)} Hz${spectrum.velocity_min_auto ? ' (auto)' : ''}, mm/s</th><th class="l">Band RMS, g (Hz)</th></tr></thead><tbody>${peakRows}</tbody></table>${ordersTable(spectrum)}`;
+      <table class="fft-peaks"><thead><tr><th class="l">Axis</th><th class="l">Top peaks</th><th>Velocity RMS ≥${fmt(spectrum.velocity_min_hz || 10, 0)} Hz, mm/s</th><th class="l">Band RMS, g (Hz)</th></tr></thead><tbody>${peakRows}</tbody></table>`;
   }
   return `<details class="values" data-addr="${key}"${open}><summary>Spectrum (FFT)</summary>
-    ${rollInfo(sensor)}<div class="fft-head">${button}</div>${periodic}${error}${body}</details>`;
+    <div class="fft-head">${button}</div>${periodic}${error}${body}</details>`;
 }
 
 function renderSensors(status) {
@@ -317,7 +381,7 @@ function renderSensors(status) {
     const v = s.values || {};
     const dot = !s.enabled ? 'off' : (s.online ? 'on' : '');
     const lastError = s.last_error ? `<div class="note">${escapeHtml(s.last_error)}</div>` : '';
-    const details = spectrumPanel(s, busy) + harmonicsPanel(s, v, status.harmonics) + valuesDetails(s.address, v, status.fields);
+    const details = spectrumPanel(s, busy) + sensorEnergyPanel(s, v, status.harmonics) + valuesDetails(s.address, v, status.fields);
     // Expandable panels get their own full-width row so opening them never moves the values.
     const detailRow = details ? `<tr class="detail-row"><td colspan="8" class="l">${details}</td></tr>` : '';
     return `<tr class="sensor-row">
@@ -434,9 +498,33 @@ $('addBtn').addEventListener('click', () => run('sensorMsg', async () => {
 }));
 
 $('sensorRows').addEventListener('click', (event) => {
+  const viewButton = event.target.closest('button[data-view]');
+  if (viewButton) {
+    spectrumViews.set(Number(viewButton.dataset.addr), viewButton.dataset.view);
+    if (lastStatus) renderSensors(lastStatus);
+    return;
+  }
+  const waveButton = event.target.closest('button[data-wave]');
+  if (waveButton) {
+    waveQuantity = waveButton.dataset.wave;
+    if (lastStatus) renderSensors(lastStatus);
+    return;
+  }
   const unit = event.target.closest('button[data-unit]');
   if (unit) {
     spectrumUnit = unit.dataset.unit;
+    if (lastStatus) renderSensors(lastStatus);
+    return;
+  }
+  const scaleButton = event.target.closest('button[data-scale]');
+  if (scaleButton) {
+    scaleModes.set(Number(scaleButton.dataset.addr), scaleButton.dataset.scale);
+    if (lastStatus) renderSensors(lastStatus);
+    return;
+  }
+  const resetScale = event.target.closest('button[data-scale-reset]');
+  if (resetScale) {
+    compareLimits.delete(resetScale.dataset.scaleReset);
     if (lastStatus) renderSensors(lastStatus);
     return;
   }

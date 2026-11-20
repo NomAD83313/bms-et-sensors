@@ -74,7 +74,7 @@ if [[ -f runtime/camera-hub/enabled ]]; then
 fi
 bms_ensure_camera_onnx_runtime
 # Build while the running cameras keep recording.
-"${COMPOSE[@]}" --profile cameras build camera-media camera-analysis service-controller
+bms_build_services --profile cameras camera-media camera-analysis service-controller
 "${COMPOSE[@]}" --profile cameras up -d --no-deps --no-build "${camera_services[@]}" service-controller
 bms_verify_services_created "${camera_services[@]}"
 

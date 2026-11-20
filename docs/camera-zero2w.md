@@ -74,6 +74,17 @@ MediaMTX scales the output while preserving its 16:9 field of view. Exposure rem
 automatic. An initial cold-start preview request can return 503 while the sensor starts;
 the UI retries automatically.
 
+## Rotation
+
+The `imx415` overlay declares a 180° mounting rotation in the device tree, and libcamera
+compensates it with the sensor flips by default. The capture panel's **Rotation** control
+(0° / 180°) sets `rpiCameraHFlip` and `rpiCameraVFlip` together in the node configuration;
+180° turns the image for a camera mounted upside down. The setting survives restarts and
+resolution changes. Applying it pauses detection but keeps the learned baseline, so check
+that the image matches the learned view before resuming detection. The Pi CSI source passes
+the same setting to `rpicam-vid --rotation`. Nodes installed before this option do not
+advertise `rotations` and keep the control hidden; reinstall the node package to enable it.
+
 ## Diagnostics
 
 ```bash

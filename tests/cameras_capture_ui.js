@@ -64,7 +64,12 @@ async function run(source) {
   const shutters=element('capture-exposure').options.map(option=>Number(option.value));
   assert(shutters.includes(200)&&shutters.includes(500),'Offer 1/5000 and 1/2000 s');
   assert(shutters.includes(40000)&&shutters.every(value=>value<=40000),'Manual exposure is limited to 1/25 s');
-  capabilities={capture_modes:['video'],resolutions:['640x360','1280x720','1920x1080'],fps:[5,10,15],note:'Remote video controls'};
+  assert(!element('capture-rotation-label').hidden,'Local Pi camera offers rotation');
+  assert(requests.at(-1).rotation===0,'Send current rotation with local settings');
+  change('capture-rotation','180');
+  await element('capture-apply').onclick();
+  assert(requests.at(-1).rotation===180,'Send selected 180-degree rotation');
+  capabilities={capture_modes:['video'],resolutions:['640x360','1280x720','1920x1080'],fps:[5,10,15],rotations:[0,180],note:'Remote video controls'};
   settings={...settings,capture_mode:'video',width:1280,height:720,fps:10,shutter_us:0};
   await api.refreshCapture();
   assert(element('capture-mode').options.find(x=>x.value==='snapshots').disabled,'Remote camera cannot select snapshots');
@@ -76,7 +81,15 @@ async function run(source) {
   change('capture-resolution','1920x1080');
   await element('capture-apply').onclick();
   assert(requests.at(-1).width===1920&&requests.at(-1).fps===10,'Apply remote camera resolution with its current FPS');
-  console.log('Local and remote capture resolution, supported modes, FPS and apply UI passed.');
+  assert(!element('capture-rotation-label').hidden,'Remote agent advertising rotations offers rotation');
+  assert(requests.at(-1).rotation===180,'Keep the applied rotation when changing resolution');
+  capabilities={capture_modes:['video'],resolutions:['640x360','1280x720','1920x1080'],fps:[5,10,15],note:'Older node'};
+  await api.refreshCapture();
+  assert(element('capture-rotation-label').hidden,'Hide rotation for agents without it');
+  change('capture-resolution','1280x720');
+  await element('capture-apply').onclick();
+  assert(!('rotation' in requests.at(-1)),'Do not send rotation to agents without it');
+  console.log('Local and remote capture resolution, supported modes, FPS, rotation and apply UI passed.');
 }
 const fs=require('node:fs');
 run(fs.readFileSync('app/cameras/web/app.js','utf8')).catch(error=>{console.error(error);process.exitCode=1;});

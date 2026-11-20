@@ -158,6 +158,28 @@ class FftMathTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             vfft.analyze_average([[(0.0, 0.0, 0.0)] * 1024, [(0.0, 0.0, 0.0)] * 512], 246.0)
 
+    def test_waveform_integration_and_orbit_shape(self):
+        rate, f1 = 256.0, 5.0
+        to_g = lambda velocity: velocity * 2 * math.pi * f1 / vfft.STANDARD_GRAVITY_MM_S2
+        samples = [(to_g(2.0) * math.sin(2 * math.pi * f1 * i / rate),
+                    to_g(1.0) * math.sin(2 * math.pi * f1 * i / rate - math.pi / 2),
+                    1.0 + to_g(1.5) * math.sin(2 * math.pi * f1 * i / rate)) for i in range(1024)]
+        wave = vfft.waveforms(samples, rate)
+        x = wave["axes"]["x"]
+        self.assertAlmostEqual(max(x["velocity_mm_s"][100:900]), 2.0, delta=0.15)
+        self.assertAlmostEqual(max(x["displacement_um"][100:900]), 2.0 / (2 * math.pi * f1) * 1000, delta=4)
+        self.assertAlmostEqual(wave["orbits"]["xy"]["overall"]["ratio"], 0.5, delta=0.05)
+        self.assertLess(wave["orbits"]["xz"]["overall"]["ratio"], 0.05)
+        self.assertEqual(wave["integration_min_hz"], 2.0)
+
+    def test_waveform_removes_gravity(self):
+        rate = 246.0
+        samples = [(0.01 * math.sin(2 * math.pi * 30 * i / rate), 0.0, 1.0) for i in range(1024)]
+        wave = vfft.waveforms(samples, rate)
+        self.assertEqual(wave["integration_min_hz"], vfft.WAVEFORM_MIN_HZ)
+        self.assertNotIn("1x", wave["orbits"]["xy"])
+        self.assertAlmostEqual(sum(wave["axes"]["z"]["acc_g"]), 0.0, places=6)  # Gravity removed.
+
     def test_summary_fields_for_influx(self):
         rate = 246.0
         summary = vfft.analyze([(x, 0.0, 0.0) for x in sine(30.0, 0.05, rate)], rate)["summary"]
@@ -228,6 +250,7 @@ class FftAppTests(unittest.TestCase):
             patch.object(vapp, "SENSOR_STATE", {}),
             patch.object(vapp, "SPECTRA", {}),
             patch.object(vapp, "FFT_NEXT", {}),
+            patch.object(vapp, "WAVEFORMS", {}),
             patch.object(vapp, "OPERATION", dict(vapp.OPERATION, running=False)),
             patch.object(vapp, "_port_exists", lambda _path: True),
         ]
@@ -294,67 +317,41 @@ class FftAppTests(unittest.TestCase):
         vapp._fft_work(0x50, averages=1)
         self.assertEqual([m for m, _n, _v in self.sink.points], ["wtvb01_fft"])
 
-    def comb_fifo(self, roll_hz, amplitudes_g=(0.004, 0.003, 0.002)):
-        """Raw FIFO with a roll comb 1x/2x/3x on X and gravity on Z (sensor sign convention)."""
+    def tone_fifo(self, frequency_hz, amplitudes_g=(0.004, 0.003, 0.002)):
+        """Raw FIFO with three tones on X and gravity on Z."""
         import random
         rng = random.Random(4)
         rate = proto.FIFO_DEFAULT_SAMPLE_RATE
         samples = []
         for i in range(proto.FIFO_SAMPLES):
-            x = sum(a * math.sin(2 * math.pi * roll_hz * k * i / rate + k) for k, a in enumerate(amplitudes_g, start=1))
+            x = sum(a * math.sin(2 * math.pi * frequency_hz * k * i / rate + k) for k, a in enumerate(amplitudes_g, start=1))
             samples.append((round(-(x + rng.gauss(0, 0.0003)) * 2048), 0, -1961))
         return samples
 
-    def test_roll_is_detected_without_any_input(self):
+    def test_fft_reports_measured_frequencies_without_rotation_fields(self):
         self.configure()
-        self.sensor.fifo = self.comb_fifo(5.0)
+        self.sensor.fifo = self.tone_fifo(15.0)
         vapp._fft_work(0x50)
         spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
-        self.assertEqual(spectrum["roll_source"], "auto")
-        self.assertAlmostEqual(spectrum["roll_hz"], 5.0, delta=0.05)
-        self.assertAlmostEqual(spectrum["roll_rpm"], 300.0, delta=3)
-        self.assertEqual(set(spectrum["axes"]["x"]["orders"]), {"0_5x", "1x", "2x", "3x"})
-        self.assertEqual((spectrum["velocity_min_hz"], spectrum["velocity_min_auto"]), (2.0, True))  # 300 rpm.
+        self.assertEqual(spectrum["velocity_min_hz"], 2.0)
+        self.assertEqual(sorted(round(p["hz"]) for p in spectrum["axes"]["x"]["peaks"]), [15, 30, 45])
+        self.assertNotIn("orders", spectrum["axes"]["x"])
         summary = self.sink.points[-1][2]
-        self.assertEqual(summary["roll_source"], 2.0)
-        self.assertIn("order_1x_x_mm_s", summary)
-        self.assertAlmostEqual(summary["roll_rpm"], 300.0, delta=3)
+        self.assertAlmostEqual(summary["peak1_x_hz"], 15.0, delta=0.06)
+        self.assertFalse(any(key.startswith(("roll_", "order_", "phase_1x_", "orbit_1x_")) for key in summary))
         brief = self.client.get("/api/status").get_json()["sensors"][0]["fft"]
-        self.assertEqual(brief["roll_source"], "auto")
+        self.assertEqual(brief["peaks"]["x"], spectrum["axes"]["x"]["peaks"])
 
-    def test_fast_roll_uses_the_10_hz_velocity_limit(self):
-        self.configure()
-        self.sensor.fifo = self.comb_fifo(15.0)  # 900 rpm.
-        vapp._fft_work(0x50)
-        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
-        self.assertAlmostEqual(spectrum["roll_hz"], 15.0, delta=0.05)
-        self.assertEqual(spectrum["velocity_min_hz"], 10.0)
-
-    def test_without_a_roll_comb_there_are_no_orders(self):
-        self.configure()  # The default fake FIFO is a lone 30 Hz sine.
-        vapp._fft_work(0x50)
-        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
-        self.assertEqual((spectrum["roll_source"], spectrum["roll_hz"]), ("none", None))
-        self.assertEqual(spectrum["axes"]["x"]["orders"], {})
-        self.assertEqual(spectrum["velocity_min_hz"], 2.0)  # Unknown speed: include low frequencies.
-        self.assertNotIn("order_1x_x_g", self.sink.points[-1][2])
-
-    def test_api_settings_without_machine_data(self):
+    def test_api_accepts_explicit_velocity_rms_cutoff(self):
         self.configure()
         vapp.OPERATION["running"] = True  # FFT settings never touch the bus.
         self.assertEqual(self.client.post("/api/config", json={"fft_velocity_min_hz": 10}).status_code, 200)
-        self.assertEqual(self.client.post("/api/config", json={"roll_min_rpm": 100, "roll_max_rpm": 1200}).status_code, 200)
-        self.assertEqual(self.client.post("/api/config", json={"roll_min_rpm": 600, "roll_max_rpm": 900}).status_code, 400)
         self.assertEqual(self.client.post("/api/config", json={"fft_velocity_min_hz": 5}).status_code, 400)
         vapp.OPERATION["running"] = False
-        self.sensor.fifo = self.comb_fifo(5.0)
+        self.sensor.fifo = self.tone_fifo(5.0)
         vapp._fft_work(0x50)
         spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
-        self.assertEqual((spectrum["velocity_min_hz"], spectrum["velocity_min_auto"]), (10.0, False))
-        self.assertEqual(spectrum["roll_search_hz"], [1.6667, 20.0])
-        sensor = self.client.get("/api/status").get_json()["sensors"][0]
-        self.assertNotIn("speed_mode", sensor)
-        self.assertNotIn("roll_diameter_mm", sensor)
+        self.assertEqual(spectrum["velocity_min_hz"], 10.0)
 
     def test_sim_port_is_listed_and_present(self):
         ports = self.client.get("/api/ports").get_json()["ports"]
@@ -362,7 +359,7 @@ class FftAppTests(unittest.TestCase):
         with patch.object(vapp, "SIM_PORTS_LISTED", True):
             ports = self.client.get("/api/ports").get_json()["ports"]
         self.assertTrue(any(p["path"].startswith("sim://") for p in ports))
-        self.assertTrue(REAL_PORT_EXISTS("sim://roll"))
+        self.assertTrue(REAL_PORT_EXISTS("sim://frequency"))
         self.assertFalse(REAL_PORT_EXISTS("/dev/serial/by-id/not-there"))
 
     def test_capture_averages_validation(self):
@@ -379,6 +376,21 @@ class FftAppTests(unittest.TestCase):
         self.wait_operation()
         error = self.client.get("/api/status").get_json()["sensors"][0]["fft"]["error"]
         self.assertTrue(error.startswith("capture 1/4:"), error)
+
+    def test_waveform_endpoint_and_orbit_summary(self):
+        self.configure()
+        self.assertEqual(self.client.get("/api/sensors/80/waveform").status_code, 404)
+        self.sensor.fifo = self.tone_fifo(5.0)
+        vapp._fft_work(0x50, averages=2)
+        wave = self.client.get("/api/sensors/80/waveform").get_json()
+        self.assertEqual(len(wave["axes"]["x"]["displacement_um"]), 1024)
+        self.assertEqual(set(wave["axes"]["x"]), {"acc_g", "velocity_mm_s", "displacement_um"})
+        self.assertEqual(set(wave["orbits"]["xy"]), {"overall"})
+        summary = self.sink.points[-1][2]
+        self.assertIn("orbit_xy_ratio", summary)
+        spectrum = self.client.get("/api/sensors/80/spectrum").get_json()
+        self.assertIn("xy", spectrum["orbits"])
+        self.assertNotIn("displacement_um", str(self.client.get("/api/status").get_json()))
 
     def test_spectrum_before_capture_is_404(self):
         self.configure()

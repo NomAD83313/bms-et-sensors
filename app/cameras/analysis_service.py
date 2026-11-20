@@ -231,8 +231,19 @@ class Scheduler:
         return max(0.0, min(deadlines) - now) if deadlines else START_RETRY_SECONDS
 
     def close(self):
+        """Wait for running steps before releasing the camera directory locks."""
         for executor in ([self.executor] if self.executor is not None else self.executors.values()):
             executor.shutdown(wait=True, cancel_futures=True)
+        starting, self.starting = self.starting, None
+        workers, self.workers = self.workers, {}
+        try:
+            if starting is not None and not starting.cancelled():
+                started, _ = starting.result()
+                for worker in started.values():
+                    worker.close()
+        finally:
+            for worker in workers.values():
+                worker.close()
 
     def run(self):
         try:

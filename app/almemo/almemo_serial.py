@@ -5,10 +5,14 @@ import time
 import threading
 import glob
 import re
-from pathlib import Path
 from typing import Any
 
 import serial
+
+try:
+    from usb_discovery import parse_usb_ids, serial_usb_ids
+except ModuleNotFoundError:
+    from app.shared.usb_discovery import parse_usb_ids, serial_usb_ids
 
 if __package__:
     from . import almemo_settings as settings, almemo_protocol as protocol
@@ -99,38 +103,10 @@ class AlmemoSession:
         return excluded
 
     def _excluded_usb_ids(self) -> set[tuple[str, str]]:
-        excluded: set[tuple[str, str]] = set()
-        for raw_item in settings.ALMEMO_EXCLUDE_USB_IDS.split(","):
-            item = raw_item.strip().lower()
-            if not item or ":" not in item:
-                continue
-            vendor, product = (part.strip() for part in item.split(":", 1))
-            if vendor and product:
-                excluded.add((vendor, product))
-        return excluded
+        return parse_usb_ids(settings.ALMEMO_EXCLUDE_USB_IDS)
 
     def _serial_usb_ids(self, path: str) -> tuple[str, str] | None:
-        real_path = os.path.realpath(path) if os.path.exists(path) else path
-        tty_name = os.path.basename(real_path)
-        sys_path = Path("/sys/class/tty") / tty_name / "device"
-        if not sys_path.exists():
-            return None
-        try:
-            current = sys_path.resolve()
-        except Exception:
-            current = sys_path
-        for current in (current, *current.parents):
-            vendor_path = current / "idVendor"
-            product_path = current / "idProduct"
-            if vendor_path.exists() and product_path.exists():
-                try:
-                    return (
-                        vendor_path.read_text(encoding="ascii").strip().lower(),
-                        product_path.read_text(encoding="ascii").strip().lower(),
-                    )
-                except Exception:
-                    return None
-        return None
+        return serial_usb_ids(path)
 
     def _is_excluded_serial_port(self, path: str, excluded_realpaths: set[str]) -> bool:
         if not path:

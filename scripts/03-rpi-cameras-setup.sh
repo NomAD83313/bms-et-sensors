@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prepare optional camera images during Raspberry Pi setup without starting cameras.
-# Builds the XNNPACK ONNX Runtime wheel image once (when CAMERA_ONNX_RUNTIME_IMAGE
-# selects it) and the camera application images, so the first camera start is fast.
+# Pulls (arm64) or builds the XNNPACK ONNX Runtime wheel image once (when
+# CAMERA_ONNX_RUNTIME_IMAGE selects it) and the camera application images, so the first camera start is fast.
 # Safe to rerun: existing images are reused. Use --rebuild-onnx to recompile ONNX Runtime.
 set -euo pipefail
 
@@ -37,12 +37,14 @@ if [[ "$rebuild_onnx" == "1" ]]; then
     echo ">>> Removing $image to force a rebuild..."
     docker image rm "$image" >/dev/null
   fi
+  # Recompile instead of pulling the published image.
+  export CAMERA_ONNX_PREBUILT_IMAGE=""
 fi
 
 bms_ensure_camera_onnx_runtime
 
 echo ">>> Building camera images (no containers are started)..."
-"${COMPOSE[@]}" --profile cameras build camera-media camera-analysis
+bms_build_services --profile cameras camera-media camera-analysis
 
 echo "==========================================="
 echo " Camera setup finished. Start the cameras with:"

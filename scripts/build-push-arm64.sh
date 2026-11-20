@@ -11,6 +11,19 @@ HOST_ARCH="$(uname -m)"
 PUSH_IMAGES="${PUSH_IMAGES:-1}"
 ONNX_RUNTIME_VERSION="${ONNX_RUNTIME_VERSION:-1.31.1}"
 ONNX_RUNTIME_TAG="ort-${ONNX_RUNTIME_VERSION}-arm64"
+ONNX_LOCAL_IMAGE="bms-onnx-xnnpack:local"
+REBUILD_ONNX=0
+for argument in "$@"; do
+  case "$argument" in
+    --rebuild-onnx) REBUILD_ONNX=1 ;;
+    -h|--help)
+      echo "Usage: $0 [--rebuild-onnx]"
+      echo "  Reuses an existing ${ONNX_LOCAL_IMAGE} (compiling ONNX Runtime takes hours);"
+      echo "  --rebuild-onnx compiles it again. PUSH_IMAGES=0 builds without pushing."
+      exit 0 ;;
+    *) echo "Unknown option: $argument" >&2; exit 1 ;;
+  esac
+done
 
 case "${HOST_ARCH}" in
   aarch64|arm64)
@@ -65,11 +78,21 @@ build_and_push Dockerfile.vibration bms-vibration-collector latest
 
 # Build the reusable ONNX Runtime wheel layer first. camera-analysis consumes this
 # exact versioned tag, so future Pi hosts can pull it without compiling ONNX Runtime.
-build_and_push Dockerfile.camera-onnx-xnnpack bms-onnx-xnnpack "${ONNX_RUNTIME_TAG}"
-docker tag "${DOCKER_NAMESPACE}/bms-onnx-xnnpack:${ONNX_RUNTIME_TAG}" bms-onnx-xnnpack:local
+# An existing local image is published as is: the compile takes hours on a Pi.
+ONNX_IMAGE="${DOCKER_NAMESPACE}/bms-onnx-xnnpack:${ONNX_RUNTIME_TAG}"
+if [[ "${REBUILD_ONNX}" == "0" ]] && docker image inspect "${ONNX_LOCAL_IMAGE}" >/dev/null 2>&1; then
+  echo ">>> Reusing ${ONNX_LOCAL_IMAGE} as ${ONNX_IMAGE} (--rebuild-onnx compiles it again)."
+  docker tag "${ONNX_LOCAL_IMAGE}" "${ONNX_IMAGE}"
+  if [[ "${PUSH_IMAGES}" == "1" ]]; then
+    docker push "${ONNX_IMAGE}"
+  fi
+else
+  build_and_push Dockerfile.camera-onnx-xnnpack bms-onnx-xnnpack "${ONNX_RUNTIME_TAG}"
+  docker tag "${ONNX_IMAGE}" "${ONNX_LOCAL_IMAGE}"
+fi
 build_and_push Dockerfile.cameras bms-camera-media latest
 build_and_push Dockerfile.camera-analysis bms-camera-analysis latest \
-  --build-arg ONNX_RUNTIME_IMAGE=bms-onnx-xnnpack:local
+  --build-arg ONNX_RUNTIME_IMAGE="${ONNX_LOCAL_IMAGE}"
 
 if [[ "${PUSH_IMAGES}" == "1" ]]; then
   echo ">>> arm64 build and push complete."

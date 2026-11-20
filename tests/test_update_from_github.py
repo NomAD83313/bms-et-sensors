@@ -123,5 +123,27 @@ class UpdateFromGitHubTests(unittest.TestCase):
         self.assertEqual(run(['git', 'rev-parse', 'main'], self.host).stdout.strip(), self.remote_head)
 
 
+    def prepare_repo(self):
+        script = ('source scripts/lib/setup-common.sh; RETRY_ATTEMPTS=1; RETRY_DELAY_SEC=0; '
+                  f'PROJECT_DIR={self.host}; REPO_BRANCH=main; prepare_repo')
+        return subprocess.run(['bash', '-c', script], cwd=self.host, capture_output=True, text=True, check=True)
+
+    def test_setup_fast_forwards_a_clean_checkout(self):
+        output = self.prepare_repo().stdout
+        self.assertNotIn('running the updater', output)
+        self.assertEqual(self.head(), self.remote_head)
+
+    def test_setup_hands_a_squashed_history_to_the_updater(self):
+        # rpi-setup.sh on a host cloned before the GitHub history was rewritten.
+        (self.host / '.env').write_text('INFLUX_TOKEN=secret\n')
+        run(GIT + ['commit', '-qm', 'pre-squash', '--allow-empty'], self.host)
+        output = self.prepare_repo().stdout
+        self.assertIn('running the updater', output)
+        self.assertIn('Update: replace', output)
+        self.assertEqual(self.head(), self.remote_head)
+        self.assertEqual((self.host / '.env').read_text(), 'INFLUX_TOKEN=secret\n')
+        self.assertTrue(any((self.host / 'runtime' / 'backups').iterdir()))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -39,8 +39,8 @@ OFFLINE_AFTER_FAILURES = 3
 OFFLINE_RETRY_SEC = 5.0
 PORT_RETRY_SEC = 2.0
 SERIAL_DIRS = ("/dev/serial/by-id",)
-SIM_PORT = "sim://roll?speed=600&diameter=600"
-SIM_FAULTS_PORT = "sim://roll?speed=600&diameter=600&scenario=faults"
+SIM_PORT = "sim://frequency?hz=5.25"
+SIM_FAULTS_PORT = "sim://frequency?hz=5.25&scenario=faults"
 # The simulated ports are offered in the port list only for test sessions.
 SIM_PORTS_LISTED = os.getenv("VIBRATION_SIM_PORTS", "0") == "1"
 
@@ -62,6 +62,8 @@ BUS_STATE: dict[str, Any] = {"port_present": False, "open": False, "last_error":
 SPECTRA: dict[int, dict[str, Any]] = {}
 # Monotonic time of the next periodic capture per sensor.
 FFT_NEXT: dict[int, float] = {}
+# Time waveforms and orbits of the last capture per sensor (in memory only).
+WAVEFORMS: dict[int, dict[str, Any]] = {}
 OPERATION: dict[str, Any] = {"name": None, "running": False, "started_at": None, "finished_at": None, "result": None, "error": None,
                              "progress": None}
 
@@ -75,7 +77,7 @@ def _sensor_state(address: int) -> dict[str, Any]:
     if state is None:
         state = SENSOR_STATE[address] = {
             "online": False, "values": {}, "last_ok_at": None, "last_error": None,
-            "reads": 0, "errors": 0, "rejected_blocks": 0, "consecutive_failures": 0, "next_retry": 0.0, "block_read_at": {},
+            "reads": 0, "errors": 0, "rejected_blocks": 0, "invalid_shape_axes": 0, "consecutive_failures": 0, "next_retry": 0.0, "block_read_at": {},
         }
     return state
 
@@ -94,7 +96,7 @@ def _store_config(new_config: dict[str, Any]) -> dict[str, Any]:
         CONFIG = saved
         CONFIG_ERROR = None
         known = {s["address"] for s in saved["sensors"]}
-        for table in (SENSOR_STATE, SPECTRA, FFT_NEXT):
+        for table in (SENSOR_STATE, SPECTRA, FFT_NEXT, WAVEFORMS):
             for address in list(table):
                 if address not in known:
                     del table[address]
@@ -161,7 +163,7 @@ def _blocks_to_skip(address: int, profile: str, now: float) -> set[int]:
 
 
 def _record_success(address: int, profile: str, values: dict[str, float], skipped: set[int], now: float,
-                    rejected: set[int] = frozenset()) -> None:
+                    rejected: set[int] = frozenset(), invalid_axes: int = 0) -> None:
     """Merge fresh values; skipped and rejected blocks keep their last values for the UI.
 
     A rejected block is not marked as read, so the next cycle reads it again.
@@ -179,6 +181,7 @@ def _record_success(address: int, profile: str, values: dict[str, float], skippe
                      consecutive_failures=0, next_retry=0.0)
         state["reads"] += 1
         state["rejected_blocks"] += len(rejected)
+        state["invalid_shape_axes"] += invalid_axes
 
 
 def _record_failure(address: int, error: str, now: float) -> None:
@@ -242,7 +245,9 @@ def poll_cycle(config: dict[str, Any], sink: InfluxSink, clock: Callable[[], flo
                 _set_bus_state(open=False, last_error=str(exc))
                 return PORT_RETRY_SEC
             continue
-        _record_success(sensor["address"], config["read_profile"], values, skipped, now, rejected)
+        invalid_axes = proto.drop_invalid_shape_stats(values)
+        _record_success(sensor["address"], config["read_profile"], values, skipped, now, rejected,
+                        len(invalid_axes))
         # Only freshly read values are written; skipped blocks would repeat old samples.
         sink.write(sensor, values, datetime.now(timezone.utc))
     elapsed = clock() - started
@@ -402,34 +407,37 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None)
     measured = sum(rates) / len(rates) if rates else None
     sample_rate = measured or proto.FIFO_DEFAULT_SAMPLE_RATE
     result = fft.analyze_average([c["samples"] for c in captures], sample_rate,
-                                 velocity_min_hz=config["fft_velocity_min_hz"] or None,
-                                 roll_search_hz=cfg.roll_search_hz(config))
-    roll_hz = result["roll_hz"]
-    detection = result["roll_detection"]
-    if roll_hz:
-        result["summary"]["roll_rpm"] = round(roll_hz * 60.0, 2)
+                                 velocity_min_hz=config["fft_velocity_min_hz"])
+    # The time waveform and displacement paths come from the last capture.
+    wave = fft.waveforms(captures[-1]["samples"], sample_rate)
+    for pair, orbit in wave["orbits"].items():
+        result["summary"][f"orbit_{pair}_ratio"] = round(orbit["overall"]["ratio"], 3)
     observed = datetime.now(timezone.utc)
     spectrum = {
         "captured_at": observed.isoformat(timespec="milliseconds"), "periodic": periodic, "error": None,
         "sample_rate_hz": round(sample_rate, 3), "sample_rate_measured": measured is not None,
         "samples": result["samples"], "duration_s": round(result["duration_s"], 3), "averages": result["averages"],
         "df_hz": round(result["df_hz"], 5), "nyquist_hz": round(result["nyquist_hz"], 3),
-        "velocity_min_hz": result["velocity_min_hz"], "roll_hz": round(roll_hz, 4) if roll_hz else None,
-        "roll_source": result["roll_source"], "roll_confidence": round(detection["confidence"], 3) if detection else None,
-        "roll_search_hz": [round(v, 4) for v in cfg.roll_search_hz(config)],
-        "velocity_min_auto": not config["fft_velocity_min_hz"],
-        "roll_rpm": round(roll_hz * 60.0, 1) if roll_hz else None,
+        "velocity_min_hz": result["velocity_min_hz"],
         "axes": {axis: {"acc_g": _round_list(data["acc_g"], 6), "velocity_mm_s": _round_list(data["velocity_mm_s"], 4),
                         "peaks": [{"hz": round(f, 3), "g": round(a, 6)} for f, a in data["peaks"]],
                         "bands_g": {k: round(v, 6) for k, v in data["bands_g"].items()},
-                        "velocity_rms_mm_s": round(data["velocity_rms_mm_s"], 4),
-                        "orders": {name: {"hz": round(o["hz"], 3), "g": round(o["g"], 6), "mm_s": round(o["mm_s"], 4)}
-                                   for name, o in data["orders"].items()}}
+                        "velocity_rms_mm_s": round(data["velocity_rms_mm_s"], 4)}
                  for axis, data in result["axes"].items()},
         "summary": result["summary"],
     }
+    spectrum["orbits"] = {pair: {kind: {k: round(v, 3) for k, v in values.items()} for kind, values in orbit.items()}
+                          for pair, orbit in wave["orbits"].items()}
+    waveform = {
+        "captured_at": spectrum["captured_at"], "sample_rate_hz": round(sample_rate, 3), "samples": wave["samples"],
+        "integration_min_hz": round(wave["integration_min_hz"], 3),
+        "axes": {axis: {key: _round_list(values, 5 if key == "acc_g" else 2) for key, values in data.items()}
+                 for axis, data in wave["axes"].items()},
+        "orbits": spectrum["orbits"],
+    }
     with STATE_LOCK:
         SPECTRA[address] = spectrum
+        WAVEFORMS[address] = waveform
     INFLUX.write(sensor, result["summary"], observed, measurement=FFT_MEASUREMENT)
     return {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures), "stopped": stopped,
             "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
@@ -458,10 +466,6 @@ def _spectrum_brief(address: int) -> dict[str, Any] | None:
     brief["peaks"] = {axis: data["peaks"] for axis, data in axes.items()}
     brief["velocity_rms_mm_s"] = {axis: data["velocity_rms_mm_s"] for axis, data in axes.items()}
     brief["velocity_min_hz"] = spectrum.get("velocity_min_hz")
-    brief["roll_hz"] = spectrum.get("roll_hz")
-    for key in ("roll_source", "roll_confidence", "roll_rpm"):
-        brief[key] = spectrum.get(key)
-    brief["orders"] = {axis: data.get("orders", {}) for axis, data in axes.items()}
     return brief
 
 
@@ -488,7 +492,7 @@ def list_ports(dirs: tuple[str, ...] = SERIAL_DIRS) -> list[dict[str, str]]:
             if not any(p["device"] == str(entry) for p in ports):
                 ports.append({"path": str(entry), "device": str(entry)})
     if SIM_PORTS_LISTED:
-        ports.append({"path": SIM_PORT, "device": "simulated WTVB01 (roll 600 m/min, Ø600 mm)"})
+        ports.append({"path": SIM_PORT, "device": "simulated WTVB01 (5.25 Hz reference)"})
         ports.append({"path": SIM_FAULTS_PORT, "device": "simulated WTVB01, 30 min fault scenario"})
     return ports
 
@@ -581,7 +585,7 @@ def _busy_response():
 
 # Settings that never touch the bus; they may change while a capture or scan runs
 # (Stop must work during a long averaged series).
-FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages", "fft_velocity_min_hz", "roll_min_rpm", "roll_max_rpm")
+FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages", "fft_velocity_min_hz")
 
 
 def _update_config(mutator: Callable[[dict[str, Any]], None], allow_while_busy: bool = False):
@@ -707,6 +711,15 @@ def get_spectrum(address: int):
     if not spectrum or "axes" not in spectrum:
         return jsonify(error="no spectrum captured yet"), 404
     return jsonify(spectrum)
+
+
+@app.get("/api/sensors/<int:address>/waveform")
+def get_waveform(address: int):
+    with STATE_LOCK:
+        waveform = WAVEFORMS.get(address)
+    if not waveform:
+        return jsonify(error="no capture yet"), 404
+    return jsonify(waveform)
 
 
 @app.post("/api/bus/baud")

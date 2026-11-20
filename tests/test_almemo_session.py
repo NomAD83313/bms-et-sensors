@@ -2,6 +2,7 @@ import threading
 import unittest
 from unittest.mock import Mock, patch, call
 
+from app.almemo import almemo_influx
 from app.almemo.almemo_serial import AlmemoSession
 from app.almemo.almemo_streaming import AlmemoStreaming
 
@@ -59,18 +60,80 @@ class AlmemoSessionTests(unittest.TestCase):
             patch.object(self.session, "_open_verified_serial", return_value=(serial_port, "/dev/fake")),
             patch.object(self.session, "_write_line") as write,
             patch.object(self.session, "_discard_input_until_quiet") as drain,
-            patch.object(self.streams, "_write_record_to_influx") as record,
+            patch.object(self.streams, "_queue_record_for_influx") as record,
             patch("app.almemo.almemo_streaming.time.sleep"),
         ):
             self.streams._live_reader("000002")
         close.assert_called_once()
         commands = [item.args[1] for item in write.call_args_list]
         self.assertEqual(commands, ["C11", "f5 k-5", "f5 k-4", "f5 k-2", "G00", "Z000002", "S2", "M00", "C11"])
-        record.assert_called_once_with(None, "12:34:56 00: +23.5 C Room 01: +24.1 C Outdoor", "print_cycle")
+        record.assert_called_once_with("12:34:56 00: +23.5 C Room 01: +24.1 C Outdoor", "print_cycle")
         drain.assert_called_once_with(serial_port, max_sec=1.5, quiet_sec=0.15)
         self.assertEqual(list(self.streams.LIVE_LINES), ["12:34:56 00: +23.5 C Room", "01: +24.1 C Outdoor"])
         self.assertFalse(self.session.SERIAL_LOCK.locked())
         self.assertFalse(stop.is_set())
+
+    def test_influx_outage_does_not_stop_serial_and_bounded_queue_recovers(self):
+        started = threading.Event()
+        release = threading.Event()
+        stop = threading.Event()
+        lines = [f"12:34:5{i} 00: +{23 + i}.5 C Room".encode() for i in range(5)]
+        serial_port = Mock()
+        serial_port.__enter__ = Mock(return_value=serial_port)
+        serial_port.__exit__ = Mock(return_value=False)
+        reads = iter(lines)
+        received, attempts = [], []
+
+        def read_line():
+            line = next(reads, b"")
+            if line == lines[2]:
+                self.assertTrue(started.wait(2.0))
+            if not line:
+                stop.set()
+            return line
+
+        def write(**kwargs):
+            attempts.append(kwargs["record"][0].to_line_protocol())
+            if len(attempts) == 1:
+                started.set()
+                if not release.wait(2.0):
+                    raise TimeoutError("test did not release InfluxDB")
+                raise ConnectionError("InfluxDB unavailable")
+
+        serial_port.readline.side_effect = read_line
+        with patch.object(almemo_influx, "MAX_PENDING_RECORDS", 2):
+            self.streams.influx_writer = writer = almemo_influx.AlmemoInfluxWriter()
+        with (
+            patch.object(self.streams, "_influx_enabled", return_value=True),
+            patch.object(self.session, "_open_verified_serial", return_value=(serial_port, "/dev/fake")) as open_port,
+            patch.object(self.session, "_discard_input_until_quiet"),
+            patch.object(almemo_influx, "InfluxDBClient") as client,
+            patch.object(almemo_influx, "IDLE_SECONDS", 0.05),
+            patch.object(almemo_influx, "RETRY_SECONDS", 0.01),
+        ):
+            client.return_value.write_api.return_value.write.side_effect = write
+            try:
+                self.streams._reader_loop(stop, received.append, (), 0, (), 0, "print_cycle")
+                self.assertEqual(received, [line.decode() for line in lines])
+                self.assertEqual(writer.status()["pending_records"], 3)
+                self.assertEqual(writer.status()["dropped_records"], 2)
+                open_port.assert_called_once_with(almemo_influx.settings.ALMEMO_TIMEOUT_MS, xonxoff=True)
+            finally:
+                thread = writer._thread
+                release.set()
+                if thread is not None:
+                    thread.join(2.0)
+            self.assertIsNotNone(thread)
+            self.assertFalse(thread.is_alive())
+            client.return_value.close.assert_called_once()
+        self.assertEqual(writer.status(), {
+            "pending_records": 0, "dropped_records": 2, "write_errors": 1, "retrying": False,
+        })
+        self.assertEqual(len(attempts), 4)
+        self.assertEqual(attempts[0], attempts[1], "Retries must retain the original timestamp")
+        self.assertIn(" value=23.5 ", attempts[1])
+        self.assertIn(" value=26.5 ", attempts[2])
+        self.assertIn(" value=27.5 ", attempts[3])
 
     def test_concurrent_batches_cannot_interleave_serial_commands(self):
         first_entered = threading.Event()

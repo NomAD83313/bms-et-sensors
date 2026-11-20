@@ -96,7 +96,7 @@ class SchedulerTests(unittest.TestCase):
             if fail:
                 raise RuntimeError('boom')
             return wait
-        return types.SimpleNamespace(step=step, state=dict(state=state))
+        return types.SimpleNamespace(step=step, state=dict(state=state), close=Mock())
 
     def scheduler(self, **workers):
         return self.service.Scheduler(workers, clock=lambda: self.now[0], sleep=Mock(), executor=InlineExecutor())
@@ -166,12 +166,14 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual([entry['id'] for entry in scheduler.pending], ['busy'])
 
     def test_run_sleeps_between_rounds(self):
-        scheduler = self.scheduler(a=self.worker('a', wait=.2))
+        worker = self.worker('a', wait=.2)
+        scheduler = self.scheduler(a=worker)
         scheduler.sleep = Mock(side_effect=KeyboardInterrupt)
         with patch.object(self.service, 'ALIVE_FILE', Path(tempfile.gettempdir()) / 'test-camera-analysis.alive'):
             with self.assertRaises(KeyboardInterrupt):
                 scheduler.run()
         scheduler.sleep.assert_called_once_with(.2)
+        worker.close.assert_called_once()
 
 
 class ConcurrentSchedulerTests(unittest.TestCase):
@@ -197,8 +199,8 @@ class ConcurrentSchedulerTests(unittest.TestCase):
                     return .01
 
                 scheduler = service.Scheduler(dict(
-                    blocked=types.SimpleNamespace(step=blocked_step, state={'state': state}),
-                    healthy=types.SimpleNamespace(step=healthy_step, state={'state': 'normal'})))
+                    blocked=types.SimpleNamespace(step=blocked_step, state={'state': state}, close=Mock()),
+                    healthy=types.SimpleNamespace(step=healthy_step, state={'state': 'normal'}, close=Mock())))
                 try:
                     scheduler.run_once()
                     self.assertTrue(entered.wait(3))
@@ -219,15 +221,16 @@ class ConcurrentSchedulerTests(unittest.TestCase):
     def test_slow_pending_initialization_does_not_block_active_cameras(self):
         service = load_service()
         entered, release, healthy_ran = threading.Event(), threading.Event(), threading.Event()
+        pending = types.SimpleNamespace(close=Mock())
+        healthy = types.SimpleNamespace(
+            step=lambda: healthy_ran.set() or .2, state={'state': 'normal'}, close=Mock())
 
         def factory(**kwargs):
             entered.set()
             release.wait(5)
-            return types.SimpleNamespace(step=lambda: .2, state={'state': 'normal'})
+            return pending
 
-        scheduler = service.Scheduler(dict(healthy=types.SimpleNamespace(
-            step=lambda: healthy_ran.set() or .2, state={'state': 'normal'})),
-            pending=[camera('late')], factory=factory)
+        scheduler = service.Scheduler(dict(healthy=healthy), pending=[camera('late')], factory=factory)
         scheduler.next_start = 0
         try:
             scheduler.run_once()
@@ -236,6 +239,9 @@ class ConcurrentSchedulerTests(unittest.TestCase):
         finally:
             release.set()
             scheduler.close()
+        scheduler.close()
+        healthy.close.assert_called_once()
+        pending.close.assert_called_once()
 
 
 class WorkerSettingsAndLockTests(unittest.TestCase):
@@ -331,6 +337,27 @@ class WorkerSettingsAndLockTests(unittest.TestCase):
             sleep.assert_called_once_with(module.LOCK_RETRY_SECONDS)
             self.assertIn('waiting for it to stop', logs.output[0])
             holder.close()
+
+    def test_initialization_error_releases_the_directory_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = self.module(root, [])
+            with patch.object(module.AnomalyWorker, 'publish_status', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    module.AnomalyWorker(data=root, exclusive=True)
+            worker = module.AnomalyWorker(data=root, exclusive=True)
+            worker.close()
+
+    def test_per_camera_runner_releases_the_lock_when_run_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = self.module(root, [])
+            with patch.object(module, 'DATA', root), \
+                    patch.object(module.AnomalyWorker, 'run', side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    module.main()
+            worker = module.AnomalyWorker(data=root, exclusive=True)
+            worker.close()
 
     def test_build_workers_skips_locked_or_broken_cameras_and_keeps_the_rest(self):
         with tempfile.TemporaryDirectory() as directory:

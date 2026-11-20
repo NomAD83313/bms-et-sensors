@@ -56,6 +56,28 @@ class ZeroCaptureTests(unittest.TestCase):
 
         self.assertEqual(self.control.config()['paths']['cam']['rpiCameraMode'], '3864:2192:10:P')
 
+    def test_rotation_maps_to_both_publisher_flips_and_persists(self):
+        self.assertEqual(self.control.settings()['rotation'], 0)
+        self.control.update(dict(rotation=180))
+        camera = self.control.config()['paths']['cam']
+        self.assertIs(camera['rpiCameraHFlip'], True)
+        self.assertIs(camera['rpiCameraVFlip'], True)
+        self.assertEqual(CaptureControl(self.path).settings()['rotation'], 180)
+        # A later resolution change keeps the rotation.
+        self.control.update(dict(width=640, height=360, fps=5))
+        self.assertEqual(self.control.settings()['rotation'], 180)
+        self.control.update(dict(rotation=0))
+        camera = self.control.config()['paths']['cam']
+        self.assertEqual((camera['rpiCameraHFlip'], camera['rpiCameraVFlip']), (False, False))
+        self.assertEqual(self.control.settings()['rotation'], 0)
+
+    def test_invalid_rotation_leaves_publisher_config_unchanged(self):
+        original = self.path.read_bytes()
+        for rotation in (90, 270, True, '180', None):
+            with self.subTest(rotation=rotation), self.assertRaises(ValueError):
+                self.control.update(dict(rotation=rotation))
+            self.assertEqual(self.path.read_bytes(), original)
+
     def test_access_is_limited_to_configured_reader_ips(self):
         self.assertTrue(self.control.allowed('10.42.0.1'))
         self.assertTrue(self.control.allowed('127.0.0.1'))

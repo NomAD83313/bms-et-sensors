@@ -134,6 +134,25 @@ class AlmemoSerialHelpersTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "cable_only")
 
+    def test_cached_serial_health_keeps_influx_status_current(self):
+        client = almemo_app.app.test_client()
+        before = {"enabled": True, "pending_records": 3, "retrying": True}
+        after = {"enabled": True, "pending_records": 0, "retrying": False}
+        with (
+            mock.patch.object(almemo_app.session, "_resolve_port", return_value="/dev/fake") as resolve_port,
+            mock.patch.object(almemo_app.streams, "_live_is_running", return_value=True),
+            mock.patch.object(almemo_app.streams, "_live_data_fresh", return_value=True),
+            mock.patch.object(almemo_app.streams, "influx_status", side_effect=[before, after]),
+            mock.patch("os.path.exists", return_value=True),
+        ):
+            first = client.get("/api/health").get_json()
+            second = client.get("/api/health").get_json()
+        self.assertEqual(first["status"], "ok")
+        self.assertEqual(second["status"], "ok")
+        self.assertEqual(first["influx_write"], before)
+        self.assertEqual(second["influx_write"], after)
+        resolve_port.assert_called_once()
+
     def test_live_start_restarts_stale_running_stream(self):
         client = almemo_app.app.test_client()
         fake_thread = threading.Thread()

@@ -8,6 +8,7 @@ WORKDIR /app
 COPY app/svcctl/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/svcctl/ .
+COPY app/shared/usb_discovery.py .
 
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "svcctl_app.py"]

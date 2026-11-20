@@ -8,6 +8,7 @@ WORKDIR /app
 COPY app/matter/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/shared/device-common.css .
+COPY app/shared/usb_discovery.py .
 COPY app/matter/ .
 
 ENV PYTHONUNBUFFERED=1

@@ -74,6 +74,12 @@ nano .env                         # replace change-me values and set host option
 ./scripts/03-rpi-cameras-setup.sh # optional: prepare camera and XNNPACK images
 ```
 
+Images: with `BMS_IMAGE_SOURCE=build` (the default in `.env`) every app image is compiled
+from this checkout; with `BMS_IMAGE_SOURCE=pull` the setup, restart and update scripts
+download the prebuilt arm64 images from Docker Hub (`nomad375/bms-*:latest`) instead,
+and build locally only a service whose image cannot be pulled. Pulled images are only as
+new as their last `./scripts/build-push-arm64.sh`; use `build` when the checkout is newer.
+
 The setup creates local runtime files from tracked templates, installs the shared pyrometer USB mappings,
 builds the services, and starts the default stack. Run the AP step from a local console or
 expect the SSH connection to change when NetworkManager applies the AP profile. The camera
@@ -325,7 +331,10 @@ is applied first.
 The script includes all project-owned images, including Messkluppe, Vibration and the camera
 stack. It publishes the reusable XNNPACK wheel image as
 `nomad375/bms-onnx-xnnpack:ort-1.31.1-arm64` before building `camera-analysis` from
-that exact tag. To build and tag every image without uploading anything, use:
+that exact tag. An existing local `bms-onnx-xnnpack:local` is published as is, because
+compiling ONNX Runtime takes hours on a Pi; `--rebuild-onnx` compiles it again. Fresh
+arm64 hosts pull this image instead of compiling it. To build and tag every image
+without uploading anything, use:
 
 ```bash
 PUSH_IMAGES=0 ./scripts/build-push-arm64.sh
@@ -510,7 +519,7 @@ ping rpi5.internal
 
 ### Dashboard (simple-dash + nginx)
 
-- Service: `dashboard` (`nginx:latest`)
+- Service: `dashboard` (`nginx:1.31.3`)
 - Files served from: `dashboard/simple-dash`
 - Primary config file: `dashboard/simple-dash/config.json`
 - Port mapping: `${DASHBOARD_PORT:-80}:80`

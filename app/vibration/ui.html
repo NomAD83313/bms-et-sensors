@@ -58,13 +58,6 @@
     .found { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
     .harmonics { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; margin-top: 8px; }
     .harmonics h4 { margin: 0 0 6px; font-size: 0.85rem; }
-    .roll-setup { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: end; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
-    .roll-setup > strong { align-self: center; color: var(--accent); }
-    .roll-setup label span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-weight: 400; }
-    .roll-setup input { width: 92px; min-height: 32px; }
-    .roll-result { display: flex; gap: 10px; align-items: baseline; margin-left: auto; font-variant-numeric: tabular-nums; }
-    .roll-result span { color: var(--muted); }
-    .roll-result strong { color: var(--ink); font-size: 1rem; }
     .detected-frequency { margin: -2px 0 8px; color: var(--muted); font-size: 0.78rem; }
     .detected-frequency strong { color: var(--ink); }
     .harmonic-group + .harmonic-group { margin-top: 12px; }
@@ -72,17 +65,14 @@
     .hbar { display: grid; grid-template-columns: 72px 1fr 56px; gap: 6px; align-items: center; min-height: 30px; font-size: 0.78rem; }
     .hbar.band { grid-template-columns: 104px 1fr 56px; }
     .hlabel { line-height: 1.1; }
-    .hlabel small { display: block; margin-top: 2px; color: var(--muted); font-size: 0.66rem; white-space: nowrap; }
     .hbar .track { height: 10px; border-radius: 5px; background: var(--panel-soft); border: 1px solid var(--line); overflow: hidden; }
     .hbar .fill { height: 100%; background: var(--accent); }
-    .hbar.fund .fill { background: var(--ok); }
     .hbar.band .fill { background: var(--warn); }
     .hbar span:last-child { text-align: right; color: var(--muted); }
-    .ratios { margin-top: 6px; font-size: 0.8rem; color: var(--muted); }
-    .ratios strong { color: var(--ink); }
     .fft-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; font-size: 0.84rem; color: var(--muted); }
     .fft-head strong { color: var(--ink); }
     .fft-head .unit { display: flex; gap: 4px; margin-left: auto; }
+    .fft-head .scale-controls { margin-left: 0; flex-wrap: wrap; }
     .fft-head .unit button { min-height: 28px; padding: 0 10px; font-size: 0.78rem; }
     .fft-head .unit button.on { background: var(--accent); color: #fff; }
     .fft-head select { min-height: 32px; }
@@ -97,8 +87,15 @@
     .fft-chart text { font-size: 11px; fill: var(--muted); }
     .fft-chart .grid { stroke: var(--line); stroke-width: 1; }
     .fft-chart polyline { fill: none; stroke-width: 1.4; }
-    .fft-chart .order-mark { stroke: var(--err); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.7; }
-    .fft-chart .order-label { fill: var(--err); }
+    .view-tabs { margin-left: 0 !important; }
+    .orbits { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .orbit { margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+    .orbit svg { width: 100%; max-width: 280px; display: block; margin: 0 auto; }
+    .orbit svg text { font-size: 10px; fill: var(--muted); }
+    .orbit svg .grid { stroke: var(--line); }
+    .orbit .orbit-all { fill: none; stroke: #9aa8b6; stroke-width: 0.8; opacity: 0.7; }
+    .orbit figcaption { font-size: 0.78rem; color: var(--muted); text-align: center; line-height: 1.35; }
+    .orbit figcaption strong { color: var(--ink); }
     .axis-x { stroke: #1f5f9a; color: #1f5f9a; }
     .axis-y { stroke: #1b7d4d; color: #1b7d4d; }
     .axis-z { stroke: #c2410c; color: #c2410c; }
