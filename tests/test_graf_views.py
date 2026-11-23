@@ -21,6 +21,8 @@ class GrafViewsTests(unittest.TestCase):
         script = (Path(__file__).resolve().parents[1] / "app/graf/static/graf_orbits.js").read_text(encoding="utf-8")
 
         self.assertIn('id="orbitSensors"', template)
+        self.assertIn('id="waveformSensors"', template)
+        self.assertIn('Latest signed waveforms', template)
         self.assertIn('id="orbitDemoToggle"', template)
         self.assertIn('id="orbitScale"', template)
         self.assertIn('id="orbitCustomScale"', template)
@@ -32,6 +34,15 @@ class GrafViewsTests(unittest.TestCase):
         self.assertIn('Simulation only', script)
         self.assertIn('graf.vibration.orbitScale', script)
         self.assertIn('fixedOrbitRange()', script)
+        self.assertIn('waveformSvg(wave, "acc_g"', script)
+        self.assertIn('waveformSvg(wave, "velocity_mm_s"', script)
+        self.assertIn('waveformSvg(wave, "displacement_um"', script)
+        self.assertIn('data-wave-scale="compare"', script)
+        self.assertIn('data-wave-scale="auto"', script)
+        self.assertIn('data-wave-scale-reset=', script)
+        self.assertIn('preserveAspectRatio="xMidYMid meet"', script)
+        self.assertIn('const xTicks = Array.from({ length: 6 }', script)
+        self.assertIn('waveform-chart-head', script)
 
     def test_pyrometers_view_uses_friendly_titles(self):
         cfg = VIEW_CONFIGS["pyrometers"]
