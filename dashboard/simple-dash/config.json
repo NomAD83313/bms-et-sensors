@@ -58,7 +58,7 @@
         },
         {
           "alt": "Vibration",
-          "icon": "fas fa-wave-square",
+          "icon": "fas fa-tachometer-alt",
           "link": "/vibration/",
           "probe": "/probe/vibration"
         },
