@@ -67,6 +67,10 @@
           c11: toXY(data.panels.matter_humidity || []),
           c12: toXY(data.panels.matter_pressure || []),
           c13: toXY(data.panels.matter_pm || []),
+          c14: toXY(data.panels.vibration_acceleration || []),
+          c15: toXY(data.panels.vibration_velocity || []),
+          c16: toXY(data.panels.vibration_displacement || []),
+          c17: toXY(data.panels.vibration_frequency || []),
         };
         if (typeof setRedlabDeviceOrder === "function") setRedlabDeviceOrder(chartSeries.c1);
         const panelMeta = data.panel_meta || {};
@@ -83,6 +87,10 @@
         panelMetaByChart.c11 = panelMeta.matter_humidity || {};
         panelMetaByChart.c12 = panelMeta.matter_pressure || {};
         panelMetaByChart.c13 = panelMeta.matter_pm || {};
+        panelMetaByChart.c14 = panelMeta.vibration_acceleration || {};
+        panelMetaByChart.c15 = panelMeta.vibration_velocity || {};
+        panelMetaByChart.c16 = panelMeta.vibration_displacement || {};
+        panelMetaByChart.c17 = panelMeta.vibration_frequency || {};
         const xMin = new Date(data.window_from_utc || "").getTime();
         const xMax = new Date(data.window_to_utc || "").getTime();
         const xBounds = Number.isFinite(xMin) && Number.isFinite(xMax) && xMax > xMin

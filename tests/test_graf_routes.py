@@ -121,6 +121,10 @@ def _build_ctx(**overrides):
         "load_matter_pm_series_fn": lambda *_args: [],
         "load_matter_environment_series_fn": lambda *_args: [],
         "load_matter_battery_series_fn": lambda *_args: [],
+        "load_vibration_acceleration_series_fn": lambda *_args: [],
+        "load_vibration_velocity_series_fn": lambda *_args: [],
+        "load_vibration_displacement_series_fn": lambda *_args: [],
+        "load_vibration_frequency_series_fn": lambda *_args: [],
         "panel_raw_cadence_ms_fn": lambda *_args: None,
         "build_single_export_response": build_single_export_response,
         "build_all_export_response": build_all_export_response,
@@ -168,6 +172,12 @@ class GrafRoutesTests(unittest.TestCase):
         self.assertEqual(primary.status_code, 200)
         self.assertEqual(alias.status_code, 200)
         self.assertEqual(primary.get_json(), alias.get_json())
+
+    def test_vibration_page_is_registered(self):
+        response = self._make_client().get("/vibration")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_data(as_text=True).startswith("vibration|"))
 
     def test_redlab_channels_post_rejects_non_object_json(self):
         client = self._make_client()

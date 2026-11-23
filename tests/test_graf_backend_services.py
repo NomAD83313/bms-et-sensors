@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 
 from app.graf.graf_backend_services import _cadence_range_bounds
+from app.graf.graf_query_builders import vibration_flux
 
 
 def _parse_iso_ts(value):
@@ -19,6 +20,22 @@ def _parse_iso_ts(value):
 
 
 class GrafBackendServicesTests(unittest.TestCase):
+    def test_vibration_flux_selects_requested_axes_and_sensor_tags(self):
+        query = vibration_flux(
+            bucket="sensors",
+            measurement="wtvb01",
+            start_expr="-5m",
+            stop_expr=None,
+            window="1s",
+            fields=("acc_x_g", "acc_y_g", "acc_z_g"),
+        )
+
+        self.assertIn('r._measurement == "wtvb01"', query)
+        self.assertIn('r._field == "acc_x_g"', query)
+        self.assertIn('r._field == "acc_z_g"', query)
+        self.assertIn("aggregateWindow(every: 1s, fn: mean", query)
+        self.assertIn('"sensor"', query)
+
     def test_cadence_range_uses_recent_relative_tail(self):
         start_expr, stop_expr = _cadence_range_bounds("-31d", None, _parse_iso_ts)
         self.assertEqual(start_expr, "-900s")

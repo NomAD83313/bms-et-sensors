@@ -20,6 +20,10 @@ def load_dashboard_panels(
     load_matter_pressure_series_fn,
     load_matter_pm_series_fn,
     load_matter_battery_series_fn,
+    load_vibration_acceleration_series_fn,
+    load_vibration_velocity_series_fn,
+    load_vibration_displacement_series_fn,
+    load_vibration_frequency_series_fn,
     panel_raw_cadence_ms_fn,
 ):
     raw_mode = (window == "__raw__")
@@ -37,6 +41,10 @@ def load_dashboard_panels(
         "matter_pressure": [],
         "matter_pm": [],
         "matter_battery": [],
+        "vibration_acceleration": [],
+        "vibration_velocity": [],
+        "vibration_displacement": [],
+        "vibration_frequency": [],
     }
     panel_meta: dict[str, dict[str, Any]] = {
         key: {"raw_cadence_ms": None} for key in panels.keys()
@@ -74,6 +82,16 @@ def load_dashboard_panels(
         panel_meta["matter_pm"]["raw_cadence_ms"] = panel_raw_cadence_ms_fn("matter_pm", start_expr, stop_expr)
         panels["matter_battery"] = load_matter_battery_series_fn(start_expr, stop_expr, window, raw_mode)
         panel_meta["matter_battery"]["raw_cadence_ms"] = panel_raw_cadence_ms_fn("matter_battery", start_expr, stop_expr)
+    if view_mode == "vibration":
+        vibration_loaders = {
+            "vibration_acceleration": load_vibration_acceleration_series_fn,
+            "vibration_velocity": load_vibration_velocity_series_fn,
+            "vibration_displacement": load_vibration_displacement_series_fn,
+            "vibration_frequency": load_vibration_frequency_series_fn,
+        }
+        for panel_key, loader in vibration_loaders.items():
+            panels[panel_key] = loader(start_expr, stop_expr, window, raw_mode)
+            panel_meta[panel_key]["raw_cadence_ms"] = panel_raw_cadence_ms_fn(panel_key, start_expr, stop_expr)
     return panels, panel_meta
 
 

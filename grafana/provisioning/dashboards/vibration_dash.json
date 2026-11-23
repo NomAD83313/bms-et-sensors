@@ -23,7 +23,7 @@
           "type": "influxdb",
           "uid": "InfluxDB_Flux"
         },
-        "query": "from(bucket: v.defaultBucket)\n  |> range(start: -30d)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"wtvb01\")\n  |> group(columns: [\"sensor\"])\n  |> count()\n  |> group()\n  |> map(fn: (r) => ({_value: r.sensor}))\n  |> sort(columns: [\"_value\"])",
+        "query": "import \"influxdata/influxdb/schema\"\n\nschema.tagValues(\n  bucket: v.defaultBucket,\n  tag: \"sensor\",\n  predicate: (r) => r._measurement == \"wtvb01\",\n  start: -30d,\n)",
         "definition": "Sensors with actual wtvb01 data in the last 30 days",
         "includeAll": true,
         "allValue": ".*",

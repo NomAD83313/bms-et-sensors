@@ -135,6 +135,30 @@ def messkluppe_flux(
     return query
 
 
+def vibration_flux(
+    *,
+    bucket: str,
+    measurement: str,
+    start_expr: str,
+    stop_expr: str | None,
+    window: str,
+    fields: list[str] | tuple[str, ...],
+) -> str:
+    bucket_q = json.dumps(bucket)
+    measurement_q = json.dumps(measurement)
+    field_filter = " or ".join(f"r._field == {json.dumps(field)}" for field in fields)
+    query = (
+        f"from(bucket: {bucket_q})\n"
+        + range_line(start_expr, stop_expr)
+        + f"  |> filter(fn: (r) => r._measurement == {measurement_q})\n"
+        + f"  |> filter(fn: (r) => {field_filter})\n"
+    )
+    if window and window != "__raw__":
+        query += f"  |> aggregateWindow(every: {window}, fn: mean, createEmpty: false)\n"
+    query += '  |> keep(columns: ["_time", "_value", "_field", "source", "sensor", "address"])\n'
+    return query
+
+
 def matter_flux(
     *,
     bucket: str,

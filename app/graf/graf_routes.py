@@ -14,6 +14,7 @@ def register_routes(app, ctx: dict):
     register_page("/almemo", "almemo", "index_almemo")
     register_page("/pyrometers", "pyrometers", "index_pyrometers")
     register_page("/messkluppe", "messkluppe", "index_messkluppe")
+    register_page("/vibration", "vibration", "index_vibration")
 
     @app.route("/api/health")
     def health():
@@ -99,6 +100,10 @@ def register_routes(app, ctx: dict):
             load_matter_pressure_series_fn=ctx["load_matter_pressure_series_fn"],
             load_matter_pm_series_fn=ctx["load_matter_pm_series_fn"],
             load_matter_battery_series_fn=ctx["load_matter_battery_series_fn"],
+            load_vibration_acceleration_series_fn=ctx["load_vibration_acceleration_series_fn"],
+            load_vibration_velocity_series_fn=ctx["load_vibration_velocity_series_fn"],
+            load_vibration_displacement_series_fn=ctx["load_vibration_displacement_series_fn"],
+            load_vibration_frequency_series_fn=ctx["load_vibration_frequency_series_fn"],
             panel_raw_cadence_ms_fn=ctx["panel_raw_cadence_ms_fn"],
         )
         return jsonify(

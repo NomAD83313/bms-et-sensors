@@ -45,6 +45,7 @@ ALMEMO_MEASUREMENT = "almemo_live"
 THERMOMETER_MEASUREMENT = "pyrometers"
 MESSKLUPPE_MEASUREMENT = "messkluppe_sensor"
 MATTER_MEASUREMENT = "matter_sensor"
+VIBRATION_MEASUREMENT = "wtvb01"
 REDLAB_CHANNEL_STATE_PATH = Path("/runtime/redlab_channels.json")
 REDLAB_CHANNEL_KEYS = [f"ch{i}" for i in range(8)]
 
@@ -169,6 +170,7 @@ backend_services = build_backend_services(
     pyrometers_measurement=THERMOMETER_MEASUREMENT,
     messkluppe_measurement=MESSKLUPPE_MEASUREMENT,
     matter_measurement=MATTER_MEASUREMENT,
+    vibration_measurement=VIBRATION_MEASUREMENT,
     parse_iso_ts_fn=_parse_iso_ts,
 )
 

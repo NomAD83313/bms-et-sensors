@@ -20,6 +20,7 @@ if __package__:
         split_env_list,
         tail_flux,
         pyrometers_flux,
+        vibration_flux,
     )
     from .graf_series_helpers import (
         normalize_mscl_display_series,
@@ -38,6 +39,7 @@ else:
         split_env_list,
         tail_flux,
         pyrometers_flux,
+        vibration_flux,
     )
     from graf_series_helpers import (
         normalize_mscl_display_series,
@@ -149,6 +151,7 @@ def build_backend_services(
     pyrometers_measurement: str,
     messkluppe_measurement: str,
     matter_measurement: str,
+    vibration_measurement: str,
     parse_iso_ts_fn,
 ):
     mscl_sources = split_env_list(",".join([mscl_source, mscl_source_extra]))
@@ -271,6 +274,16 @@ def build_backend_services(
         return messkluppe_flux(
             bucket=influx_bucket,
             measurement=messkluppe_measurement,
+            start_expr=start_expr,
+            stop_expr=stop_expr,
+            window=window,
+            fields=fields,
+        )
+
+    def vibration_query(start_expr: str, stop_expr: str | None, window: str, fields: list[str] | tuple[str, ...]) -> str:
+        return vibration_flux(
+            bucket=influx_bucket,
+            measurement=vibration_measurement,
             start_expr=start_expr,
             stop_expr=stop_expr,
             window=window,
@@ -414,6 +427,22 @@ def build_backend_services(
             ["source", "clip_id", "file_id", "_field"],
         )
 
+    def load_vibration_series(start_expr: str, stop_expr: str | None, window: str, raw_mode: bool, fields) -> list[dict[str, Any]]:
+        query_window = "__raw__" if raw_mode else window
+        return query_series(vibration_query(start_expr, stop_expr, query_window, fields), ["sensor", "address", "_field"])
+
+    def load_vibration_acceleration_series(start_expr, stop_expr, window, raw_mode):
+        return load_vibration_series(start_expr, stop_expr, window, raw_mode, ("acc_x_g", "acc_y_g", "acc_z_g"))
+
+    def load_vibration_velocity_series(start_expr, stop_expr, window, raw_mode):
+        return load_vibration_series(start_expr, stop_expr, window, raw_mode, ("velocity_x_mm_s", "velocity_y_mm_s", "velocity_z_mm_s"))
+
+    def load_vibration_displacement_series(start_expr, stop_expr, window, raw_mode):
+        return load_vibration_series(start_expr, stop_expr, window, raw_mode, ("displacement_x_um", "displacement_y_um", "displacement_z_um"))
+
+    def load_vibration_frequency_series(start_expr, stop_expr, window, raw_mode):
+        return load_vibration_series(start_expr, stop_expr, window, raw_mode, ("frequency_x_hz", "frequency_y_hz", "frequency_z_hz"))
+
     def load_matter_series(start_expr: str, stop_expr: str | None, window: str, raw_mode: bool) -> list[dict[str, Any]]:
         del raw_mode
         return query_series(matter_query(start_expr, stop_expr, window), ["source", "node_id", "endpoint_id", "cluster_id"])
@@ -522,6 +551,20 @@ def build_backend_services(
                 ["source", "node_id", "endpoint_id", "cluster_id"],
             )
             return series_median_interval_ms(series, parse_iso_ts_fn)
+        if panel_key.startswith("vibration_"):
+            fields_by_panel = {
+                "vibration_acceleration": ("acc_x_g", "acc_y_g", "acc_z_g"),
+                "vibration_velocity": ("velocity_x_mm_s", "velocity_y_mm_s", "velocity_z_mm_s"),
+                "vibration_displacement": ("displacement_x_um", "displacement_y_um", "displacement_z_um"),
+                "vibration_frequency": ("frequency_x_hz", "frequency_y_hz", "frequency_z_hz"),
+            }
+            fields = fields_by_panel.get(panel_key)
+            if fields:
+                series = query_series(
+                    tail_flux(vibration_query(cadence_start_expr, cadence_stop_expr, "__raw__", fields), tail_n),
+                    ["sensor", "address", "_field"],
+                )
+                return series_median_interval_ms(series, parse_iso_ts_fn)
         if panel_key == "matter_humidity":
             series = query_series(
                 tail_flux(matter_query(cadence_start_expr, cadence_stop_expr, "__raw__", "1029"), tail_n),
@@ -593,6 +636,10 @@ def build_backend_services(
         "load_matter_pm_series_fn": load_matter_pm_series,
         "load_matter_environment_series_fn": load_matter_environment_series,
         "load_matter_battery_series_fn": load_matter_battery_series,
+        "load_vibration_acceleration_series_fn": load_vibration_acceleration_series,
+        "load_vibration_velocity_series_fn": load_vibration_velocity_series,
+        "load_vibration_displacement_series_fn": load_vibration_displacement_series,
+        "load_vibration_frequency_series_fn": load_vibration_frequency_series,
         "panel_raw_cadence_ms_fn": panel_raw_cadence_ms,
         "csv_export_response_fn": csv_export_response,
     }

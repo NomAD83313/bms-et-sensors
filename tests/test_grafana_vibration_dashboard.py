@@ -20,7 +20,10 @@ class VibrationDashboardTests(unittest.TestCase):
         self.assertEqual(self.dashboard["uid"], "bms_vibration")
         variable = self.dashboard["templating"]["list"][0]
         self.assertEqual(variable["name"], "sensor")
-        self.assertIn('r["_measurement"] == "wtvb01"', variable["query"])
+        self.assertIn('schema.tagValues(', variable["query"])
+        self.assertIn('r._measurement == "wtvb01"', variable["query"])
+        self.assertIn('tag: "sensor"', variable["query"])
+        self.assertNotIn("|> count()", variable["query"])
         self.assertEqual(variable["refresh"], 1)
         # No machine data is entered anywhere: the sensor is the only variable.
         self.assertEqual([v["name"] for v in self.dashboard["templating"]["list"]], ["sensor"])

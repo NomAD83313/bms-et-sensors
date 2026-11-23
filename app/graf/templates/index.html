@@ -122,6 +122,23 @@
       border-top:1px solid rgba(69, 97, 143, 0.25);
     }
     .panel-grid { display:grid; grid-template-columns:1fr; gap:14px; }
+    .panel-grid.vibration-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .orbit-panel { margin-top:14px; }
+    .orbit-status { color:var(--muted); font-size:12px; }
+    .orbit-panel .title-actions { flex-wrap:wrap; }
+    .orbit-scale-control { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
+    .orbit-scale-control select { min-width:105px; }
+    .orbit-scale-control input { width:90px; }
+    .orbit-sensors { display:grid; gap:14px; }
+    .orbit-sensor { display:grid; gap:10px; }
+    .orbit-sensor-head { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; justify-content:space-between; }
+    .orbit-plots { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+    .orbit-figure { margin:0; min-width:0; }
+    .orbit-chart { width:100%; max-height:300px; display:block; border:1px solid #243657; border-radius:8px; background:#0e1628; }
+    .orbit-chart .orbit-grid { stroke:#2a3c63; stroke-width:1; }
+    .orbit-chart .orbit-path { fill:none; stroke:#7dd3fc; stroke-width:1.25; vector-effect:non-scaling-stroke; }
+    .orbit-chart text { fill:#8ea6d9; font-size:10px; }
+    .orbit-figure figcaption { margin-top:5px; color:var(--muted); font-size:12px; text-align:center; }
     .panel {
       background:linear-gradient(180deg, rgba(22, 37, 66, 0.96) 0%, rgba(17, 27, 47, 0.98) 100%);
       border:1px solid var(--line);
@@ -280,6 +297,8 @@
       .action-group { margin-left:0; justify-content:flex-start; }
       .page-nav { width:100%; }
       .status-panel { width:100%; min-width:0; }
+      .panel-grid.vibration-grid { grid-template-columns:1fr; }
+      .orbit-plots { grid-template-columns:1fr; }
     }
     .page-nav {
       display:flex;
@@ -420,7 +439,7 @@
   <h1>{{ page_title }}</h1>
   {{ render_top_shell(page_mode, ranges, default_range, default_refresh_sec, top_export_button_id, top_export_button_label) }}
 
-  <div class="panel-grid">
+  <div class="panel-grid{% if page_mode == 'vibration' %} vibration-grid{% endif %}">
     {% if single_device_mode and device %}
     {{ render_panel(device.chart_id, device.panel_title, device.list_kind, device.list_id, device.toggle_all_id) }}
     {% else %}
@@ -463,8 +482,48 @@
     {% if show_matter_battery %}
     {{ render_panel("c10", "Matter Battery", "series", "seriesChannelList-c10", "seriesChannelToggleAll-c10") }}
     {% endif %}
+    {% if show_vibration_acceleration %}
+    {{ render_panel("c14", "Acceleration (g)", "series", "seriesChannelList-c14", "seriesChannelToggleAll-c14") }}
+    {% endif %}
+    {% if show_vibration_velocity %}
+    {{ render_panel("c15", "Vibration velocity (mm/s)", "series", "seriesChannelList-c15", "seriesChannelToggleAll-c15") }}
+    {% endif %}
+    {% if show_vibration_displacement %}
+    {{ render_panel("c16", "Vibration displacement (µm)", "series", "seriesChannelList-c16", "seriesChannelToggleAll-c16") }}
+    {% endif %}
+    {% if show_vibration_frequency %}
+    {{ render_panel("c17", "Vibration frequency (Hz)", "series", "seriesChannelList-c17", "seriesChannelToggleAll-c17") }}
+    {% endif %}
     {% endif %}
   </div>
+
+  {% if page_mode == "vibration" %}
+  <section class="panel orbit-panel" aria-labelledby="orbitPanelTitle">
+    <div class="panel-head">
+      <h2 id="orbitPanelTitle">Latest displacement orbits</h2>
+      <div class="title-actions">
+        <span id="orbitStatus" class="orbit-status">Loading latest capture...</span>
+        <label class="orbit-scale-control">Scale
+          <select id="orbitScale">
+            <option value="auto">Auto</option>
+            <option value="10">±10 µm</option>
+            <option value="25">±25 µm</option>
+            <option value="50">±50 µm</option>
+            <option value="100">±100 µm</option>
+            <option value="250">±250 µm</option>
+            <option value="500">±500 µm</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label id="orbitCustomScaleWrap" class="orbit-scale-control" hidden>±µm
+          <input id="orbitCustomScale" type="number" min="0.01" step="any" value="100" />
+        </label>
+        <button id="orbitDemoToggle" type="button" aria-pressed="false">Show demo drive</button>
+      </div>
+    </div>
+    <div id="orbitSensors" class="orbit-sensors"></div>
+  </section>
+  {% endif %}
 
   {% for m in export_modals %}
   {{ render_export_modal(
@@ -500,6 +559,10 @@
       c11: { kind: "series", labelKind: "matter", padding: 30, dataKey: "matter_humidity" },
       c12: { kind: "series", labelKind: "matter", padding: 30, dataKey: "matter_pressure" },
       c13: { kind: "series", labelKind: "matter", padding: 30, dataKey: "matter_pm" },
+      c14: { kind: "series", labelKind: "vibration", padding: 30, dataKey: "vibration_acceleration" },
+      c15: { kind: "series", labelKind: "vibration", padding: 30, dataKey: "vibration_velocity" },
+      c16: { kind: "series", labelKind: "vibration", padding: 30, dataKey: "vibration_displacement" },
+      c17: { kind: "series", labelKind: "vibration", padding: 30, dataKey: "vibration_frequency" },
     };
     const seriesChartIds = chartIds.filter((chartId) => (chartConfigs[chartId] || {}).kind === "series");
     const chartModels = {};
@@ -524,6 +587,9 @@
   <script src="./static/graf_ui_state.js?v=20260804-redlab-cleared-name"></script>
   <script src="./static/graf_chart.js?v=20260804-redlab-display-order"></script>
   <script src="./static/graf_exports.js?v=20260722-redlab-db-name-2"></script>
-  <script src="./static/graf_app.js?v=20260804-redlab-display-order"></script>
+  <script src="./static/graf_app.js?v=20261123-vibration-panels"></script>
+  {% if page_mode == "vibration" %}
+  <script src="./static/graf_orbits.js?v=20261123-fixed-scale"></script>
+  {% endif %}
 </body>
 </html>

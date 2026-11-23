@@ -17,6 +17,10 @@ _PANEL_ORDER: list[tuple[str, str]] = [
     ("show_matter_humidity", "c11"),
     ("show_matter_pressure", "c12"),
     ("show_matter_pm", "c13"),
+    ("show_vibration_acceleration", "c14"),
+    ("show_vibration_velocity", "c15"),
+    ("show_vibration_displacement", "c16"),
+    ("show_vibration_frequency", "c17"),
 ]
 
 VIEW_CONFIGS: dict[str, dict[str, Any]] = {
@@ -127,6 +131,19 @@ VIEW_CONFIGS: dict[str, dict[str, Any]] = {
         "show_messkluppe_battery": True,
         "show_messkluppe_temperatures": True,
     },
+    "vibration": {
+        "title": "Graf App Lite · Vibration",
+        "show_redlab": False,
+        "show_mscl": False,
+        "show_matter": False,
+        "show_almemo": False,
+        "show_pyrometers": False,
+        "show_messkluppe": False,
+        "show_vibration_acceleration": True,
+        "show_vibration_velocity": True,
+        "show_vibration_displacement": True,
+        "show_vibration_frequency": True,
+    },
 }
 
 
@@ -177,6 +194,10 @@ def render_index(
         show_messkluppe_orientation=bool(cfg.get("show_messkluppe_orientation", False)),
         show_messkluppe_battery=bool(cfg.get("show_messkluppe_battery", False)),
         show_messkluppe_temperatures=bool(cfg.get("show_messkluppe_temperatures", False)),
+        show_vibration_acceleration=bool(cfg.get("show_vibration_acceleration", False)),
+        show_vibration_velocity=bool(cfg.get("show_vibration_velocity", False)),
+        show_vibration_displacement=bool(cfg.get("show_vibration_displacement", False)),
+        show_vibration_frequency=bool(cfg.get("show_vibration_frequency", False)),
         chart_ids=[cid for flag, cid in _PANEL_ORDER if cfg.get(flag)],
         export_modals=_export_modals(view_name, cfg),
         single_device_mode=view_name in {"redlab", "mscl", "almemo", "pyrometers"},
