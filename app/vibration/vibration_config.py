@@ -39,6 +39,12 @@ MIN_RECORD_RETENTION_DAYS = 1
 MAX_RECORD_RETENTION_DAYS = 3650
 MIN_RECORD_MAX_COUNT = 1
 MAX_RECORD_MAX_COUNT = 10000
+# Continuous recording: back-to-back FIFO captures of one sensor saved as one record.
+MIN_BURST_DURATION_SEC = 10
+MAX_BURST_DURATION_SEC = 600
+DEFAULT_BURST_DURATION_SEC = 60
+SPECTROGRAM_WINDOWS = (256, 512, 1024)
+DEFAULT_SPECTROGRAM_WINDOW = 256
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,47}$")
 
 DEFAULTS: dict[str, Any] = {
@@ -103,6 +109,20 @@ def parse_fft_averages(value: Any) -> int:
     if not MIN_FFT_AVERAGES <= averages <= MAX_FFT_AVERAGES:
         raise ValueError(f"fft_averages must be {MIN_FFT_AVERAGES}..{MAX_FFT_AVERAGES}")
     return averages
+
+
+def parse_burst_duration(value: Any) -> int:
+    duration = _int(value, "duration_s")
+    if not MIN_BURST_DURATION_SEC <= duration <= MAX_BURST_DURATION_SEC:
+        raise ValueError(f"duration_s must be {MIN_BURST_DURATION_SEC}..{MAX_BURST_DURATION_SEC}")
+    return duration
+
+
+def parse_spectrogram_window(value: Any) -> int:
+    window = _int(value, "window")
+    if window not in SPECTROGRAM_WINDOWS:
+        raise ValueError(f"window must be one of {', '.join(map(str, SPECTROGRAM_WINDOWS))}")
+    return window
 
 
 def parse_record_retention_days(value: Any) -> int:

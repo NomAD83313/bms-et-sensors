@@ -70,6 +70,10 @@ class ModbusBus:
         self._port = ""
         self._baud = proto.DEFAULT_BAUD
         self.lock = threading.RLock()
+        # Virtual sensors (address -> serial-like simulator) next to the real bus: frames
+        # for these addresses never reach the RS485 line.
+        self.virtual: dict[int, Any] = {}
+        self._last_device: Any = None
 
     # --- port lifecycle -------------------------------------------------------
     @property
@@ -113,10 +117,18 @@ class ModbusBus:
     def _char_time(self) -> float:
         return BITS_PER_CHAR / float(self._baud)
 
+    def _device(self, address: int) -> Any:
+        """Serial-like device for an address: a virtual sensor or the real port."""
+        device = self.virtual.get(address)
+        if device is None:
+            if self._serial is None:
+                raise BusError("serial port is not open")
+            device = self._serial
+        self._last_device = device
+        return device
+
     def _transact(self, request: bytes, expected: int, timeout: float | None) -> bytes:
-        if self._serial is None:
-            raise BusError("serial port is not open")
-        ser = self._serial
+        ser = self._device(request[0])
         wait = (timeout if timeout is not None else BASE_TIMEOUT_SEC) + (len(request) + expected) * self._char_time()
         try:
             ser.reset_input_buffer()
@@ -137,7 +149,7 @@ class ModbusBus:
 
     def _wait_quiet(self) -> None:
         """Discard a late reply tail so a retry does not collide with it on half-duplex RS485."""
-        ser = self._serial
+        ser = self._last_device or self._serial
         try:
             ser.timeout = QUIET_GAP_SEC
             deadline = time.monotonic() + QUIET_MAX_SEC
@@ -213,13 +225,13 @@ class ModbusBus:
 
         The sensor sends progress frames by itself while capturing, so the whole
         capture holds the bus lock: no other sensor may be addressed meanwhile.
-        Returns samples in g, progress points (host time, samples) and the
-        estimated sample rate (None when it could not be measured).
+        Returns samples in g, progress points (seconds after the request, samples),
+        the estimated sample rate, the bus clock at the request (`requested_at`) and
+        the time of the first sample in seconds after the request (`first_sample_s`);
+        rate and first sample are None when they could not be measured.
         """
         with self.lock:
-            if self._serial is None:
-                raise BusError("serial port is not open")
-            ser = self._serial
+            ser = self._device(address)
             deadline_sec = proto.FIFO_CAPTURE_SEC + proto.FIFO_FRAME_LENGTH * self._char_time() + FIFO_MARGIN_SEC
             progress: list[tuple[float, int]] = []
             tail = b""
@@ -238,8 +250,9 @@ class ModbusBus:
                         if kind == "progress":
                             progress.append((now, payload))
                         else:
-                            return {"samples": payload, "progress": progress,
-                                    "sample_rate": proto.estimate_sample_rate(progress),
+                            rate, first_sample = proto.estimate_fifo_timing(progress)
+                            return {"samples": payload, "progress": progress, "sample_rate": rate,
+                                    "requested_at": started, "first_sample_s": first_sample,
                                     "elapsed_s": now}
             except proto.ProtocolError as exc:
                 self._wait_quiet()

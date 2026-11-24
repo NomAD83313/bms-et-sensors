@@ -163,12 +163,40 @@
     .waveform-scale-controls input { width:100px; }
     .waveform-scale-controls button { padding:5px 10px; font-size:12px; }
     .recorder-panel { margin-top:14px; }
-    .recorder-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
-    .recorder-controls label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
-    .recorder-controls .record-note { flex:1 1 260px; }
+    .burst-view { display:grid; gap:12px; margin-top:14px; padding-top:12px; border-top:1px solid rgba(69,97,143,.25); }
+    .burst-view[hidden] { display:none; }
+    .burst-panel { margin-top:14px; }
+    .burst-panel[hidden] { display:none; }
+    #burstViewMore { margin-top:0; padding-top:0; border-top:0; }
+    .burst-chips { display:flex; flex-wrap:wrap; gap:8px; }
+    .burst-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .burst-block { display:grid; gap:4px; }
+    .burst-view .waveform-chart-head { justify-content:flex-start; gap:8px 24px; }
+    .burst-capture-bar { padding-top:10px; border-top:1px solid rgba(69,97,143,.25); }
+    .burst-controls label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
+    .burst-controls button { padding:5px 10px; font-size:12px; }
+    .burst-chart { width:100%; height:auto; display:block; border:1px solid #243657; border-radius:8px; background:#0e1628; cursor:crosshair; }
+    .burst-chart .wave-grid { stroke:#2a3c63; stroke-width:1; }
+    .burst-chart text { fill:#8ea6d9; font-size:10px; }
+    .burst-chart .burst-gap { fill:rgba(248,113,113,.10); }
+    .burst-chart .burst-selected { fill:rgba(125,211,252,.12); stroke:#7dd3fc; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .burst-chart .band-x { fill:none; stroke:#34d399; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .burst-chart .band-y { fill:none; stroke:#f87171; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .burst-chart .band-z { fill:none; stroke:#e5e7eb; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .burst-chart .trend-x { fill:none; stroke:#34d399; stroke-width:1.2; vector-effect:non-scaling-stroke; }
+    .burst-chart .trend-y { fill:none; stroke:#f87171; stroke-width:1.2; vector-effect:non-scaling-stroke; }
+    .burst-chart .trend-z { fill:none; stroke:#e5e7eb; stroke-width:1.2; vector-effect:non-scaling-stroke; }
+    .burst-chart .freq-legend rect { fill:rgba(6,12,24,.85); stroke:#31456f; }
+    .burst-chart .freq-legend circle { fill:#cbd5e1; }
+    .burst-chart .freq-legend text { fill:#cbd5e1; font-size:11px; }
+    canvas.burst-chart { aspect-ratio:1000 / 260; }
+    .burst-chart circle.freq-dot { stroke:none; }
+    .burst-chart circle.trend-x { fill:#34d399; } .burst-chart circle.trend-y { fill:#f87171; } .burst-chart circle.trend-z { fill:#e5e7eb; }
+    .hover-line { stroke:rgba(220,230,255,.7); stroke-width:1; vector-effect:non-scaling-stroke; display:none; pointer-events:none; }
+    .hover-dot { fill:#fbbf24; stroke:#0e1628; stroke-width:1; display:none; pointer-events:none; }
     .recorder-auto { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:10px; padding-top:10px; border-top:1px solid rgba(69,97,143,.25); }
     .recorder-auto label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
-    .record-hardware { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+    .recorder-auto.recorder-first { margin-top:0; padding-top:0; border-top:0; }
     .records-table-wrap { overflow-x:auto; }
     .records-table { width:100%; border-collapse:collapse; font-size:12px; }
     .records-table th, .records-table td { padding:7px 8px; border-bottom:1px solid rgba(69,97,143,.25); text-align:left; white-space:nowrap; }
@@ -176,6 +204,8 @@
     .record-actions { display:flex; flex-wrap:wrap; gap:5px; }
     .record-actions a { color:#bfdbfe; text-decoration:none; border:1px solid #31456f; border-radius:7px; padding:5px 8px; }
     .record-actions button { padding:5px 8px; font-size:12px; }
+    .records-section { margin-top:12px !important; padding-top:12px; border-top:1px solid rgba(69,97,143,.25); }
+    .recorder-sensor .summary-chip { align-self:flex-end; }
     .records-bulk-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
     .records-bulk-actions label { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
     .saved-fft { position:relative; margin-top:14px; }
@@ -552,11 +582,14 @@
   {% if page_mode == "vibration" %}
   <section class="panel recorder-panel" aria-labelledby="recorderTitle">
     <div class="panel-head"><h2 id="recorderTitle">Time signal recorder</h2><span id="recordStatus" class="orbit-status">Ready</span></div>
-    <div class="recorder-controls">
-      <label>Sensor<select id="recordSensor"></select></label>
-      <label>FFT averages<select id="recordAverages"><option>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select></label>
-      <label class="record-note">Name / comment<input id="recordNote" type="text" maxlength="200" placeholder="Motor A · bearing side · baseline" /></label>
-      <button id="recordTimeSignal" type="button">Record time signal</button>
+    <div class="recorder-auto recorder-first recorder-sensor">
+      <label title="Sensor for the single and continuous recordings; automatic recording captures every enabled sensor">Sensor<select id="recordSensor"></select></label>
+      <span id="recordSensorInfo" class="orbit-status"></span>
+      <span class="summary-chip">Data points <strong>1024 · hardware fixed</strong></span>
+      <span class="summary-chip">Sampling rate <strong id="recordSampleRate">≈246 Hz · sensor controlled</strong></span>
+      <span class="summary-chip">Record duration <strong id="recordDuration">≈4.16 s</strong></span>
+      <span class="summary-chip">FFT resolution <strong id="recordResolution">≈0.240 Hz</strong></span>
+      <span class="summary-chip">Nyquist <strong id="recordNyquist">≈123 Hz</strong></span>
     </div>
     <div class="recorder-auto">
       <label>Automatic interval, seconds<input id="recordAutoInterval" type="number" min="5" max="86400" step="1" value="300" /></label>
@@ -566,14 +599,20 @@
       <button id="recordAutoStop" type="button">Stop automatic recording</button>
       <span id="recordAutoStatus" class="orbit-status">Automatic recording stopped</span>
     </div>
-    <div class="record-hardware">
-      <span class="summary-chip">Data points <strong>1024 · hardware fixed</strong></span>
-      <span class="summary-chip">Sampling rate <strong id="recordSampleRate">≈246 Hz · sensor controlled</strong></span>
-      <span class="summary-chip">Record duration <strong id="recordDuration">≈4.16 s</strong></span>
-      <span class="summary-chip">FFT resolution <strong id="recordResolution">≈0.240 Hz</strong></span>
-      <span class="summary-chip">Nyquist <strong id="recordNyquist">≈123 Hz</strong></span>
+    <div class="recorder-auto">
+      <label title="Also used by automatic recording">FFT averages<select id="recordAverages"><option>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select></label>
+      <label class="record-note">Name / comment<input id="recordNote" type="text" maxlength="200" placeholder="Motor A · bearing side · baseline" /></label>
+      <button id="recordTimeSignal" type="button">Record time signal</button>
+      <span class="orbit-status">One capture, or several averaged (about 4.5 s each), saved as one record · FFT averages also apply to automatic recording</span>
     </div>
-    <div class="records-bulk-actions">
+    <div class="recorder-auto">
+      <label>Continuous recording, seconds<input id="burstDuration" type="number" min="10" max="600" step="1" value="60" /></label>
+      <label class="record-note">Name / comment<input id="burstNote" type="text" maxlength="200" placeholder="Washing machine · spin-up 0–1400 rpm" /></label>
+      <button id="burstStart" type="button">Start continuous recording</button>
+      <button id="burstStop" type="button" disabled>Stop</button>
+      <span id="burstStatus" class="orbit-status">Back-to-back FIFO captures · polling paused · short gaps between captures</span>
+    </div>
+    <div class="records-bulk-actions records-section">
       <label><input id="recordsSelectAll" type="checkbox" /> Select all</label>
       <button id="recordsDeleteSelected" type="button" disabled>Delete selected</button>
       <span id="recordsSelectionStatus" class="orbit-status">0 selected</span>
@@ -581,6 +620,7 @@
     <div class="records-table-wrap">
       <table class="records-table"><thead><tr><th>Select</th><th>Captured</th><th>Sensor</th><th>Source</th><th>Points</th><th>Rate</th><th>Duration</th><th>Avg</th><th>Comment</th><th>Actions</th></tr></thead><tbody id="recordsTableBody"></tbody></table>
     </div>
+    <div id="burstView" class="burst-view" hidden></div>
     <div id="savedRecordFft" class="saved-fft"></div>
   </section>
 
@@ -612,10 +652,16 @@
         <label id="orbitCustomScaleWrap" class="orbit-scale-control" hidden>±µm
           <input id="orbitCustomScale" type="number" min="0.01" step="any" value="100" />
         </label>
+        <button id="orbitLiveButton" type="button" hidden>Show live capture</button>
         <button id="orbitDemoToggle" type="button" aria-pressed="false">Show demo drive</button>
       </div>
     </div>
     <div id="orbitSensors" class="orbit-sensors"></div>
+  </section>
+
+  <section id="burstPanel" class="panel burst-panel" aria-labelledby="burstPanelTitle" hidden>
+    <div class="panel-head"><h2 id="burstPanelTitle">Continuous record · trend, frequency, spectrogram</h2><span id="burstPanelRecord" class="orbit-status"></span></div>
+    <div id="burstViewMore" class="burst-view"></div>
   </section>
   {% endif %}
 
@@ -684,7 +730,9 @@
   <script src="./static/graf_exports.js?v=20261123-record-export"></script>
   <script src="./static/graf_app.js?v=20261123-vibration-panels"></script>
   {% if page_mode == "vibration" %}
-  <script src="./static/graf_orbits.js?v=20261123-wave-scale-dropdown"></script>
+  <script src="./static/graf_hover.js?v=20261124-absolute-time"></script>
+  <script src="./static/graf_orbits.js?v=20261124-two-sims"></script>
+  <script src="./static/graf_vibration_burst.js?v=20261124-absolute-time"></script>
   {% endif %}
 </body>
 </html>

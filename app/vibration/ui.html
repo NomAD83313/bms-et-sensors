@@ -11,6 +11,7 @@
     .section h2 { margin: 0 0 12px; font-size: 1.15rem; }
     .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
     .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .keep-together { display: flex; gap: 12px; align-items: end; }
     label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted); }
     input, select { min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; color: var(--ink); background: #fff; }
     input[type=number] { width: 110px; }
@@ -87,6 +88,12 @@
     .fft-chart text { font-size: 11px; fill: var(--muted); }
     .fft-chart .grid { stroke: var(--line); stroke-width: 1; }
     .fft-chart polyline { fill: none; stroke-width: 1.4; }
+    .hover-line { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; display: none; pointer-events: none; }
+    .hover-dot { fill: #d97706; stroke: #fff; stroke-width: 1; display: none; pointer-events: none; }
+    .hover-tip { position: fixed; z-index: 20; display: none; pointer-events: none; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #111); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15); font-size: 12px; line-height: 1.35; white-space: nowrap; }
+    .hover-tip .tt-time { font-weight: 700; margin-bottom: 3px; }
+    .hover-tip .tt-row { display: flex; align-items: center; gap: 6px; }
+    .hover-tip .tt-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
     .view-tabs { margin-left: 0 !important; }
     .orbits { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .orbit { margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
@@ -154,8 +161,10 @@
       <button id="refreshPorts" title="Refresh port list">↻</button>
       <label>Adapter baud (this Pi)<select id="baud"></select></label>
       <label>Poll interval, s<input type="number" id="poll" min="0" max="3600" step="0.05"></label>
-      <label>Read profile<select id="profile"></select></label>
-      <button id="saveBus">Save</button>
+      <span class="keep-together">
+        <label>Read profile<select id="profile"></select></label>
+        <button id="saveBus">Save</button>
+      </span>
     </div>
     <p class="note">Poll interval 0 polls as fast as the bus allows. Profiles: basic = velocity, displacement, frequency, acceleration, temperature; extended adds statistics and fault codes; full adds spectrum energy.</p>
     <p class="note"><strong>Adapter baud</strong> only changes how this Pi opens the port; nothing is written to the sensors. Use it when the sensors already run at that rate. All sensors on one bus must share one rate.</p>

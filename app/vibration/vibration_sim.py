@@ -100,7 +100,8 @@ def stage_at(scenario: str, t: float) -> tuple[str, float]:
 
 class SimulatedSerial:
     def __init__(self, port: str, baudrate: int, clock: Callable[[], float] = time.monotonic,
-                 sleep: Callable[[float], None] = time.sleep, seed: int | None = None):
+                 sleep: Callable[[float], None] = time.sleep, seed: int | None = None, address: int = SIM_ADDRESS):
+        self.address = address
         self.port = port
         self.baudrate = baudrate
         self.timeout: float | None = None
@@ -198,7 +199,7 @@ class SimulatedSerial:
     def registers(self, t: float) -> dict[int, int]:
         """Register image for the read blocks (approximate, unfiltered)."""
         lines = self.components(t)
-        regs: dict[int, int] = {proto.REG_ADDRESS: SIM_ADDRESS, proto.REG_BAUD: proto.BAUD_CODES.get(self.baudrate, 2)}
+        regs: dict[int, int] = {proto.REG_ADDRESS: self.address, proto.REG_BAUD: proto.BAUD_CODES.get(self.baudrate, 2)}
         for index, axis in enumerate("xyz"):
             comps = lines[axis]
             vel_rms = math.sqrt(sum(v * v for _, v in comps) / 2)
@@ -243,7 +244,7 @@ class SimulatedSerial:
     def write(self, frame: bytes) -> int:
         frame = bytes(frame)
         now = self._clock()
-        if len(frame) < 8 or frame[0] != SIM_ADDRESS or proto.crc16(frame[:-2]) != frame[-2] | (frame[-1] << 8):
+        if len(frame) < 8 or frame[0] != self.address or proto.crc16(frame[:-2]) != frame[-2] | (frame[-1] << 8):
             return len(frame)
         function, register, value = frame[1], (frame[2] << 8) | frame[3], (frame[4] << 8) | frame[5]
         done = now + len(frame) * self._char_time() + REPLY_LATENCY_SEC
@@ -255,7 +256,7 @@ class SimulatedSerial:
                 return len(frame)  # Reply lost.
             regs = self.registers(now - self._started)
             words = b"".join((regs.get(register + i, 0) & 0xFFFF).to_bytes(2, "big") for i in range(value))
-            reply = _crc(bytes((SIM_ADDRESS, proto.FUNC_READ, 2 * value)) + words)
+            reply = _crc(bytes((self.address, proto.FUNC_READ, 2 * value)) + words)
             self._schedule(done + len(reply) * self._char_time(), reply)
         elif function == proto.FUNC_WRITE:
             self._schedule(done + len(frame) * self._char_time(), frame)
@@ -269,11 +270,11 @@ class SimulatedSerial:
         tick = PROGRESS_INTERVAL_SEC
         while tick < duration:
             count = 3 + 6 * int(tick * SIM_SAMPLE_RATE)
-            frame = _crc(bytes((SIM_ADDRESS, proto.FUNC_READ, proto.FIFO_PROGRESS_MARK, count >> 8, count & 0xFF)))
+            frame = _crc(bytes((self.address, proto.FUNC_READ, proto.FIFO_PROGRESS_MARK, count >> 8, count & 0xFF)))
             self._schedule(start + tick, frame)
             tick += PROGRESS_INTERVAL_SEC
         payload = b"".join(v.to_bytes(2, "big", signed=True) for s in self._samples(start - self._started) for v in s)
-        data = _crc(bytes((SIM_ADDRESS, proto.FUNC_READ, proto.FIFO_DATA_MARK)) + payload)
+        data = _crc(bytes((self.address, proto.FUNC_READ, proto.FIFO_DATA_MARK)) + payload)
         if self._comm_fault(start) and self._random.random() < COMM_FIFO_CORRUPT_RATE:
             corrupted = bytearray(data)
             corrupted[len(data) // 2] ^= 0x5A
@@ -302,6 +303,162 @@ class SimulatedSerial:
 
     def close(self) -> None:
         self.closed = True
+
+
+# --- simulated roll: 600 mm roll on a direct drive ----------------------------------
+# Line speed alternates between 450 and 600 m/min: 25 s hold, 5 s ramp, every 30 s.
+# The roll turns at line speed / (pi * diameter): 3.98 Hz at 450 m/min, 5.31 Hz at 600.
+# Small unbalance: 1x radial, elliptical orbit (Y 90 deg behind X), amplitude ~ speed^2.
+# Small outer-race defect in the drive bearing (10-ball deep-groove bearing, BPFO 4.12x):
+# impacts at BPFO exciting a 72 Hz housing resonance, mostly in the load direction (Y).
+ROLL_DIAMETER_M = 0.6
+ROLL_SPEED_LOW_M_MIN = 450.0
+ROLL_SPEED_HIGH_M_MIN = 600.0
+ROLL_HOLD_SEC = 25.0
+ROLL_RAMP_SEC = 5.0
+ROLL_PERIOD_SEC = 2 * (ROLL_HOLD_SEC + ROLL_RAMP_SEC)
+ROLL_CIRCUMFERENCE_M = math.pi * ROLL_DIAMETER_M
+# Peak velocity in mm/s per axis and order at 600 m/min; scaled with (speed / 600)^2.
+ROLL_ORDER_VELOCITY_MM_S = {
+    1.0: {"x": 1.2, "y": 0.9, "z": 0.2},
+    2.0: {"x": 0.15, "y": 0.2, "z": 0.05},
+    3.0: {"x": 0.06, "y": 0.05, "z": 0.03},
+}
+# Healthy roll (profile "healthy"): well balanced, residual 1x only, no bearing defect.
+ROLL_HEALTHY_ORDER_VELOCITY_MM_S = {
+    1.0: {"x": 0.15, "y": 0.12, "z": 0.04},
+    2.0: {"x": 0.03, "y": 0.03, "z": 0.01},
+    3.0: {"x": 0.01, "y": 0.01, "z": 0.01},
+}
+ROLL_PROFILES = {
+    "defects": {"orders": ROLL_ORDER_VELOCITY_MM_S, "bearing_defect": True},
+    "healthy": {"orders": ROLL_HEALTHY_ORDER_VELOCITY_MM_S, "bearing_defect": False},
+}
+ROLL_PHASE_DEG = {
+    1.0: {"x": 0.0, "y": -90.0, "z": 30.0},
+    2.0: {"x": 0.0, "y": 180.0, "z": 0.0},
+    3.0: {"x": 40.0, "y": 110.0, "z": 200.0},
+}
+ROLL_BPFO_ORDER = 4.12
+ROLL_RESONANCE_HZ = 72.0
+ROLL_IMPACT_DECAY_SEC = 0.015
+# Impact peak in g per axis at 600 m/min; scaled with speed.
+ROLL_IMPACT_G = {"x": 0.006, "y": 0.012, "z": 0.003}
+# Equivalent bearing velocity for the register image (mm/s peak at BPFO).
+ROLL_BEARING_VELOCITY_MM_S = 0.12
+ROLL_NOISE_G = 0.0006
+
+
+def roll_line_speed_m_min(t: float) -> float:
+    """Line speed at t seconds after the simulation started."""
+    low, high = ROLL_SPEED_LOW_M_MIN, ROLL_SPEED_HIGH_M_MIN
+    phase = t % ROLL_PERIOD_SEC
+    if phase < ROLL_HOLD_SEC:
+        return low
+    if phase < ROLL_HOLD_SEC + ROLL_RAMP_SEC:
+        return low + (high - low) * (phase - ROLL_HOLD_SEC) / ROLL_RAMP_SEC
+    if phase < 2 * ROLL_HOLD_SEC + ROLL_RAMP_SEC:
+        return high
+    return high - (high - low) * (phase - 2 * ROLL_HOLD_SEC - ROLL_RAMP_SEC) / ROLL_RAMP_SEC
+
+
+def roll_hz(t: float) -> float:
+    return roll_line_speed_m_min(t) / 60.0 / ROLL_CIRCUMFERENCE_M
+
+
+def _line_distance_m(t: float) -> float:
+    """Line length passed since the start (exact integral of the speed profile)."""
+    low, high = ROLL_SPEED_LOW_M_MIN / 60.0, ROLL_SPEED_HIGH_M_MIN / 60.0
+    hold, ramp = ROLL_HOLD_SEC, ROLL_RAMP_SEC
+    per_period = hold * low + ramp * (low + high) / 2 + hold * high + ramp * (low + high) / 2
+    periods, phase = divmod(t, ROLL_PERIOD_SEC)
+    distance = periods * per_period
+    segments = ((hold, low, low), (ramp, low, high), (hold, high, high), (ramp, high, low))
+    for length, start, end in segments:
+        part = min(phase, length)
+        distance += part * (start + (end - start) * part / length / 2)
+        phase -= part
+        if phase <= 0:
+            break
+    return distance
+
+
+def roll_revolutions(t: float) -> float:
+    return _line_distance_m(t) / ROLL_CIRCUMFERENCE_M
+
+
+class RollDriveSimulator(SimulatedSerial):
+    """Simulated WTVB01 on a 600 mm roll with a direct drive (see the constants above).
+
+    Profiles: "defects" (small unbalance and outer-race defect) or "healthy" (residual 1x,
+    no bearing defect); both use the same speed profile and noise.
+    Used as a virtual sensor next to the real bus: the collector routes frames for its
+    address here. Time counts from creation, i.e. from switching the simulated sensor on.
+    """
+
+    def __init__(self, address: int, baudrate: int, profile: str = "defects", **kwargs: Any):
+        if profile not in ROLL_PROFILES:
+            raise ValueError(f"unknown roll profile {profile}")
+        super().__init__("sim://roll", baudrate, address=address, **kwargs)
+        self.profile = profile
+        self.orders = ROLL_PROFILES[profile]["orders"]
+        self.bearing_defect = ROLL_PROFILES[profile]["bearing_defect"]
+
+    def elapsed(self) -> float:
+        return self._clock() - self._started
+
+    def stage(self, t: float) -> tuple[str, float]:
+        return "roll", 0.0
+
+    def signal_hz(self, t: float) -> float:
+        return roll_hz(t)
+
+    def components(self, t: float) -> dict[str, list[tuple[float, float]]]:
+        f1 = roll_hz(t)
+        scale = (roll_line_speed_m_min(t) / ROLL_SPEED_HIGH_M_MIN) ** 2
+        lines: dict[str, list[tuple[float, float]]] = {}
+        for axis in ("x", "y", "z"):
+            lines[axis] = [(order * f1, amplitudes[axis] * scale) for order, amplitudes in self.orders.items()]
+            if self.bearing_defect:
+                weight = ROLL_IMPACT_G[axis] / ROLL_IMPACT_G["y"]
+                lines[axis].append((ROLL_BPFO_ORDER * f1, ROLL_BEARING_VELOCITY_MM_S * weight * math.sqrt(scale)))
+        return lines
+
+    def _samples(self, t0: float) -> list[tuple[int, int, int]]:
+        """1024 raw FIFO samples; the phase follows the roll angle, so the signal is
+        continuous over consecutive captures and sweeps during speed ramps."""
+        raw = []
+        for i in range(proto.FIFO_SAMPLES):
+            t = t0 + i / SIM_SAMPLE_RATE
+            f1 = roll_hz(t)
+            revolutions = roll_revolutions(t)
+            speed_ratio = roll_line_speed_m_min(t) / ROLL_SPEED_HIGH_M_MIN
+            # Time since the last outer-race impact and that impact's strength (deterministic jitter).
+            impact_phase = revolutions * ROLL_BPFO_ORDER
+            impact_number = int(impact_phase)
+            since = (impact_phase - impact_number) / (ROLL_BPFO_ORDER * f1)
+            jitter = 0.7 + 0.6 * (((impact_number * 2654435761) % 1000) / 1000.0)
+            ring = math.exp(-since / ROLL_IMPACT_DECAY_SEC) * math.sin(2 * math.pi * ROLL_RESONANCE_HZ * since)
+            sample = []
+            for axis in ("x", "y", "z"):
+                g = 1.0 if axis == "z" else 0.0
+                for order, amplitudes in self.orders.items():
+                    velocity = amplitudes[axis] * speed_ratio ** 2
+                    acc_g = velocity * 2 * math.pi * order * f1 / STANDARD_GRAVITY_MM_S2
+                    phase = math.radians(ROLL_PHASE_DEG[order][axis])
+                    g += acc_g * math.sin(2 * math.pi * order * revolutions + phase)
+                if self.bearing_defect:
+                    g += ROLL_IMPACT_G[axis] * speed_ratio * jitter * ring
+                g += self._random.gauss(0.0, ROLL_NOISE_G)
+                sample.append(max(-32768, min(32767, round(-g / proto.ACC_SCALE_G))))
+            raw.append(tuple(sample))
+        return raw  # type: ignore[return-value]
+
+    def status(self) -> dict[str, Any]:
+        t = self.elapsed()
+        return {"profile": self.profile, "elapsed_s": round(t, 1), "line_speed_m_min": round(roll_line_speed_m_min(t), 1),
+                "roll_hz": round(roll_hz(t), 3), "bpfo_hz": round(ROLL_BPFO_ORDER * roll_hz(t), 2),
+                "bearing_defect": self.bearing_defect}
 
 
 def opener(port: str, baud: int) -> Any:

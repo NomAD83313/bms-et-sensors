@@ -345,6 +345,9 @@ services:
       - VIBRATION_INFLUX_FLUSH_MS=${VIBRATION_INFLUX_FLUSH_MS:-1000}
       # 1 lists the simulated sensor ports (sim://...) for test sessions without a machine.
       - VIBRATION_SIM_PORTS=${VIBRATION_SIM_PORTS:-0}
+      # Addresses of the simulated roll sensors offered in the Graf sensor selector.
+      - VIBRATION_SIM_SENSOR_ADDRESS=${VIBRATION_SIM_SENSOR_ADDRESS:-127}
+      - VIBRATION_SIM_HEALTHY_ADDRESS=${VIBRATION_SIM_HEALTHY_ADDRESS:-126}
     # USB serial (ttyUSB, 188) and CDC-ACM (ttyACM, 166) adapters. /dev is mounted
     # instead of devices: so by-id paths survive adapter replugging.
     device_cgroup_rules:

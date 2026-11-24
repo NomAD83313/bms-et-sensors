@@ -373,22 +373,32 @@ def decode_fifo_payload(payload: bytes) -> list[tuple[float, float, float]]:
     return [tuple(values[i:i + FIFO_AXES]) for i in range(0, len(values), FIFO_AXES)]  # type: ignore[misc]
 
 
-def estimate_sample_rate(progress: list[tuple[float, int]]) -> float | None:
-    """Least-squares samples/s from (host time, samples collected) progress points.
+def estimate_fifo_timing(progress: list[tuple[float, int]]) -> tuple[float | None, float | None]:
+    """Least-squares fit of (host time, samples collected) progress points.
 
-    Returns None with fewer than three usable points or an implausible result.
+    Returns (samples/s, host time of the first sample). The start time carries the
+    serial and USB latency of the progress frames, which is about the same for every
+    capture, so differences between captures (gaps) are accurate to a few ms.
+    Both are None with fewer than three usable points or an implausible rate.
     """
     points = [(t, n) for t, n in progress if n > 0]
     if len(points) < 3:
-        return None
+        return None, None
     mean_t = sum(t for t, _ in points) / len(points)
     mean_n = sum(n for _, n in points) / len(points)
     denominator = sum((t - mean_t) ** 2 for t, _ in points)
     if denominator <= 0:
-        return None
+        return None, None
     rate = sum((t - mean_t) * (n - mean_n) for t, n in points) / denominator
     low, high = FIFO_SAMPLE_RATE_RANGE
-    return rate if low <= rate <= high else None
+    if not low <= rate <= high:
+        return None, None
+    return rate, mean_t - mean_n / rate
+
+
+def estimate_sample_rate(progress: list[tuple[float, int]]) -> float | None:
+    """Least-squares samples/s from progress points (see estimate_fifo_timing)."""
+    return estimate_fifo_timing(progress)[0]
 
 
 def unlock_request(address: int) -> bytes:

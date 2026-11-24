@@ -245,9 +245,10 @@ function spectrumChart(address, spectrum) {
   const gridY = [0, 0.25, 0.5, 0.75, 1].map((p) => `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${sy(top * p)}" y2="${sy(top * p)}"/>
     <text x="${pad.left - 6}" y="${sy(top * p) + 4}" text-anchor="end">${(top * p).toPrecision(2)}</text>`);
   const lines = series.map((points, i) => `<polyline class="axis-${'xyz'[i]}" points="${points.map(([f, v]) => `${sx(f).toFixed(1)},${sy(v).toFixed(1)}`).join(' ')}"/>`);
-  return `<svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Amplitude spectrum">
+  return `<svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Amplitude spectrum" data-hover="spectrum" data-addr="${address}" data-top="${top}">
     ${gridX.join('')}${gridY.join('')}${lines.join('')}
-    <text x="${width - pad.right}" y="${height - 10}" text-anchor="end">Hz</text></svg>`;
+    <text x="${width - pad.right}" y="${height - 10}" text-anchor="end">Hz</text>
+    <line class="hover-line" x1="0" x2="0" y1="${pad.top}" y2="${height - pad.bottom}"/></svg>`;
 }
 
 async function loadWaveform(address, capturedAt) {
@@ -274,7 +275,11 @@ function waveformChart(address, wave) {
   const gridX = [];
   for (let t = 0; t <= duration; t += 0.5) {
     const x = pad.left + (t / duration) * (width - pad.left - pad.right);
-    gridX.push(`<line class="grid" x1="${x}" x2="${x}" y1="${pad.top}" y2="${height - pad.bottom}"/><text x="${x}" y="${height - 10}" text-anchor="middle">${t.toFixed(1)}</text>`);
+    // The first label is the absolute time of the first sample when it is known.
+    const absolute = t === 0 ? clockLabel(wave.started_at, 0, true) : null;
+    const label = absolute ? `<text x="${x}" y="${height - 10}" text-anchor="start">${absolute}</text>`
+      : `<text x="${x}" y="${height - 10}" text-anchor="middle">${t.toFixed(1)}</text>`;
+    gridX.push(`<line class="grid" x1="${x}" x2="${x}" y1="${pad.top}" y2="${height - pad.bottom}"/>${label}`);
   }
   const gridY = [-1, -0.5, 0, 0.5, 1].map((p) => `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${sy(top * p)}" y2="${sy(top * p)}"/>
     <text x="${pad.left - 6}" y="${sy(top * p) + 4}" text-anchor="end">${(top * p).toPrecision(2)}</text>`);
@@ -283,8 +288,9 @@ function waveformChart(address, wave) {
     `<button data-wave="${key}" class="${waveQuantity === key ? 'on' : ''}">${label.split(',')[0]}</button>`).join('');
   return `<div class="fft-head"><span>Time signal of the last capture · velocity and displacement integrated above <strong>${fmt(wave.integration_min_hz, 1)} Hz</strong></span>
       ${scaleControls(address, 'waveform', waveQuantity)}<span class="unit">${buttons}</span></div>
-    <svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Time waveform">
-      ${gridX.join('')}${gridY.join('')}${lines.join('')}<text x="${width - pad.right}" y="${height - 10}" text-anchor="end">s</text></svg>
+    <svg class="fft-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Time waveform" data-hover="waveform" data-addr="${address}" data-top="${top}">
+      ${gridX.join('')}${gridY.join('')}${lines.join('')}<text x="${width - pad.right}" y="${height - 10}" text-anchor="end">s</text>
+      <line class="hover-line" x1="0" x2="0" y1="${pad.top}" y2="${height - pad.bottom}"/></svg>
     <div class="fft-legend"><span class="axis-x">X</span><span class="axis-y">Y</span><span class="axis-z">Z</span><span>${WAVE_QUANTITIES[waveQuantity]}</span></div>
     <p class="note">Look for short spikes (impacts: bearings), beating (two close frequencies) and clipped or asymmetric shapes (looseness, rub).</p>`;
 }
@@ -304,17 +310,192 @@ function orbitCharts(address, wave) {
     const path = (xs, ys) => xs.map((v, k) => `${s(v).toFixed(1)},${sv(ys[k]).toFixed(1)}`).join(' ');
     const ratio = wave.orbits[pair]?.overall?.ratio;
     const info = `ratio <strong>${fmt(ratio, 2)}</strong>`;
-    return `<figure class="orbit"><svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Orbit ${pair}">
+    return `<figure class="orbit"><svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Orbit ${pair}" data-hover="orbit" data-addr="${address}" data-pair="${pair}" data-range="${range}">
         <line class="grid" x1="${size / 2}" x2="${size / 2}" y1="${pad}" y2="${size - pad}"/><line class="grid" x1="${pad}" x2="${size - pad}" y1="${size / 2}" y2="${size / 2}"/>
         <polyline class="orbit-all" points="${path(overallA, overallB)}"/>
         <text x="${size - pad}" y="${size / 2 - 4}" text-anchor="end">${a.toUpperCase()}</text><text x="${size / 2 + 4}" y="${pad + 8}">${b.toUpperCase()}</text>
-        <text x="${pad}" y="${size - 6}">±${range.toPrecision(2)} µm</text></svg>
+        <text x="${pad}" y="${size - 6}">±${range.toPrecision(2)} µm</text><circle class="hover-dot" r="1.75"/></svg>
       <figcaption><strong>${a.toUpperCase()}${b.toUpperCase()}</strong> · ${info}</figcaption></figure>`;
   }).join('');
   return `<div class="fft-head"><span>Broadband displacement paths of the last capture</span>${scaleControls(address, 'orbit', 'displacement_um')}</div>
     <div class="orbits">${plots}</div>
     <p class="note">Each path shows displacement in the plane of two axes. A ratio of 1 is circular; a ratio near 0 is nearly a straight line.</p>`;
 }
+
+// --- mouse-over tooltips for the spectrum, waveform and orbit charts -----------------
+// The geometry below must match spectrumChart, waveformChart and orbitCharts.
+const HOVER_CHART = { width: 1000, spectrumPad: { left: 52, right: 12 }, wavePad: { left: 56, right: 12 }, orbitSize: 240, orbitPad: 24 };
+const HOVER_COLORS = { x: '#1f5f9a', y: '#1b7d4d', z: '#c2410c' };
+let hoverTip = null;
+let hoverActive = null;
+
+function hoverNumber(value, unit) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '–';
+  const v = Number(value);
+  const text = v !== 0 && Math.abs(v) < 0.001 ? v.toExponential(3) : String(Number(v.toPrecision(4)));
+  return unit ? `${text} ${unit}` : text;
+}
+
+// Local clock time of an ISO timestamp plus seconds: "24.11.2026 10:02:41.9" or "10:02:41.93".
+function clockLabel(iso, offsetSeconds = 0, withDate = false) {
+  const base = new Date(iso || '');
+  if (!iso || !Number.isFinite(base.getTime())) return null;
+  const time = new Date(base.getTime() + offsetSeconds * 1000);
+  const two = (value) => String(value).padStart(2, '0');
+  const clock = `${two(time.getHours())}:${two(time.getMinutes())}:${two(time.getSeconds())}`;
+  if (withDate) return `${two(time.getDate())}.${two(time.getMonth() + 1)}.${time.getFullYear()} ${clock}.${Math.floor(time.getMilliseconds() / 100)}`;
+  return `${clock}.${String(Math.floor(time.getMilliseconds() / 10)).padStart(2, '0')}`;
+}
+
+function hoverRow(axis, text) {
+  return `<div class="tt-row"><span class="tt-dot" style="background:${HOVER_COLORS[axis]}"></span><span>${text}</span></div>`;
+}
+
+function hoverPoint(svg, event) {
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return null;
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  return point.matrixTransform(matrix.inverse());
+}
+
+// Markers on the lines under the cursor: [{ x, y, axis }] in viewBox units.
+function hoverPoints(svg, points) {
+  let group = svg.querySelector('.hover-points');
+  if (!group) {
+    group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'hover-points');
+    svg.appendChild(group);
+  }
+  group.innerHTML = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.5" fill="${HOVER_COLORS[p.axis]}"/>`).join('');
+  group.style.display = 'block';
+}
+
+function hoverMarkers(svg, show) {
+  if (!svg) return;
+  svg.querySelectorAll('.hover-line, .hover-dot, .hover-points').forEach((node) => { node.style.display = show ? 'block' : 'none'; });
+}
+
+function hoverLine(svg, x) {
+  const line = svg.querySelector('.hover-line');
+  if (!line) return;
+  line.setAttribute('x1', x.toFixed(1));
+  line.setAttribute('x2', x.toFixed(1));
+  line.style.display = 'block';
+}
+
+const hoverHandlers = {
+  spectrum(svg, event) {
+    const spectrum = spectra.get(Number(svg.dataset.addr));
+    const point = hoverPoint(svg, event);
+    if (!spectrum || !point) return null;
+    const { left, right } = HOVER_CHART.spectrumPad;
+    const plot = HOVER_CHART.width - left - right;
+    if (point.x < left || point.x > HOVER_CHART.width - right) return null;
+    const key = spectrumUnit === 'g' ? 'acc_g' : 'velocity_mm_s';
+    const unit = spectrumUnit === 'g' ? 'g' : 'mm/s';
+    const k = Math.round(((point.x - left) / plot) * spectrum.nyquist_hz / spectrum.df_hz);
+    if (spectrumUnit !== 'g' && k * spectrum.df_hz < 2) return null;
+    const x = left + ((k * spectrum.df_hz) / spectrum.nyquist_hz) * plot;
+    hoverLine(svg, x);
+    const top = Number(svg.dataset.top) || 1;
+    hoverPoints(svg, ['x', 'y', 'z'].map((axis) => ({ x, axis, y: 260 - 28 - (Math.min(Number(spectrum.axes[axis][key][k]), top) / top) * (260 - 12 - 28) })));
+    return `<div class="tt-time">FFT bin ${k} · ${(k * spectrum.df_hz).toFixed(3)} Hz</div>` +
+      ['x', 'y', 'z'].map((axis) => hoverRow(axis, `${axis.toUpperCase()} amplitude: ${hoverNumber(spectrum.axes[axis][key][k], unit)}`)).join('');
+  },
+  waveform(svg, event) {
+    const wave = waveformsCache.get(Number(svg.dataset.addr));
+    const point = hoverPoint(svg, event);
+    if (!wave || !wave.axes || !point) return null;
+    const { left, right } = HOVER_CHART.wavePad;
+    const plot = HOVER_CHART.width - left - right;
+    if (point.x < left || point.x > HOVER_CHART.width - right) return null;
+    const index = Math.max(0, Math.min(wave.samples - 1, Math.round(((point.x - left) / plot) * (wave.samples - 1))));
+    const x = left + (index / (wave.samples - 1)) * plot;
+    hoverLine(svg, x);
+    const top = Number(svg.dataset.top) || 1;
+    hoverPoints(svg, ['x', 'y', 'z'].map((axis) => {
+      const v = Math.max(-top, Math.min(top, Number(wave.axes[axis][waveQuantity][index])));
+      return { x, axis, y: 12 + (1 - (v + top) / (2 * top)) * (260 - 12 - 28) };
+    }));
+    const [label, unit] = WAVE_QUANTITIES[waveQuantity].split(', ');
+    const at = clockLabel(wave.started_at, index / wave.sample_rate_hz);
+    return `<div class="tt-time">Sample ${index} · ${(index / wave.sample_rate_hz).toFixed(3)} s${at ? ` · ${at}` : ''}</div>` +
+      ['x', 'y', 'z'].map((axis) => hoverRow(axis, `${axis.toUpperCase()} ${label}: ${hoverNumber(wave.axes[axis][waveQuantity][index], unit)}`)).join('');
+  },
+  orbit(svg, event) {
+    const wave = waveformsCache.get(Number(svg.dataset.addr));
+    const point = hoverPoint(svg, event);
+    const range = Number(svg.dataset.range);
+    if (!wave || !wave.axes || !point || !(range > 0)) return null;
+    const [a, b] = svg.dataset.pair.split('');
+    const xs = wave.axes[a].displacement_um;
+    const ys = wave.axes[b].displacement_um;
+    const { orbitSize: size, orbitPad: pad } = HOVER_CHART;
+    const s = (v) => pad + ((v + range) / (2 * range)) * (size - 2 * pad);
+    let best = 0;
+    let bestDistance = Infinity;
+    for (let k = 0; k < Math.min(xs.length, ys.length); k += 1) {
+      const d = (s(xs[k]) - point.x) ** 2 + (size - s(ys[k]) - point.y) ** 2;
+      if (d < bestDistance) { bestDistance = d; best = k; }
+    }
+    const dot = svg.querySelector('.hover-dot');
+    if (dot) {
+      dot.setAttribute('cx', s(xs[best]).toFixed(1));
+      dot.setAttribute('cy', (size - s(ys[best])).toFixed(1));
+      dot.style.display = 'block';
+    }
+    return `<div class="tt-time">Nearest point · sample ${best} · ${(best / wave.sample_rate_hz).toFixed(3)} s</div>` +
+      hoverRow(a, `${a.toUpperCase()} displacement: ${hoverNumber(xs[best], 'µm')}`) +
+      hoverRow(b, `${b.toUpperCase()} displacement: ${hoverNumber(ys[best], 'µm')}`);
+  },
+};
+
+function hideHover() {
+  if (hoverTip) hoverTip.style.display = 'none';
+  hoverMarkers(hoverActive, false);
+  hoverActive = null;
+}
+
+document.addEventListener('mousemove', (event) => {
+  const svg = event.target.closest ? event.target.closest('svg[data-hover]') : null;
+  if (!svg || !hoverHandlers[svg.dataset.hover]) {
+    if (hoverActive) hideHover();
+    return;
+  }
+  if (hoverActive && hoverActive !== svg) hoverMarkers(hoverActive, false);
+  hoverActive = svg;
+  let html = null;
+  try {
+    html = hoverHandlers[svg.dataset.hover](svg, event);
+  } catch (_) {
+    html = null;
+  }
+  if (!html) {
+    if (hoverTip) hoverTip.style.display = 'none';
+    hoverMarkers(svg, false);
+    return;
+  }
+  if (!hoverTip) {
+    hoverTip = document.createElement('div');
+    hoverTip.className = 'hover-tip';
+    hoverTip.setAttribute('role', 'status');
+    document.body.appendChild(hoverTip);
+  }
+  hoverTip.innerHTML = html;
+  hoverTip.style.display = 'block';
+  const width = hoverTip.offsetWidth || 220;
+  const height = hoverTip.offsetHeight || 70;
+  let left = event.clientX + 14;
+  if (left + width > window.innerWidth - 4) left = event.clientX - width - 14;
+  let top = event.clientY + 14;
+  if (top + height > window.innerHeight - 4) top = event.clientY - height - 14;
+  hoverTip.style.left = `${Math.max(4, left)}px`;
+  hoverTip.style.top = `${Math.max(4, top)}px`;
+});
+document.addEventListener('scroll', hideHover, { passive: true });
 
 function spectrumPanel(sensor, busy) {
   const brief = sensor.fft;

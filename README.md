@@ -16,7 +16,7 @@ Docker stack for sensor data acquisition and visualization:
 - `openthread-border-router`: Border Router for Thread mesh (requires OpenThread RCP, USB or network socket).
 - `camera-media`, `camera-analysis`: optional camera stack (Compose profile `cameras`): registry, preview, event recording and normal-view anomaly detection; `camera-hub` (MediaMTX) is an optional RTSP relay.
 - `messkluppe-collector`: Messkluppe host-side collector; decodes nRF24 binary payloads and writes InfluxDB records, with fake mode available before node hardware is connected.
-- `vibration-collector`: WitMotion WTVB01-485 vibration sensors on one RS485 bus (Modbus RTU, Compose profile `vibration`); bus scan, sensor registry, address/baud configuration and InfluxDB writes. See `docs/vibration.md`.
+- `vibration-collector`: WitMotion WTVB01-485 vibration sensors on one RS485 bus (Modbus RTU, Compose profile `vibration`); bus scan, sensor registry, address/baud configuration and InfluxDB writes; raw FIFO spectra, saved and continuous time-signal records, and two simulated roll sensors (with and without defects) in Graf App Lite. See `docs/vibration.md`.
 
 The repository includes Matter/Thread stack documentation:
 

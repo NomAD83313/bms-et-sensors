@@ -78,7 +78,8 @@ class GrafViewsTests(unittest.TestCase):
         self.assertIn("Periodic FFT running every", script)
         self.assertIn("window.setInterval(() =>", script)
         self.assertIn("loadRecords();", script)
-        self.assertIn("await showRecord(latestRecordId, false)", script)
+        # A new record is shown automatically without pinning the live panels.
+        self.assertIn("if (!viewingRecord) await showRecord(latestRecordId, false, false)", script)
         self.assertIn('localStorage.getItem("graf.vibration.fftScaleMode")', script)
         self.assertIn('data-fft-scale-mode', script)
         self.assertIn('data-fft-fixed-max', script)
@@ -86,6 +87,61 @@ class GrafViewsTests(unittest.TestCase):
         self.assertIn('data-record-select', script)
         self.assertIn('method: "DELETE"', script)
         self.assertIn('body: JSON.stringify({ ids: itemIds })', script)
+
+    def test_vibration_page_has_continuous_recording(self):
+        root = Path(__file__).resolve().parents[1]
+        template = (root / "app/graf/templates/index.html").read_text(encoding="utf-8")
+        orbits = (root / "app/graf/static/graf_orbits.js").read_text(encoding="utf-8")
+        view = (root / "app/graf/static/graf_vibration_burst.js").read_text(encoding="utf-8")
+
+        for element_id in ("burstDuration", "burstNote", "burstStart", "burstStop", "burstStatus", "burstView", "orbitLiveButton"):
+            self.assertIn(f'id="{element_id}"', template)
+        # Trend, frequency and spectrogram sit in their own panel below the orbits.
+        self.assertLess(template.index('id="orbitSensors"'), template.index('id="burstPanel"'))
+        self.assertIn("function skeletonMore()", view)
+        self.assertIn('data-burst-control="envScale"', view)
+        self.assertIn("data-burst-env-reset", view)
+        self.assertIn('min="10" max="600"', template)
+        self.assertIn("graf_vibration_burst.js", template)
+        self.assertIn("/vibration/api/sensors/${address}/burst", orbits)
+        self.assertIn('"/vibration/api/operation/stop"', orbits)
+        self.assertIn("window.grafBurst.show(record, pin)", orbits)
+        self.assertIn('state.spectrum = "capture";', view)
+        self.assertIn("window.grafVibration = {", orbits)
+        self.assertIn("/burst?window=${state.window}", view)
+        self.assertIn("/captures/${state.selected}", view)
+        self.assertIn('data-burst-chart="timeline"', view)
+        self.assertIn('data-burst-chart="trend"', view)
+        self.assertIn("data-burst-chart='spectrogram'", view)
+        self.assertIn('data-burst-chart="frequency"', view)
+
+    def test_simulated_sensor_is_switched_by_the_sensor_selector(self):
+        root = Path(__file__).resolve().parents[1]
+        template = (root / "app/graf/templates/index.html").read_text(encoding="utf-8")
+        orbits = (root / "app/graf/static/graf_orbits.js").read_text(encoding="utf-8")
+        self.assertIn('id="recordSensorInfo"', template)
+        self.assertIn('fetch("/vibration/api/sim-sensor"', orbits)
+        self.assertIn("payload.sim_sensors", orbits)
+        self.assertIn("(off)", orbits)
+
+    def test_vibration_charts_have_mouse_over_tooltips(self):
+        root = Path(__file__).resolve().parents[1]
+        template = (root / "app/graf/templates/index.html").read_text(encoding="utf-8")
+        hover = (root / "app/graf/static/graf_hover.js").read_text(encoding="utf-8")
+        orbits = (root / "app/graf/static/graf_orbits.js").read_text(encoding="utf-8")
+        view = (root / "app/graf/static/graf_vibration_burst.js").read_text(encoding="utf-8")
+
+        self.assertLess(template.index("graf_hover.js"), template.index("graf_orbits.js"))
+        self.assertIn("window.grafHover = {", hover)
+        for chart in ("wave", "orbit"):
+            self.assertIn(f'data-hover-chart="{chart}"', orbits)
+            self.assertIn(f'hover.register("{chart}"', orbits)
+        for chart in ("burst-timeline", "burst-trend", "burst-frequency", "burst-spectrogram"):
+            self.assertIn(f'data-hover-chart="{chart}"', view)
+            self.assertIn(f'hover.register("{chart}"', view)
+        collector = (root / "app/vibration/ui.js").read_text(encoding="utf-8")
+        for chart in ("spectrum", "waveform", "orbit"):
+            self.assertIn(f'data-hover="{chart}"', collector)
 
     def test_vibration_ui_periodic_timer_controls_record_persistence(self):
         script = (Path(__file__).resolve().parents[1] / "app/vibration/ui.js").read_text(encoding="utf-8")

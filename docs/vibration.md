@@ -201,6 +201,35 @@ the periodic scheduler and automatic persistence. The related config keys are `f
 Starting or stopping periodic capture in the vibration collector UI also enables or disables record
 persistence, so both interfaces report and control the same timer state.
 
+**Continuous recording** (same panel, 10–600 s) requests FIFO captures of one sensor back to back
+and saves them as **one** record (`kind: "burst"`). Polling of all sensors pauses for the whole
+record, so live values and the `wtvb01` series in InfluxDB stop meanwhile; the next request follows
+the data frame immediately. The gap between captures is about the data frame's transfer time
+(0.27 s at 230400 baud, 0.53 s at 115200), so about 93 % of the time is covered at 230400 baud.
+The last capture ends after the requested time. **Stop** ends the record after the current capture,
+and a failed capture ends it early; both keep the captures already taken. `POST
+/vibration/api/sensors/<address>/burst` with `{"duration_s": 60, "note": "..."}` starts it and `POST
+/vibration/api/operation/stop` stops it (this also stops an averaged series).
+
+The first-sample time of every capture is the bus clock at the request plus the offset fitted from
+the progress frames. The serial/USB latency in that offset is nearly constant, so gaps are accurate to
+a few ms. The record stores these start times (`capture_starts_s`), the measured rate of every capture,
+`span_s`, `coverage` and gap statistics. Captures are still never joined: the gaps and the timing
+uncertainty would add false lines, so frequency resolution stays 0.24 Hz per capture. Each capture is
+integrated on its own. The record's averaged spectrum and last waveform update the latest spectrum
+and write one `wtvb01_fft` point like an averaged series.
+
+**View timeline + FFT** opens the analysis (`GET /vibration/api/records/<id>/burst?window=256|512|1024`,
+computed on demand and cached in memory; about 6 s on a Raspberry Pi 5 for 600 s): min/max envelope of
+acceleration, velocity or displacement over the whole record (in the recorder panel); below the orbit panel a per-capture trend (velocity RMS,
+acceleration RMS or peak, crest factor, dominant frequency), the three strongest FFT peaks per axis and
+capture as a frequency-over-time chart, and a spectrogram (Hann windows of 256/512/1024 samples with
+50 % overlap inside each capture; 256 gives about 1 s and 1 Hz). Gaps are shaded. Clicking a chart selects
+a capture: its waveform and orbits replace the live panels (**Show live capture** returns) and its FFT is
+shown below (by default the last capture is selected); the FFT selector also offers the average of all captures and the maximum of all captures (highest amplitude per frequency, also called peak hold)
+(`GET /vibration/api/records/<id>/captures/<n>` serves any record's capture n). Every capture also stores the wall-clock time of its first sample (`capture_started_at`; the waveform's `started_at`), and time axes show it as their first label. The raw CSV export adds
+`record_time_s` (time since the record start, gaps included). A 600 s record is about 1 MB.
+
 The recorder deliberately labels the acquisition limits instead of presenting unsupported
 controls: the WTVB01 FIFO length is fixed at 1024 points and its sampling rate is sensor-controlled
 (measured for every capture). Therefore selecting 2048/4096 points or changing the sampling rate
@@ -227,6 +256,33 @@ individual points and shows the matching peak amplitudes in the tooltip. Display
 independent of any diagnostic limits.
 
 ## Simulation (test session without a machine)
+
+### Simulated roll sensors (next to the real bus)
+
+The **Sensor** selector on `/graf/vibration` always offers two simulated sensors:
+`sim-roll-600-defects` (address 127, `VIBRATION_SIM_SENSOR_ADDRESS`) and
+`sim-roll-600-healthy` (address 126, `VIBRATION_SIM_HEALTHY_ADDRESS`). Selecting one starts it
+and stops the other; selecting a real sensor stops the running one (`POST
+/vibration/api/sim-sensor` with `{"address": 127, "active": true|false}`; `GET
+/vibration/api/status` reports `sim_sensors`). A running simulator is a registered sensor: its
+frames go to the simulator, never to RS485, so the real sensors keep working. It is polled,
+written to InfluxDB under its name, and supports spectra, records and continuous recording with
+the real FIFO timing (4.2 s per capture). It needs the real serial port to be present, because
+polling opens it first.
+
+Both model (`vibration_sim.RollDriveSimulator`) a 600 mm roll on a direct drive. Line speed
+alternates between 450 and 600 m/min every 30 s with 5 s ramps (25 s hold), counted from
+switching the sensor on, so the roll turns at 3.98 or 5.31 Hz. The signal phase follows the
+roll angle, so consecutive captures continue smoothly and frequencies sweep during the ramps.
+Noise is 0.6 mg RMS per axis.
+
+- **defects**: a small unbalance gives a 1x line (peak velocity X 1.2, Y 0.9, Z 0.2 mm/s at
+  600 m/min, scaling with speed²) with an elliptical XY orbit, plus small 2x and 3x. A small
+  outer-race defect in the drive bearing (10-ball deep-groove bearing, BPFO 4.12x: 16.4 Hz at
+  450 m/min, 21.9 Hz at 600) gives impacts that ring a 72 Hz housing resonance, mostly on Y, so
+  the spectrum shows BPFO harmonics around 72 Hz.
+- **healthy**: well balanced (residual 1x X 0.15, Y 0.12, Z 0.04 mm/s at 600 m/min, tiny 2x/3x)
+  and a healthy bearing (no impacts): the baseline to compare the defective roll with.
 
 Set `VIBRATION_SIM_PORTS=1` in `.env` and rebuild the collector. The Bus form offers
 `sim://frequency?hz=5.25` and a 30-minute fault scenario (`&scenario=faults`). The optional

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,6 +17,7 @@ try:
     from . import vibration_fft as fft
     from . import vibration_sim as sim
     from . import vibration_records as records
+    from . import vibration_burst as burst
     from . import wtvb01_protocol as proto
     from .vibration_bus import BusError, ModbusBus
 except ImportError:  # Flat import inside the container.
@@ -25,6 +26,7 @@ except ImportError:  # Flat import inside the container.
     import vibration_fft as fft
     import vibration_sim as sim
     import vibration_records as records
+    import vibration_burst as burst
     import wtvb01_protocol as proto
     from vibration_bus import BusError, ModbusBus
 
@@ -48,6 +50,22 @@ SIM_PORT = "sim://frequency?hz=5.25"
 SIM_FAULTS_PORT = "sim://frequency?hz=5.25&scenario=faults"
 # The simulated ports are offered in the port list only for test sessions.
 SIM_PORTS_LISTED = os.getenv("VIBRATION_SIM_PORTS", "0") == "1"
+# Simulated sensors next to the real bus (vibration_sim.RollDriveSimulator): while a sensor
+# with one of these addresses is registered, its frames go to the simulator instead of RS485.
+# At most one runs at a time. Defaults are the two highest WTVB01 addresses.
+SIM_SENSORS: dict[int, dict[str, str]] = {
+    int(os.getenv("VIBRATION_SIM_SENSOR_ADDRESS", "127")): {
+        "name": "sim-roll-600-defects", "profile": "defects", "label": "simulated roll: unbalance + bearing defect",
+        "description": ("Simulated 600 mm roll on a direct drive: small unbalance, small outer-race defect in the "
+                        "drive bearing, line speed 450/600 m/min with 5 s ramps every 30 s"),
+    },
+    int(os.getenv("VIBRATION_SIM_HEALTHY_ADDRESS", "126")): {
+        "name": "sim-roll-600-healthy", "profile": "healthy", "label": "simulated roll: no defects",
+        "description": ("Simulated 600 mm roll on a direct drive without defects: well balanced (residual 1x only), "
+                        "healthy bearing, line speed 450/600 m/min with 5 s ramps every 30 s"),
+    },
+}
+SIM_SENSOR_ADDRESS = next(iter(SIM_SENSORS))  # Default for POST /api/sim-sensor without an address.
 
 app = Flask(__name__)
 
@@ -71,6 +89,14 @@ FFT_NEXT: dict[int, float] = {}
 WAVEFORMS: dict[int, dict[str, Any]] = {}
 OPERATION: dict[str, Any] = {"name": None, "running": False, "started_at": None, "finished_at": None, "result": None, "error": None,
                              "progress": None}
+# Set by POST /api/operation/stop; a capture series ends after the current capture.
+STOP_REQUESTED = threading.Event()
+# Safety limit for one continuous record (600 s at about 4.4 s per capture is about 136).
+BURST_MAX_CAPTURES = 200
+# Analyses of continuous records: (record id, file stamp, window) -> result.
+BURST_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
+BURST_CACHE_SIZE = 4
+BURST_CACHE_LOCK = threading.Lock()
 
 
 def _now_iso() -> str:
@@ -92,6 +118,33 @@ def _config_snapshot() -> dict[str, Any]:
         return cfg.validate(CONFIG)
 
 
+def _sync_virtual(config: dict[str, Any]) -> None:
+    """Attach each simulated sensor to the bus while it is registered, detach it otherwise."""
+    registered = {s["address"] for s in config["sensors"]}
+    with BUS.lock:
+        for address, spec in SIM_SENSORS.items():
+            if address in registered and address not in BUS.virtual:
+                BUS.virtual[address] = sim.RollDriveSimulator(address, config["baud"], profile=spec["profile"])
+            elif address not in registered:
+                BUS.virtual.pop(address, None)
+
+
+def _sim_sensors_status() -> list[dict[str, Any]]:
+    result = []
+    for address, spec in SIM_SENSORS.items():
+        device = BUS.virtual.get(address)
+        info = {"address": address, "name": spec["name"], "label": spec["label"], "description": spec["description"],
+                "active": device is not None}
+        if device is not None and hasattr(device, "status"):
+            info.update(device.status())
+        result.append(info)
+    return result
+
+
+def _sim_sensor_status(address: int) -> dict[str, Any]:
+    return next(item for item in _sim_sensors_status() if item["address"] == address)
+
+
 def _store_config(new_config: dict[str, Any]) -> dict[str, Any]:
     global CONFIG, CONFIG_ERROR
     saved = cfg.save(CONFIG_PATH, new_config)
@@ -105,6 +158,7 @@ def _store_config(new_config: dict[str, Any]) -> dict[str, Any]:
             for address in list(table):
                 if address not in known:
                     del table[address]
+    _sync_virtual(saved)
     WAKE.set()
     return saved
 
@@ -305,6 +359,7 @@ def _start_operation(name: str, work: Callable[[], Any]) -> bool:
             return False
         OPERATION.update(name=name, running=True, started_at=_now_iso(), finished_at=None, result=None, error=None,
                          progress=None)
+        STOP_REQUESTED.clear()
 
     def runner() -> None:
         result, error = None, None
@@ -381,16 +436,14 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None,
     Every sensor on the bus is polled once between two captures of a series."""
     config = _config_snapshot()
     count = averages or config["fft_averages"]
-    sensor = next((s for s in config["sensors"] if s["address"] == address), None)
-    if sensor is None:
-        raise ValueError(f"sensor 0x{address:02X} is not registered")
+    sensor = _registered(config, address)
     captures: list[dict[str, Any]] = []
     stopped = False
     try:
         with BUS.lock:
             _open_bus_for_operation(config)
             for index in range(count):
-                if periodic and index and not _config_snapshot()["fft_periodic"]:
+                if index and (STOP_REQUESTED.is_set() or (periodic and not _config_snapshot()["fft_periodic"])):
                     stopped = True  # Stop pressed during the series: keep what was captured.
                     break
                 if index:
@@ -400,7 +453,7 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None,
                     _open_bus_for_operation(config)  # The pass closes the port after an I/O error.
                 with STATE_LOCK:
                     OPERATION["progress"] = f"capture {index + 1}/{count}"
-                captures.append(BUS.capture_fifo(address))
+                captures.append(_stamp_capture(BUS.capture_fifo(address)))
     except BusError as exc:
         with STATE_LOCK:
             SPECTRA.setdefault(address, {})["error"] = f"capture {len(captures) + 1}/{count}: {exc}"
@@ -411,19 +464,32 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None,
         if current["fft_periodic"]:
             with STATE_LOCK:
                 FFT_NEXT[address] = time.monotonic() + current["fft_interval_sec"]
-    rates = [c["sample_rate"] for c in captures if c["sample_rate"]]
+    spectrum, waveform = _publish_series(sensor, captures, config, periodic)
+    response = {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures), "stopped": stopped,
+                "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
+    if save_record:
+        response["record"] = _save_record(sensor, captures, spectrum, waveform, periodic, note)
+    return response
+
+
+def _registered(config: dict[str, Any], address: int) -> dict[str, Any]:
+    sensor = next((s for s in config["sensors"] if s["address"] == address), None)
+    if sensor is None:
+        raise ValueError(f"sensor 0x{address:02X} is not registered")
+    return sensor
+
+
+def _series_rate(captures: list[dict[str, Any]]) -> tuple[float, float | None]:
+    """Sample rate of a series: mean of the measured rates, else the default."""
+    rates = [c["sample_rate"] for c in captures if c.get("sample_rate")]
     measured = sum(rates) / len(rates) if rates else None
-    sample_rate = measured or proto.FIFO_DEFAULT_SAMPLE_RATE
-    result = fft.analyze_average([c["samples"] for c in captures], sample_rate,
-                                 velocity_min_hz=config["fft_velocity_min_hz"])
-    # The time waveform and displacement paths come from the last capture.
-    wave = fft.waveforms(captures[-1]["samples"], sample_rate)
-    for pair, orbit in wave["orbits"].items():
-        result["summary"][f"orbit_{pair}_ratio"] = round(orbit["overall"]["ratio"], 3)
-    observed = datetime.now(timezone.utc)
-    spectrum = {
-        "captured_at": observed.isoformat(timespec="milliseconds"), "periodic": periodic, "error": None,
-        "sample_rate_hz": round(sample_rate, 3), "sample_rate_measured": measured is not None,
+    return measured or proto.FIFO_DEFAULT_SAMPLE_RATE, measured
+
+
+def _spectrum_payload(result: dict[str, Any], captured_at: str, periodic: bool, measured: bool) -> dict[str, Any]:
+    return {
+        "captured_at": captured_at, "periodic": periodic, "error": None,
+        "sample_rate_hz": round(result["sample_rate_hz"], 3), "sample_rate_measured": measured,
         "samples": result["samples"], "duration_s": round(result["duration_s"], 3), "averages": result["averages"],
         "df_hz": round(result["df_hz"], 5), "nyquist_hz": round(result["nyquist_hz"], 3),
         "velocity_min_hz": result["velocity_min_hz"],
@@ -434,34 +500,155 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None,
                  for axis, data in result["axes"].items()},
         "summary": result["summary"],
     }
-    spectrum["orbits"] = {pair: {kind: {k: round(v, 3) for k, v in values.items()} for kind, values in orbit.items()}
-                          for pair, orbit in wave["orbits"].items()}
-    waveform = {
-        "captured_at": spectrum["captured_at"], "sample_rate_hz": round(sample_rate, 3), "samples": wave["samples"],
+
+
+def _stamp_capture(capture: dict[str, Any]) -> dict[str, Any]:
+    """Add the wall-clock time of the capture's first sample (`first_sample_at`, ISO UTC).
+
+    The bus clock is time.monotonic; the request time plus the offset fitted from the
+    progress frames is converted with the current monotonic/wall-clock pair."""
+    first = float(capture.get("requested_at") or time.monotonic()) + float(capture.get("first_sample_s") or 0.0)
+    wall = datetime.now(timezone.utc) - timedelta(seconds=time.monotonic() - first)
+    capture["first_sample_at"] = wall.isoformat(timespec="milliseconds")
+    return capture
+
+
+def _capture_start(record: dict[str, Any], index: int) -> str | None:
+    """Wall-clock first-sample time of capture `index` of a saved record.
+
+    Records store it per capture; older continuous records only have the recording start
+    (`started_at`, a few ms before the first sample) and the offsets `capture_starts_s`.
+    Older ordinary records have no per-capture time (None)."""
+    started = record.get("capture_started_at") or []
+    if index < len(started) and started[index]:
+        return started[index]
+    offsets = record.get("capture_starts_s") or []
+    if record.get("started_at") and index < len(offsets):
+        try:
+            base = datetime.fromisoformat(str(record["started_at"]))
+            return (base + timedelta(seconds=float(offsets[index]))).isoformat(timespec="milliseconds")
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _waveform_payload(wave: dict[str, Any], captured_at: str, sample_rate: float,
+                      started_at: str | None = None) -> dict[str, Any]:
+    orbits = {pair: {kind: {k: round(v, 3) for k, v in values.items()} for kind, values in orbit.items()}
+              for pair, orbit in wave["orbits"].items()}
+    return {
+        "captured_at": captured_at, "started_at": started_at, "sample_rate_hz": round(sample_rate, 3), "samples": wave["samples"],
         "integration_min_hz": round(wave["integration_min_hz"], 3),
         "axes": {axis: {key: _round_list(values, 5 if key == "acc_g" else 2) for key, values in data.items()}
                  for axis, data in wave["axes"].items()},
-        "orbits": spectrum["orbits"],
+        "orbits": orbits,
     }
+
+
+def _publish_series(sensor: dict[str, Any], captures: list[dict[str, Any]], config: dict[str, Any],
+                    periodic: bool) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Averaged spectrum and last-capture waveform of a series: kept as the sensor's
+    latest spectrum and written to InfluxDB as one summary point."""
+    sample_rate, measured = _series_rate(captures)
+    result = fft.analyze_average([c["samples"] for c in captures], sample_rate,
+                                 velocity_min_hz=config["fft_velocity_min_hz"])
+    # The time waveform and displacement paths come from the last capture.
+    wave = fft.waveforms(captures[-1]["samples"], sample_rate)
+    for pair, orbit in wave["orbits"].items():
+        result["summary"][f"orbit_{pair}_ratio"] = round(orbit["overall"]["ratio"], 3)
+    observed = datetime.now(timezone.utc)
+    spectrum = _spectrum_payload(result, observed.isoformat(timespec="milliseconds"), periodic, measured is not None)
+    # started_at: wall-clock time of the first sample of the shown (last) capture.
+    waveform = _waveform_payload(wave, spectrum["captured_at"], sample_rate, captures[-1].get("first_sample_at"))
+    spectrum["orbits"] = waveform["orbits"]
     with STATE_LOCK:
-        SPECTRA[address] = spectrum
-        WAVEFORMS[address] = waveform
+        SPECTRA[sensor["address"]] = spectrum
+        WAVEFORMS[sensor["address"]] = waveform
     INFLUX.write(sensor, result["summary"], observed, measurement=FFT_MEASUREMENT)
-    response = {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures), "stopped": stopped,
-                "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
-    if save_record:
-        saved = records.save(RECORDS_DIR, {
-            "sensor": sensor["name"], "address": address, "captured_at": spectrum["captured_at"],
-            "note": note, "sample_rate_hz": spectrum["sample_rate_hz"], "samples": spectrum["samples"],
-            "duration_s": spectrum["duration_s"], "averages": len(captures), "capture_count": len(captures),
-            "periodic": periodic, "processing": {"velocity_min_hz": spectrum["velocity_min_hz"], "window": "hann"},
-            "raw_captures_g": [capture["samples"] for capture in captures],
-            "waveform": waveform, "spectrum": spectrum,
-        })
-        current = _config_snapshot()
-        records.prune(RECORDS_DIR, current["record_max_count"], current["record_retention_days"])
-        response["record"] = saved
-    return response
+    return spectrum, waveform
+
+
+def _save_record(sensor: dict[str, Any], captures: list[dict[str, Any]], spectrum: dict[str, Any],
+                 waveform: dict[str, Any], periodic: bool, note: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    saved = records.save(RECORDS_DIR, {
+        "sensor": sensor["name"], "address": sensor["address"], "captured_at": spectrum["captured_at"],
+        "note": note, "sample_rate_hz": spectrum["sample_rate_hz"], "samples": spectrum["samples"],
+        "duration_s": spectrum["duration_s"], "averages": len(captures), "capture_count": len(captures),
+        "periodic": periodic, "processing": {"velocity_min_hz": spectrum["velocity_min_hz"], "window": "hann"},
+        "raw_captures_g": [capture["samples"] for capture in captures],
+        "capture_started_at": [capture.get("first_sample_at") for capture in captures],
+        "waveform": waveform, "spectrum": spectrum, **(extra or {}),
+    })
+    current = _config_snapshot()
+    records.prune(RECORDS_DIR, current["record_max_count"], current["record_retention_days"])
+    return saved
+
+
+def _burst_work(address: int, duration_s: int, note: str = "",
+                clock: Callable[[], float] = time.monotonic) -> dict[str, Any]:
+    """Continuous recording: FIFO captures of one sensor back to back for `duration_s`,
+    saved as one record. Polling pauses for the whole record so the next request
+    follows the data frame immediately; the last capture ends after `duration_s`.
+    Stop or a failed capture ends the record and keeps the captures taken so far."""
+    config = _config_snapshot()
+    sensor = _registered(config, address)
+    captures: list[dict[str, Any]] = []
+    stopped, error = False, None
+    started_wall = datetime.now(timezone.utc)
+    with BUS.lock:
+        _open_bus_for_operation(config)
+        begin = clock()
+        while len(captures) < BURST_MAX_CAPTURES:
+            elapsed = clock() - begin
+            if captures and elapsed >= duration_s:
+                break
+            if STOP_REQUESTED.is_set():
+                stopped = True
+                break
+            with STATE_LOCK:
+                OPERATION["progress"] = f"continuous capture {len(captures) + 1} · {elapsed:.0f}/{duration_s} s"
+            try:
+                captures.append(_stamp_capture(BUS.capture_fifo(address)))
+            except BusError as exc:
+                if not captures:
+                    raise
+                error = f"capture {len(captures) + 1}: {exc}"
+                break
+    if not captures:
+        raise ValueError("stopped before the first capture")
+    spectrum, waveform = _publish_series(sensor, captures, config, periodic=False)
+    starts = burst.capture_starts(captures)
+    extra = {
+        "kind": "burst", "requested_duration_s": duration_s, "started_at": started_wall.isoformat(timespec="milliseconds"),
+        "capture_starts_s": starts,
+        "capture_rates_hz": [None if c.get("sample_rate") is None else round(c["sample_rate"], 3) for c in captures],
+        "stopped": stopped, "error": error,
+        **burst.summary(starts, spectrum["samples"], spectrum["sample_rate_hz"]),
+    }
+    saved = _save_record(sensor, captures, spectrum, waveform, False, note, extra)
+    return {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures),
+            "stopped": stopped, "capture_error": error, "record": saved,
+            "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
+
+
+def _burst_analysis(record_id: str, window: int) -> dict[str, Any]:
+    stamp = records.file_stamp(RECORDS_DIR, record_id)
+    key = (record_id, stamp, window)
+    with BURST_CACHE_LOCK:
+        if key in BURST_CACHE:
+            return BURST_CACHE[key]
+    record = records.load(RECORDS_DIR, record_id)
+    if record.get("kind") != "burst":
+        raise ValueError("not a continuous record")
+    analysis = burst.analyze(record["raw_captures_g"], record["capture_starts_s"], float(record["sample_rate_hz"]),
+                             window=window,
+                             velocity_min_hz=float((record.get("processing") or {}).get("velocity_min_hz")
+                                                   or fft.VELOCITY_RMS_MIN_HZ))
+    with BURST_CACHE_LOCK:
+        BURST_CACHE[key] = analysis
+        while len(BURST_CACHE) > BURST_CACHE_SIZE:
+            BURST_CACHE.pop(next(iter(BURST_CACHE)))
+    return analysis
 
 
 def _fft_next_in(config: dict[str, Any], sensor: dict[str, Any]) -> float | None:
@@ -585,6 +772,7 @@ def status():
         fields={name: [{"name": f.name, "unit": f.unit} for f in block[2]] for name, block in
                 (("basic", proto.BLOCK_BASIC), ("stats", proto.BLOCK_STATS), ("energy", proto.BLOCK_ENERGY))},
         harmonics={"points": list(proto.HARMONIC_POINTS), "bands": list(proto.HARMONIC_BANDS)},
+        sim_sensors=_sim_sensors_status(),
     )
 
 
@@ -692,10 +880,48 @@ def scan():
     return jsonify(started=True), 202
 
 
+@app.post("/api/sim-sensor")
+def sim_sensor():
+    """Switch a simulated sensor on or off: {"address": 126|127, "active": true|false}.
+
+    On means registered and polled; switching one on switches the others off."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("active"), bool):
+        return jsonify(error='JSON body {"address": n, "active": true|false} required'), 400
+    active = body["active"]
+    try:
+        address = cfg.parse_address(body.get("address", SIM_SENSOR_ADDRESS))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if address not in SIM_SENSORS:
+        return jsonify(error=f"no simulated sensor at address {address}"), 404
+    config = _config_snapshot()
+    names = {a: spec["name"] for a, spec in SIM_SENSORS.items()}
+    # "sim-roll-600" is the name of the first version of the defects simulator.
+    other = next((s for s in config["sensors"] if s["address"] in names
+                  and s["name"] not in (names[s["address"]], "sim-roll-600")), None)
+    if other is not None:
+        return jsonify(error=f"address {other['address']} is used by sensor {other['name']}"), 409
+
+    def apply(config: dict[str, Any]) -> None:
+        if active:  # One simulated sensor at a time.
+            config["sensors"] = [s for s in config["sensors"] if s["address"] not in SIM_SENSORS]
+            config["sensors"].append({"address": address, "name": names[address], "enabled": True})
+        else:
+            config["sensors"] = [s for s in config["sensors"] if s["address"] != address]
+    response = _update_config(apply)
+    if isinstance(response, tuple):
+        return response
+    return jsonify(sim_sensor=_sim_sensor_status(address), sim_sensors=_sim_sensors_status(),
+                   config=response.get_json()["config"])
+
+
 @app.post("/api/sensors/<int:address>/address")
 def change_address(address: int):
     try:
         new = cfg.parse_address(_json_body().get("new_address"))
+        if address in SIM_SENSORS or new in SIM_SENSORS:
+            raise ValueError("simulated sensor addresses cannot be changed or reused")
         config = _config_snapshot()
         _find(config, address)
         if any(s["address"] == new for s in config["sensors"]):
@@ -762,6 +988,70 @@ def capture_record(address: int):
     if not _start_operation("record", lambda: _fft_work(address, averages=averages, save_record=True, note=note)):
         return _busy_response()
     return jsonify(started=True), 202
+
+
+@app.post("/api/sensors/<int:address>/burst")
+def capture_burst(address: int):
+    try:
+        _find(_config_snapshot(), address)
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            raise ValueError("JSON object body required")
+        duration = cfg.parse_burst_duration(body.get("duration_s", cfg.DEFAULT_BURST_DURATION_SEC))
+        note = str(body.get("note") or "").strip()
+        if len(note) > 200:
+            raise ValueError("note must not exceed 200 characters")
+    except LookupError:
+        return jsonify(error="unknown sensor"), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if not _start_operation("burst", lambda: _burst_work(address, duration, note=note)):
+        return _busy_response()
+    return jsonify(started=True), 202
+
+
+@app.post("/api/operation/stop")
+def stop_operation():
+    """End a running capture series or continuous record after the current capture."""
+    if not OPERATION["running"] or OPERATION["name"] not in ("fft", "record", "burst"):
+        return jsonify(error="no capture series is running"), 409
+    STOP_REQUESTED.set()
+    return jsonify(stopping=True)
+
+
+@app.get("/api/records/<record_id>/burst")
+def get_burst_analysis(record_id: str):
+    try:
+        window = cfg.parse_spectrogram_window(request.args.get("window", cfg.DEFAULT_SPECTROGRAM_WINDOW))
+        return jsonify(_burst_analysis(record_id, window))
+    except FileNotFoundError:
+        return jsonify(error="record not found"), 404
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.get("/api/records/<record_id>/captures/<int:index>")
+def get_record_capture(record_id: str, index: int):
+    """Waveform, orbits and spectrum of one capture of a saved record."""
+    try:
+        record = records.load(RECORDS_DIR, record_id)
+        raw = record.get("raw_captures_g") or []
+        if not 0 <= index < len(raw):
+            return jsonify(error="capture not found"), 404
+        sample_rate = float(record["sample_rate_hz"])
+        starts = record.get("capture_starts_s") or []
+        velocity_min = float((record.get("processing") or {}).get("velocity_min_hz") or fft.VELOCITY_RMS_MIN_HZ)
+        result = fft.analyze(raw[index], sample_rate, velocity_min_hz=velocity_min)
+        label = str(record.get("started_at") or record.get("captured_at") or "")
+        spectrum = _spectrum_payload(result, label, bool(record.get("periodic")), True)
+        waveform = _waveform_payload(fft.waveforms(raw[index], sample_rate), label, sample_rate,
+                                     _capture_start(record, index))
+    except FileNotFoundError:
+        return jsonify(error="record not found"), 404
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(index=index, count=len(raw), start_s=starts[index] if index < len(starts) else None,
+                   waveform=waveform, spectrum=spectrum)
 
 
 @app.get("/api/records")
@@ -844,6 +1134,7 @@ def change_baud():
 
 
 def main() -> None:
+    _sync_virtual(_config_snapshot())
     threading.Thread(target=_poll_loop, name="vibration-poller", daemon=True).start()
     app.run(host="0.0.0.0", port=HTTP_PORT, threaded=True)
 

@@ -11,6 +11,11 @@ services:
     volumes:
       - ./app/mscl:/app
       - ./app/shared/device-common.css:/shared/device-common.css:ro
+      # The /app bind mount hides the usb_discovery.py copied into the image.
+      - ./app/shared/usb_discovery.py:/shared/usb_discovery.py:ro
+    environment:
+      # Image default plus /shared for usb_discovery.
+      - PYTHONPATH=/usr/lib/python3.12/dist-packages:/shared
 
   graf-lite:
     build:

@@ -57,7 +57,7 @@
           "probe": "/probe/messkluppe"
         },
         {
-          "alt": "Vibration",
+          "alt": "WTVB01-485",
           "icon": "fas fa-tachometer-alt",
           "link": "/vibration/",
           "probe": "/probe/vibration"

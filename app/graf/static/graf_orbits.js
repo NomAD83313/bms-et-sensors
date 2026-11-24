@@ -22,16 +22,30 @@
   const recordsSelectAll = document.getElementById("recordsSelectAll");
   const recordsDeleteSelected = document.getElementById("recordsDeleteSelected");
   const recordsSelectionStatus = document.getElementById("recordsSelectionStatus");
+  const burstDuration = document.getElementById("burstDuration");
+  const burstNote = document.getElementById("burstNote");
+  const burstStart = document.getElementById("burstStart");
+  const burstStop = document.getElementById("burstStop");
+  const burstStatus = document.getElementById("burstStatus");
+  const orbitLiveButton = document.getElementById("orbitLiveButton");
   if (!root || !status) return;
 
   const pairs = [["x", "y"], ["x", "z"], ["y", "z"]];
   let demoEnabled = false;
   let lastRender = null;
+  // A saved record or capture is shown in the waveform/orbit panels: live refresh pauses.
+  let viewingRecord = false;
+  const captureOperations = ["fft", "record", "burst"];
   const waveformScaleModes = { acc_g: "auto", velocity_mm_s: "auto", displacement_um: "auto" };
   const waveformCompareMinimums = { acc_g: 0.02, velocity_mm_s: 1, displacement_um: 50 };
   const waveformFixedLimits = { ...waveformCompareMinimums };
   const waveformCompareLimits = {};
   let recorderSensors = [];
+  // Simulated sensors from /vibration/api/status (address, name, label, active, line speed …).
+  let simSensors = [];
+  const simAt = (address) => simSensors.find((item) => Number(item.address) === Number(address)) || null;
+  let simSwitching = false;
+  const recordSensorInfo = document.getElementById("recordSensorInfo");
   let latestRecordId = null;
   let fftScaleMode = "auto";
   let fftFixedMaxG = 0.01;
@@ -125,13 +139,32 @@
     };
   }
 
+  // Waves shown in the charts, by key, for the mouse-over tooltip (graf_hover.js).
+  const waveKeys = new WeakMap();
+  const wavesByKey = new Map();
+  let waveKeySeq = 0;
+  function waveKey(wave) {
+    if (!waveKeys.has(wave)) {
+      const key = String(++waveKeySeq);
+      waveKeys.set(wave, key);
+      wavesByKey.set(key, wave);
+      if (wavesByKey.size > 40) wavesByKey.delete(wavesByKey.keys().next().value);
+    }
+    return waveKeys.get(wave);
+  }
+  const ORBIT_SIZE = 260;
+  const ORBIT_PAD = 28;
+  const WAVE_WIDTH = 1000;
+  const WAVE_PAD = { left: 58, right: 18, top: 16, bottom: 30 };
+  const quantityUnits = { acc_g: ["Acceleration", "g"], velocity_mm_s: ["Velocity", "mm/s"], displacement_um: ["Displacement", "µm"] };
+
   function finiteValues(values) {
     return (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite);
   }
 
   function orbitSvg(wave, axisA, axisB) {
-    const size = 260;
-    const pad = 28;
+    const size = ORBIT_SIZE;
+    const pad = ORBIT_PAD;
     const xs = finiteValues(wave.axes?.[axisA]?.displacement_um);
     const ys = finiteValues(wave.axes?.[axisB]?.displacement_um);
     const count = Math.min(xs.length, ys.length);
@@ -146,22 +179,23 @@
     const ratioLabel = Number.isFinite(ratio) ? ratio.toFixed(2) : "–";
     return `
       <figure class="orbit-figure">
-        <svg class="orbit-chart" viewBox="0 0 ${size} ${size}" role="img" aria-label="Orbit ${pair.toUpperCase()}">
+        <svg class="orbit-chart" viewBox="0 0 ${size} ${size}" role="img" aria-label="Orbit ${pair.toUpperCase()}" data-hover-chart="orbit" data-wave-key="${waveKey(wave)}" data-pair="${pair}" data-range="${range}">
           <line class="orbit-grid" x1="${size / 2}" x2="${size / 2}" y1="${pad}" y2="${size - pad}" />
           <line class="orbit-grid" x1="${pad}" x2="${size - pad}" y1="${size / 2}" y2="${size / 2}" />
           <polyline class="orbit-path" points="${points}" />
           <text x="${size - pad}" y="${size / 2 - 5}" text-anchor="end">${axisA.toUpperCase()}</text>
           <text x="${size / 2 + 5}" y="${pad + 10}">${axisB.toUpperCase()}</text>
           <text x="${pad}" y="${size - 8}">±${range.toPrecision(3)} µm</text>
+          <circle class="hover-dot" r="1.75" />
         </svg>
         <figcaption><strong>${pair.toUpperCase()}</strong> · ratio ${ratioLabel}</figcaption>
       </figure>`;
   }
 
   function waveformSvg(wave, quantity, label, unit) {
-    const width = 1000;
+    const width = WAVE_WIDTH;
     const height = 260;
-    const pad = { left: 58, right: 18, top: 16, bottom: 30 };
+    const pad = WAVE_PAD;
     const series = ["x", "y", "z"].map((axis) => finiteValues(wave.axes?.[axis]?.[quantity]));
     const count = Math.min(...series.map((values) => values.length));
     const peak = Math.max(0, ...series.flatMap((values) => values.slice(0, count).map(Math.abs)));
@@ -180,8 +214,10 @@
       const fraction = index / 5;
       const x = pad.left + fraction * (width - pad.left - pad.right);
       const seconds = duration * fraction;
+      // The first label is the absolute time of the first sample when it is known.
+      const absolute = index === 0 ? window.grafHover?.clock(wave.started_at, 0, true) : null;
       return `<line class="wave-grid" x1="${x}" x2="${x}" y1="${pad.top}" y2="${height - pad.bottom}" />
-        <text x="${x}" y="${height - 9}" text-anchor="middle">${seconds.toFixed(2)} s</text>`;
+        ${absolute ? `<text x="${x}" y="${height - 9}" text-anchor="start">${absolute}</text>` : `<text x="${x}" y="${height - 9}" text-anchor="middle">${seconds.toFixed(2)} s</text>`}`;
     }).join("");
     const yTicks = [-1, -0.5, 0, 0.5, 1].map((fraction) => {
       const y = sy(range * fraction);
@@ -206,9 +242,10 @@
             <button type="button" data-wave-scale-reset="${quantity}" ${waveformScaleModes[quantity] === "compare" ? "" : "disabled"}>Reset scale</button>
           </span>
         </div>
-        <svg class="waveform-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${label}">
+        <svg class="waveform-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${label}" data-hover-chart="wave" data-wave-key="${waveKey(wave)}" data-quantity="${quantity}" data-range="${range}">
           ${xTicks}${yTicks}
           ${lines}
+          <line class="hover-line" x1="0" x2="0" y1="${pad.top}" y2="${height - pad.bottom}" />
         </svg>
       </figure>`;
   }
@@ -241,11 +278,29 @@
     if (!recordSensor) return;
     const selected = recordSensor.value;
     recorderSensors = (payload.sensors || []).filter((sensor) => sensor.enabled);
-    recordSensor.innerHTML = recorderSensors.map((sensor) => (
-      `<option value="${Number(sensor.address)}">${escapeHtml(sensor.name || `Sensor ${sensor.address}`)}</option>`
-    )).join("");
-    if (recorderSensors.some((sensor) => String(sensor.address) === selected)) recordSensor.value = selected;
-    recordButton.disabled = recorderSensors.length === 0;
+    simSensors = Array.isArray(payload.sim_sensors) ? payload.sim_sensors : [];
+    // Simulated sensors are always offered: selecting one starts it, selecting another sensor stops it.
+    const options = recorderSensors.map((sensor) => {
+      const simulated = simAt(sensor.address);
+      return { value: Number(sensor.address), label: simulated ? `${sensor.name} · ${simulated.label} (running)` : (sensor.name || `Sensor ${sensor.address}`) };
+    });
+    simSensors.filter((item) => !item.active).forEach((item) => options.push({ value: Number(item.address), label: `${item.name} · ${item.label} (off)` }));
+    if (!simSwitching) {
+      recordSensor.innerHTML = options.map((item) => `<option value="${item.value}">${escapeHtml(item.label)}</option>`).join("");
+      const running = simSensors.find((item) => item.active);
+      if (options.some((item) => String(item.value) === selected)) recordSensor.value = selected;
+      else if (running) recordSensor.value = String(running.address);
+    }
+    updateSimInfo();
+    const operation = payload.operation || {};
+    const capturing = Boolean(operation.running && captureOperations.includes(operation.name));
+    setCaptureButtons(Boolean(operation.running));
+    if (burstStop) burstStop.disabled = !capturing;
+    if (burstStatus) {
+      burstStatus.textContent = capturing && operation.name === "burst"
+        ? `Recording: ${operation.progress || "starting…"} · polling paused`
+        : "Back-to-back FIFO captures · polling paused · short gaps between captures";
+    }
     const config = payload.config || {};
     const syncInput = (element, value) => {
       if (element && document.activeElement !== element && value !== undefined) element.value = String(value);
@@ -306,7 +361,7 @@
       return `<line class="fft-grid" x1="${pad.left}" x2="${width - pad.right}" y1="${y}" y2="${y}" />
         <text x="${pad.left - 7}" y="${y + 4}" text-anchor="end">${(range * fraction).toPrecision(3)}</text>`;
     }).join("");
-    return `<svg class="saved-fft-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Acceleration amplitude spectrum">
+    return `<svg class="saved-fft-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Acceleration amplitude spectrum" data-range="${range}">
       ${xTicks}${yTicks}${lines}<line class="fft-hover" x1="0" x2="0" y1="${pad.top}" y2="${height - pad.bottom}" />
       <text x="${(pad.left + width - pad.right) / 2}" y="${height - 1}" text-anchor="middle">Frequency, Hz</text>
       <text x="14" y="${height / 2}" text-anchor="middle" transform="rotate(-90 14 ${height / 2})">Amplitude, g</text>
@@ -358,6 +413,9 @@
       hoverLine.setAttribute("x1", markerX.toFixed(1));
       hoverLine.setAttribute("x2", markerX.toFixed(1));
       hoverLine.style.display = "block";
+      const range = Number(svg.dataset.range) || 1;
+      const sy = (value) => 16 + (1 - Math.min(value, range) / range) * (300 - 16 - 34);
+      window.grafHover?.setPoints(svg, arrays.map((values, axis) => ({ x: markerX, y: sy(values[index] || 0), axis: "xyz"[axis] })));
       tooltip.innerHTML = `<div class="tt-time">FFT bin ${index} · ${(index * df).toFixed(3)} Hz</div>` +
         arrays.map((values, axisIndex) => `<div class="tt-row"><span class="tt-dot" style="background:${colors[axisIndex]}"></span>` +
           `<span>${"XYZ"[axisIndex]} acceleration amplitude: ${formatValue(values[index] || 0)} g</span></div>`).join("");
@@ -371,6 +429,8 @@
     });
     svg.addEventListener("mouseleave", () => {
       hoverLine.style.display = "none";
+      const points = svg.querySelector(".hover-points");
+      if (points) points.style.display = "none";
       tooltip.style.display = "none";
     });
   }
@@ -380,10 +440,10 @@
     const spectrum = record.spectrum || {};
     savedFftRoot.innerHTML = `
       <div class="waveform-chart-head">
-        <span class="waveform-chart-title"><span>FFT acceleration amplitude spectrum · ${escapeHtml(record.sensor || "Sensor")}
+        <span class="waveform-chart-title"><span>FFT acceleration amplitude spectrum · ${escapeHtml(record.sensor || "Sensor")}${record.fftLabel ? ` · ${escapeHtml(record.fftLabel)}` : ""}
           <span class="waveform-legend"><span class="x">X axis · green</span><span class="y">Y axis · red</span><span class="z">Z axis · white</span></span></span>
         </span>
-        <span class="orbit-status">Captured ${escapeHtml(capturedLabel(record.captured_at))} · Y: single-sided acceleration amplitude (g) · X: frequency (Hz) · Δf ${Number(spectrum.df_hz || 0).toFixed(3)} Hz · Nyquist ${Number(spectrum.nyquist_hz || 0).toFixed(2)} Hz · ${Number(record.averages || 1)} average(s)</span>
+        <span class="orbit-status">Captured ${escapeHtml(capturedLabel(record.captured_at))} · Y: single-sided acceleration amplitude (g) · X: frequency (Hz) · Δf ${Number(spectrum.df_hz || 0).toFixed(3)} Hz · Nyquist ${Number(spectrum.nyquist_hz || 0).toFixed(2)} Hz · ${escapeHtml(record.fftNote || `${Number(record.averages || 1)} average(s)`)}</span>
         <span class="fft-scale-controls">
           <label>Y scale <select data-fft-scale-mode><option value="auto" ${fftScaleMode === "auto" ? "selected" : ""}>Auto</option><option value="compare" ${fftScaleMode === "compare" ? "selected" : ""}>Compare</option><option value="fixed" ${fftScaleMode === "fixed" ? "selected" : ""}>Fixed</option></select></label>
           <label class="fft-fixed-scale" ${fftScaleMode === "fixed" ? "" : "hidden"}>Max, g <input data-fft-fixed-max type="number" min="0.000001" step="any" value="${fftFixedMaxG}" /></label>
@@ -394,16 +454,34 @@
     bindFftHover(record);
   }
 
-  async function showRecord(recordId, scrollIntoView = true) {
+  // pin: the user opened the record, so it also replaces the live waveform/orbit panels.
+  async function showRecord(recordId, scrollIntoView = true, pin = true) {
     const response = await fetch(`/vibration/api/records/${encodeURIComponent(recordId)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`record HTTP ${response.status}`);
     const record = await response.json();
-    const sensor = { name: `${record.sensor || "Sensor"} · saved record`, address: record.address };
-    renderAvailable([{ sensor, wave: record.waveform }]);
-    lastRender = () => renderAvailable([{ sensor, wave: record.waveform }]);
-    renderSavedFft(record);
+    const continuous = record.kind === "burst";
+    const label = continuous ? "continuous record · last capture" : "saved record";
+    if (pin) showWave({ name: `${record.sensor || "Sensor"} · ${label}`, address: record.address }, record.waveform);
+    renderSavedFft(continuous ? { ...record, fftLabel: "average of all captures", fftNote: `${Number(record.capture_count || 1)} captures averaged` } : record);
+    if (window.grafBurst) window.grafBurst.show(record, pin);
     if (scrollIntoView) savedFftRoot.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+
+  function showWave(sensor, wave) {
+    viewingRecord = true;
+    if (orbitLiveButton) orbitLiveButton.hidden = false;
+    renderAvailable([{ sensor, wave }]);
+    lastRender = () => renderAvailable([{ sensor, wave }]);
+    status.textContent = "Saved record shown · live refresh paused";
+  }
+
+  // Used by graf_vibration_burst.js for one capture of a continuous record.
+  window.grafVibration = {
+    showWave,
+    showSpectrum(record, spectrum, label, note) {
+      renderSavedFft({ ...record, spectrum, fftLabel: label, fftNote: note });
+    },
+  };
 
   function renderRecords(records) {
     if (!recordsBody) return;
@@ -418,14 +496,15 @@
     }
     recordsBody.innerHTML = records.map((record) => {
       const id = encodeURIComponent(record.id);
+      const continuous = record.kind === "burst";
       return `<tr>
         <td><input type="checkbox" data-record-select="${id}" aria-label="Select record ${escapeHtml(capturedLabel(record.captured_at))}" ${selectedRecordIds.has(String(record.id)) ? "checked" : ""} /></td>
         <td>${escapeHtml(capturedLabel(record.captured_at))}</td><td>${escapeHtml(record.sensor || String(record.address))}</td>
-        <td>${record.periodic ? "Automatic" : "Manual"}</td>
-        <td>${Number(record.samples || 0)}</td><td>${Number(record.sample_rate_hz || 0).toFixed(2)} Hz</td>
-        <td>${Number(record.duration_s || 0).toFixed(3)} s</td><td>${Number(record.averages || 1)}</td>
+        <td>${continuous ? "Continuous" : record.periodic ? "Automatic" : "Manual"}</td>
+        <td>${Number(record.samples || 0) * (continuous ? Number(record.capture_count || 1) : 1)}</td><td>${Number(record.sample_rate_hz || 0).toFixed(2)} Hz</td>
+        <td>${continuous ? `${Number(record.span_s || 0).toFixed(1)} s · ${(100 * Number(record.coverage || 0)).toFixed(0)} %` : `${Number(record.duration_s || 0).toFixed(3)} s`}</td><td>${Number(record.averages || 1)}</td>
         <td class="note-cell">${escapeHtml(record.note || "–")}</td>
-        <td><span class="record-actions"><button type="button" data-record-view="${id}">View + FFT</button>
+        <td><span class="record-actions"><button type="button" data-record-view="${id}">${continuous ? "View timeline + FFT" : "View + FFT"}</button>
           <button type="button" data-record-csv="${id}" data-rate="${Number(record.sample_rate_hz)}">CSV</button>
           <a href="/vibration/api/records/${id}/download.json">JSON</a>
           <button type="button" data-record-delete="${id}">Delete</button></span></td></tr>`;
@@ -452,7 +531,8 @@
       renderRecords(records);
       if (records[0]?.id && records[0].id !== latestRecordId) {
         latestRecordId = records[0].id;
-        await showRecord(latestRecordId, false);
+        // A new record is shown automatically unless the user is looking at another one.
+        if (!viewingRecord) await showRecord(latestRecordId, false, false);
       }
     } catch (error) {
       recordsBody.innerHTML = `<tr><td colspan="10">Records unavailable: ${escapeHtml(error.message || String(error))}</td></tr>`;
@@ -470,16 +550,24 @@
       window.setTimeout(() => waitForRecord().catch(finishRecordError), 500);
       return;
     }
-    recordButton.disabled = false;
+    setCaptureButtons(false);
     if (operation.error) throw new Error(operation.error);
-    recordStatus.textContent = operation.result?.record ? "Record saved" : "Capture finished";
+    const result = operation.result || {};
+    recordStatus.textContent = !result.record ? "Capture finished"
+      : result.capture_error ? `Record saved · ended early: ${result.capture_error}`
+        : result.stopped ? "Record saved · stopped" : "Record saved";
     await loadRecords();
     if (operation.result?.record?.id) await showRecord(operation.result.record.id);
   }
 
   function finishRecordError(error) {
-    recordButton.disabled = false;
+    setCaptureButtons(false);
     recordStatus.textContent = `Recording failed: ${error.message || error}`;
+  }
+
+  function setCaptureButtons(running) {
+    if (recordButton) recordButton.disabled = running || recorderSensors.length === 0;
+    if (burstStart) burstStart.disabled = running || recorderSensors.length === 0;
   }
 
   async function loadOrbits() {
@@ -503,6 +591,7 @@
       if (!statusResponse.ok) throw new Error(`status HTTP ${statusResponse.status}`);
       const payload = await statusResponse.json();
       syncRecorderSensors(payload);
+      if (viewingRecord) return;
       const sensors = (payload.sensors || []).filter((sensor) => sensor.enabled && sensor.fft?.captured_at);
       if (!sensors.length) {
         root.innerHTML = "";
@@ -539,6 +628,58 @@
           <div class="orbit-sensor-head"><strong>${escapeHtml(sensor.name || `Sensor ${sensor.address}`)}</strong><span class="orbit-status">${escapeHtml(capturedLabel(wave.captured_at))}</span></div>
           <div class="waveform-plots">${waveformPlots(wave)}</div>
         </article>`).join("");
+  }
+
+  if (window.grafHover) {
+    const hover = window.grafHover;
+    hover.register("wave", (svg, event) => {
+      const wave = wavesByKey.get(svg.dataset.waveKey);
+      const point = hover.svgPoint(svg, event);
+      if (!wave || !point) return null;
+      const quantity = svg.dataset.quantity;
+      const series = ["x", "y", "z"].map((axis) => finiteValues(wave.axes?.[axis]?.[quantity]));
+      const count = Math.min(...series.map((values) => values.length));
+      const plot = WAVE_WIDTH - WAVE_PAD.left - WAVE_PAD.right;
+      if (count < 1 || point.x < WAVE_PAD.left - 4 || point.x > WAVE_WIDTH - WAVE_PAD.right + 4) return null;
+      const index = Math.max(0, Math.min(count - 1, Math.round(((point.x - WAVE_PAD.left) / plot) * (count - 1))));
+      const x = WAVE_PAD.left + (index / Math.max(1, count - 1)) * plot;
+      hover.setLine(svg, x);
+      const range = Number(svg.dataset.range) || 1;
+      const sy = (value) => WAVE_PAD.top + (1 - (Math.max(-range, Math.min(range, value)) + range) / (2 * range)) * (260 - WAVE_PAD.top - WAVE_PAD.bottom);
+      hover.setPoints(svg, series.map((values, axis) => ({ x, y: sy(values[index]), axis: "xyz"[axis] })));
+      const rate = Number(wave.sample_rate_hz || 1);
+      const [label, unit] = quantityUnits[quantity];
+      const at = hover.clock(wave.started_at, index / rate);
+      return hover.title(`Sample ${index} · ${(index / rate).toFixed(3)} s${at ? ` · ${at}` : ""}`) +
+        series.map((values, axis) => hover.row("xyz"[axis], `${"XYZ"[axis]} ${label.toLowerCase()}: ${hover.number(values[index], unit)}`)).join("");
+    });
+    hover.register("orbit", (svg, event) => {
+      const wave = wavesByKey.get(svg.dataset.waveKey);
+      const point = hover.svgPoint(svg, event);
+      if (!wave || !point) return null;
+      const [axisA, axisB] = svg.dataset.pair.split("");
+      const xs = finiteValues(wave.axes?.[axisA]?.displacement_um);
+      const ys = finiteValues(wave.axes?.[axisB]?.displacement_um);
+      const count = Math.min(xs.length, ys.length);
+      const range = Number(svg.dataset.range);
+      if (!count || !(range > 0)) return null;
+      const scale = (value) => ORBIT_PAD + ((value + range) / (2 * range)) * (ORBIT_SIZE - 2 * ORBIT_PAD);
+      let best = 0;
+      let bestDistance = Infinity;
+      for (let index = 0; index < count; index += 1) {
+        const dx = scale(xs[index]) - point.x;
+        const dy = ORBIT_SIZE - scale(ys[index]) - point.y;
+        const distance = dx * dx + dy * dy;
+        if (distance < bestDistance) { bestDistance = distance; best = index; }
+      }
+      hover.setDot(svg, scale(xs[best]), ORBIT_SIZE - scale(ys[best]));
+      const rate = Number(wave.sample_rate_hz || 1);
+      const ratio = Number(wave.orbits?.[`${axisA}${axisB}`]?.overall?.ratio);
+      return hover.title(`Nearest point · sample ${best} · ${(best / rate).toFixed(3)} s`) +
+        hover.row(axisA, `${axisA.toUpperCase()} displacement: ${hover.number(xs[best], "µm")}`) +
+        hover.row(axisB, `${axisB.toUpperCase()} displacement: ${hover.number(ys[best], "µm")}`) +
+        `<div>Axis ratio ${Number.isFinite(ratio) ? ratio.toFixed(2) : "–"} (0 = line, 1 = circle)</div>`;
+    });
   }
 
   if (demoToggle) {
@@ -587,7 +728,49 @@
     }
   });
 
-  if (recordSensor) recordSensor.addEventListener("change", updateRecordHardware);
+  function updateSimInfo() {
+    if (!recordSensorInfo) return;
+    const selectedSim = recordSensor ? simAt(recordSensor.value) : null;
+    if (!selectedSim) {
+      recordSensorInfo.textContent = "";
+      recordSensorInfo.title = "";
+      return;
+    }
+    const bearing = selectedSim.bearing_defect ? ` · bearing defect at BPFO ${Number(selectedSim.bpfo_hz).toFixed(1)} Hz` : " · no defects";
+    recordSensorInfo.textContent = selectedSim.active
+      ? `Simulated · line ${Number(selectedSim.line_speed_m_min).toFixed(0)} m/min · roll ${Number(selectedSim.roll_hz).toFixed(2)} Hz${bearing}`
+      : "Simulated sensor is off";
+    recordSensorInfo.title = selectedSim.description || "";
+  }
+
+  async function switchSimSensor(address, active) {
+    simSwitching = true;
+    recordStatus.textContent = active ? "Starting simulated sensor…" : "Stopping simulated sensor…";
+    try {
+      const response = await fetch("/vibration/api/sim-sensor", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: Number(address), active }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      simSensors = payload.sim_sensors || simSensors;
+      recordStatus.textContent = active ? `${payload.sim_sensor.name} running` : "Simulated sensor stopped";
+    } catch (error) {
+      recordStatus.textContent = `Simulated sensor: ${error.message || error}`;
+    } finally {
+      simSwitching = false;
+      await loadOrbits();
+    }
+  }
+
+  if (recordSensor) recordSensor.addEventListener("change", () => {
+    updateRecordHardware();
+    updateSimInfo();
+    const chosen = simAt(recordSensor.value);
+    const running = simSensors.find((item) => item.active);
+    // Starting one simulator stops the other on the server; a real sensor stops the running one.
+    if (chosen && !chosen.active) switchSimSensor(chosen.address, true);
+    else if (!chosen && running) switchSimSensor(running.address, false);
+  });
   async function updateAutomaticRecording(enabled) {
     const body = { fft_periodic: enabled, fft_save_records: enabled };
     if (enabled) {
@@ -622,7 +805,7 @@
   if (recordButton) recordButton.addEventListener("click", async () => {
     const address = Number(recordSensor.value);
     if (!Number.isInteger(address)) return;
-    recordButton.disabled = true;
+    setCaptureButtons(true);
     recordStatus.textContent = "Starting capture…";
     try {
       const response = await fetch(`/vibration/api/sensors/${address}/records`, {
@@ -635,6 +818,44 @@
     } catch (error) {
       finishRecordError(error);
     }
+  });
+  if (burstStart) burstStart.addEventListener("click", async () => {
+    const address = Number(recordSensor.value);
+    const duration = Math.round(Number(burstDuration.value));
+    if (!Number.isInteger(address)) return;
+    if (!Number.isFinite(duration) || duration < 10 || duration > 600) {
+      recordStatus.textContent = "Continuous recording: duration must be 10…600 s";
+      return;
+    }
+    setCaptureButtons(true);
+    recordStatus.textContent = "Starting continuous recording…";
+    try {
+      const response = await fetch(`/vibration/api/sensors/${address}/burst`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duration_s: duration, note: (burstNote || recordNote).value.trim() }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      await waitForRecord();
+    } catch (error) {
+      finishRecordError(error);
+    }
+  });
+  if (burstStop) burstStop.addEventListener("click", async () => {
+    burstStop.disabled = true;
+    try {
+      const response = await fetch("/vibration/api/operation/stop", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      recordStatus.textContent = "Stopping after the current capture…";
+    } catch (error) {
+      recordStatus.textContent = `Stop failed: ${error.message || error}`;
+    }
+  });
+  if (orbitLiveButton) orbitLiveButton.addEventListener("click", () => {
+    viewingRecord = false;
+    orbitLiveButton.hidden = true;
+    loadOrbits();
   });
   if (recordsBody) recordsBody.addEventListener("click", async (event) => {
     const selection = event.target.closest("input[data-record-select]");

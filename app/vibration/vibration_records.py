@@ -52,8 +52,13 @@ def save(root: Path, record: dict[str, Any]) -> dict[str, Any]:
 def metadata(record: dict[str, Any]) -> dict[str, Any]:
     return {key: record.get(key) for key in (
         "id", "version", "sensor", "address", "captured_at", "created_at", "note", "sample_rate_hz",
-        "samples", "duration_s", "averages", "capture_count", "periodic",
+        "samples", "duration_s", "averages", "capture_count", "periodic", "kind", "span_s", "coverage",
     )}
+
+
+def file_stamp(root: Path, item_id: str) -> int:
+    """Modification time (ns) of a record file; raises FileNotFoundError if missing."""
+    return _path(root, item_id).stat().st_mtime_ns
 
 
 def load(root: Path, item_id: str) -> dict[str, Any]:
@@ -64,16 +69,33 @@ def load(root: Path, item_id: str) -> dict[str, Any]:
     return value
 
 
+# Metadata per record file, keyed by path and checked against (mtime, size): continuous
+# records reach megabytes and the list is polled, so files are parsed only once.
+_METADATA_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+
 def list_records(root: Path) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
     records = []
+    seen = set()
     for path in root.glob("*.json.gz"):
+        key = str(path)
+        seen.add(key)
         try:
-            with gzip.open(path, "rt", encoding="utf-8") as handle:
-                records.append(metadata(json.load(handle)))
+            stat = path.stat()
+            stamp = (stat.st_mtime_ns, stat.st_size)
+            cached = _METADATA_CACHE.get(key)
+            if cached is None or cached[0] != stamp:
+                with gzip.open(path, "rt", encoding="utf-8") as handle:
+                    cached = (stamp, metadata(json.load(handle)))
+                _METADATA_CACHE[key] = cached
+            records.append(dict(cached[1]))
         except (OSError, ValueError, json.JSONDecodeError, TypeError):
             continue
+    directory = str(root)
+    for key in [key for key in _METADATA_CACHE if os.path.dirname(key) == directory and key not in seen]:
+        del _METADATA_CACHE[key]
     return sorted(records, key=lambda item: str(item.get("captured_at") or ""), reverse=True)
 
 
@@ -136,10 +158,16 @@ def csv_content(
         return "" if value is None else str(value).replace(".", decimal)
 
     if mode == "raw_period":
-        writer.writerow(["capture", "sample", "time_s", "raw_acc_g_x", "raw_acc_g_y", "raw_acc_g_z"])
+        # Continuous records also give the time since the record start (gaps included).
+        starts = record.get("capture_starts_s")
+        header = ["capture", "sample", "time_s"] + (["record_time_s"] if starts else [])
+        writer.writerow(header + ["raw_acc_g_x", "raw_acc_g_y", "raw_acc_g_z"])
         for capture, points in enumerate(record.get("raw_captures_g") or [], start=1):
             for index, values in enumerate(points):
-                writer.writerow([capture, index, number(f"{index / sample_rate:.9f}"), *map(number, values)])
+                times = [number(f"{index / sample_rate:.9f}")]
+                if starts:
+                    times.append(number(f"{float(starts[capture - 1]) + index / sample_rate:.6f}"))
+                writer.writerow([capture, index, *times, *map(number, values)])
         return output.getvalue()
 
     if mode not in ("view", "custom_rate"):
