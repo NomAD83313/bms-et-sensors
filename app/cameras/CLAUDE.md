@@ -85,6 +85,8 @@ Detection details: `docs/camera-anomaly.md`; plan for remote nodes: `docs/camera
 - `anomaly_worker.py` imports `control`, `anomaly_control` and `patchcore_lite` by their flat
   names on purpose: the tests load it with `load_isolated_module` and substitute those
   modules. New dependencies there need the `try: from .x … except ImportError` form.
+- `zero_wifi_setup.py` runs on Zero nodes as root (Wi-Fi fallback hotspot and setup page,
+  `docs/camera-zero2w.md`); standard library only, every `nmcli` call as an argument list.
 - `pi_source.py` runs on the host with only `capture_settings.py` next to it
   (`scripts/pi-camera-host-setup.sh`); it must not import other modules of this folder.
 

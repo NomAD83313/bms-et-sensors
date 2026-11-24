@@ -14,15 +14,16 @@ no separate rpicam-vid or FFmpeg process is needed on the source node.
 
 ## Installation
 
-Copy `scripts/install-zero-camera.sh`, `config/zero2w-camera.example.json`, both
-`config/bms-zero-camera*.service.in` templates, and `app/cameras/zero_control.py`
-with `app/cameras/capture_settings.py` to the node, preserving their relative paths.
+Copy `scripts/install-zero-camera.sh`, `config/zero2w-camera.example.json`,
+`config/zero2w-wifi-setup.example.json`, the `config/bms-zero-*.service.in` templates, and
+`app/cameras/zero_control.py`, `app/cameras/capture_settings.py` and `app/cameras/zero_wifi_setup.py`
+to the node, preserving their relative paths.
 Before installation, add `dtoverlay=imx415` to `/boot/firmware/config.txt`, reboot, and
 confirm that `rpicam-hello --list-cameras` reports the IMX415. Do not add the `cam0`
 parameter on a Zero 2 W; it selects a Compute Module camera route. Then run:
 
 ```bash
-sudo ./scripts/install-zero-camera.sh <camera-user>
+sudo BMS_CAMERA_SETUP_PASSWORD='...' ./scripts/install-zero-camera.sh <camera-user>
 ```
 
 The installer pins MediaMTX 1.21.3 and verifies the downloaded ARM64 archive's SHA256.
@@ -73,6 +74,48 @@ All three output resolutions retain the full `3864:2192:10:P` IMX415 sensor mode
 MediaMTX scales the output while preserving its 16:9 field of view. Exposure remains
 automatic. An initial cold-start preview request can return 503 while the sensor starts;
 the UI retries automatically.
+
+## Wi-Fi fallback and setup page
+
+`bms-zero-wifi-setup.service` (`/opt/bms-zero-camera/zero_wifi_setup.py`, root) watches `wlan0`.
+Without a Wi-Fi connection for 2 minutes (after boot or a drop) it opens a WPA2 setup hotspot
+`BMS-<hostname>-<last 4 MAC digits>` (first node: `BMS-camera-13b1`, channel 6) at `10.43.0.1/24`
+with DHCP, and serves a setup page on port 80. Every name resolves to the page while the hotspot
+is up, so phones usually show a "sign in to network" prompt; otherwise open `http://10.43.0.1/`.
+The Zero 2 W has one radio: while it is a hotspot it carries no camera stream.
+
+The page lists the saved networks with their priority (the camera joins the highest-priority
+network in range), shows networks in range, adds a network (SSID, password, priority, optional
+"Connect now"), changes priorities, deletes networks and connects. A failed connection reconnects
+the previous network, or reopens the hotspot after about a minute with the error on the page.
+Passwords are never shown. **Start setup hotspot for 10 min** opens the hotspot on demand.
+
+Every 5 minutes the hotspot retries the saved networks in range, but only while nobody is
+connected to it, so the camera returns by itself when its access point comes back (measured on
+the first node: hotspot 12:47:53, retry 12:52:56, connected 12:52:59; the central relay resumed
+reading at once). The page is reachable from the hotspot subnet, the central AP subnet
+`10.42.0.0/24` and localhost (`allow_networks`); changes need the `X-BMS-Wifi-Setup` header, which
+the page sends. Moving a camera to another host: add that host's AP network on the page, then add
+the camera there with its new address.
+
+The hotspot password is common to the camera nodes and stored only on each node
+(`/etc/bms-zero-camera/wifi-setup.json`, root, mode 600), never in Git. Pass it on the first
+installation; later installations keep it unless a new one is given:
+
+```bash
+sudo BMS_CAMERA_SETUP_PASSWORD='...' ./scripts/install-zero-camera.sh <camera-user>
+```
+
+The installer also needs `nmcli`, `iw` and `dnsmasq-base` (present on Raspberry Pi OS Lite) and
+writes `/etc/NetworkManager/dnsmasq-shared.d/bms-camera-setup.conf` for the captive page. Times,
+subnet and allowed networks are in the node configuration (`grace_sec`, `retry_sec`,
+`hotspot_address`, `allow_networks`; template `config/zero2w-wifi-setup.example.json`).
+
+```bash
+systemctl status bms-zero-wifi-setup
+journalctl -u bms-zero-wifi-setup -n 50 --no-pager
+nmcli connection show          # bms-camera-setup is the hotspot profile (autoconnect off)
+```
 
 ## Rotation
 

@@ -1,0 +1,11 @@
+{
+  "interface": "wlan0",
+  "hotspot_ssid": "",
+  "hotspot_password": "",
+  "hotspot_address": "10.43.0.1/24",
+  "hotspot_channel": 6,
+  "grace_sec": 120,
+  "retry_sec": 300,
+  "http_port": 80,
+  "allow_networks": ["10.43.0.0/24", "10.42.0.0/24", "127.0.0.1/32"]
+}

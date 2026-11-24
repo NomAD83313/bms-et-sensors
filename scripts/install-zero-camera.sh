@@ -51,3 +51,44 @@ systemctl enable bms-zero-camera.service bms-zero-camera-control.service
 systemctl restart bms-zero-camera.service bms-zero-camera-control.service
 systemctl is-active bms-zero-camera.service bms-zero-camera-control.service
 echo "RTSP: rtsp://<node-ip>:8554/cam; capture controls: http://<node-ip>:8084."
+
+# Wi-Fi fallback: without a Wi-Fi connection for 2 minutes the node opens a WPA2 setup
+# hotspot with a setup page on port 80 (see docs/camera-zero2w.md). The hotspot password is
+# common to the camera nodes and never stored in Git: pass BMS_CAMERA_SETUP_PASSWORD on the
+# first installation; later installations keep the node's value unless a new one is passed.
+for tool in nmcli iw; do
+  command -v "$tool" >/dev/null || { echo "Missing prerequisite for the Wi-Fi setup: $tool" >&2; exit 1; }
+done
+dpkg -s dnsmasq-base >/dev/null 2>&1 || { echo "Missing prerequisite for the Wi-Fi setup: dnsmasq-base" >&2; exit 1; }
+install -d -m 700 /etc/bms-zero-camera
+hotspot_address="$(python3 - "$PROJECT_ROOT/config/zero2w-wifi-setup.example.json" /etc/bms-zero-camera/wifi-setup.json <<'PY'
+import json, os, sys
+from pathlib import Path
+example, target = Path(sys.argv[1]), Path(sys.argv[2])
+config = json.loads(example.read_text())
+if target.exists():
+    config.update(json.loads(target.read_text()))
+password = os.environ.get("BMS_CAMERA_SETUP_PASSWORD", "")
+if password:
+    config["hotspot_password"] = password
+if not 8 <= len(config["hotspot_password"]) <= 63:
+    sys.exit("Set the common setup hotspot password (8-63 characters):\n"
+             "  sudo BMS_CAMERA_SETUP_PASSWORD='...' ./scripts/install-zero-camera.sh <camera-user>")
+temporary = target.with_name(target.name + ".tmp")
+descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(descriptor, "w") as stream:
+    json.dump(config, stream, indent=2)
+os.replace(temporary, target)
+print(config["hotspot_address"].split("/")[0])
+PY
+)"
+install -m 644 "$PROJECT_ROOT/app/cameras/zero_wifi_setup.py" /opt/bms-zero-camera/
+# Captive portal: every name resolves to the setup page while the hotspot is up.
+install -d -m 755 /etc/NetworkManager/dnsmasq-shared.d
+printf 'address=/#/%s\n' "$hotspot_address" > /etc/NetworkManager/dnsmasq-shared.d/bms-camera-setup.conf
+install -m 644 "$PROJECT_ROOT/config/bms-zero-wifi-setup.service.in" /etc/systemd/system/bms-zero-wifi-setup.service
+systemctl daemon-reload
+systemctl enable bms-zero-wifi-setup.service
+systemctl restart bms-zero-wifi-setup.service
+systemctl is-active bms-zero-wifi-setup.service
+echo "Wi-Fi setup page: http://<node-ip>/ (central network) or http://${hotspot_address}/ on the setup hotspot."

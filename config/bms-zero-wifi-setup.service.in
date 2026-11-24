@@ -1,0 +1,18 @@
+[Unit]
+Description=BMS Zero camera Wi-Fi fallback hotspot and setup page
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+# Root: the service changes NetworkManager profiles and serves port 80.
+ExecStart=/usr/bin/python3 /opt/bms-zero-camera/zero_wifi_setup.py
+Environment=BMS_WIFI_SETUP_CONFIG=/etc/bms-zero-camera/wifi-setup.json
+Restart=always
+RestartSec=5
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
