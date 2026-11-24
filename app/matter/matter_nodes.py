@@ -233,6 +233,35 @@ def _standard_controls(attrs: dict[str, Any]) -> list[dict[str, Any]]:
     return controls
 
 
+POWER_SOURCE_CLUSTER_ID = 47
+POWER_SOURCE_FEATURE_BATTERY = 0x2
+POWER_SOURCE_BATTERY_ATTRIBUTE_IDS = (11, 12)
+
+
+def _battery_power_source_endpoints(attrs: dict[str, Any]) -> list[int]:
+    """Return endpoints whose Power Source cluster reports a battery.
+
+    The BAT feature bit is authoritative; battery voltage/percent attributes
+    are accepted as a fallback when the feature map was not interviewed.
+    """
+    endpoints: set[int] = set()
+    for key in attrs:
+        if not isinstance(key, str) or key.count("/") != 2:
+            continue
+        endpoint, cluster, _attribute = key.split("/")
+        endpoint_id = _coerce_int(endpoint)
+        if endpoint_id is None or _coerce_int(cluster) != POWER_SOURCE_CLUSTER_ID:
+            continue
+        feature_map = _coerce_int(attrs.get(f"{endpoint}/{POWER_SOURCE_CLUSTER_ID}/65532"))
+        if feature_map is not None:
+            if feature_map & POWER_SOURCE_FEATURE_BATTERY:
+                endpoints.add(endpoint_id)
+            continue
+        if any(f"{endpoint}/{POWER_SOURCE_CLUSTER_ID}/{attr_id}" in attrs for attr_id in POWER_SOURCE_BATTERY_ATTRIBUTE_IDS):
+            endpoints.add(endpoint_id)
+    return sorted(endpoints)
+
+
 def _air_reboot_supported(attrs: dict[str, Any]) -> bool:
     product_name = str(attrs.get("0/40/3") or "").strip()
     accepted_general_diag = _coerce_int_list(attrs.get("0/51/65529"))
@@ -306,6 +335,7 @@ def normalize_matter_node_payload(items: Any) -> list[dict[str, Any]]:
                 "software_version_string": attrs.get("0/40/10"),
                 "network_type": _network_type_label(attrs.get("0/49/65532")),
                 "standard_controls": _standard_controls(attrs),
+                "battery_endpoints": _battery_power_source_endpoints(attrs),
                 "air_reboot_supported": _air_reboot_supported(attrs),
                 **_runtime_diagnostics(attrs, observed_at),
                 "thread_role": thread_role,

@@ -106,6 +106,33 @@ class MatterNodeNormalizationTests(unittest.TestCase):
             },
         ])
 
+    def test_normalize_payload_extracts_battery_power_source_endpoints(self):
+        nodes = normalize_matter_node_payload(
+            [
+                {
+                    "node_id": 2,
+                    "attributes": {
+                        "0/40/3": "LILYGO T-Energy-S3",
+                        # Battery feature bit set (BAT | RECHG).
+                        "5/47/65532": 0x06,
+                        "5/47/11": 3914,
+                        "5/47/12": 126,
+                        # Wired-only power source must not be polled as a battery.
+                        "0/47/65532": 0x01,
+                        "0/47/11": 5000,
+                        # No feature map interviewed: battery attributes are the fallback signal.
+                        "7/47/12": 200,
+                        # Power Source without battery attributes or feature map.
+                        "8/47/0": 1,
+                    },
+                },
+                {"node_id": 3, "attributes": {"1/1026/0": 2100}},
+            ]
+        )
+
+        self.assertEqual(nodes[0]["battery_endpoints"], [5, 7])
+        self.assertEqual(nodes[1]["battery_endpoints"], [])
+
     def test_normalize_payload_extracts_c3_air_reboot_capability(self):
         nodes = normalize_matter_node_payload(
             [

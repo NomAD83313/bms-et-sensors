@@ -9,7 +9,7 @@ COPY app/graf/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/graf/ .
 
-COPY app/shared/redlab_channels.py .
+COPY app/shared/redlab_channels.py app/shared/csv_locale.py ./
 
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "graf_app.py"]

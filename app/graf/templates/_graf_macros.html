@@ -158,14 +158,14 @@
   </div>
 {%- endmacro %}
 
-{% macro render_export_modal(modal_id, title_id, title_text, mode_name, rate_wrap_id, preset_id, custom_input_id, delimiter_id, cancel_button_id, confirm_button_id) -%}
+{% macro render_export_modal(modal_id, title_id, title_text, mode_name, rate_wrap_id, preset_id, custom_input_id, delimiter_id, cancel_button_id, confirm_button_id, record_scoped=false) -%}
   <div id="{{ modal_id }}" class="modal-backdrop" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="{{ title_id }}">
       <h3 id="{{ title_id }}">{{ title_text }}</h3>
       <div class="modal-options">
-        <label><input type="radio" name="{{ mode_name }}" value="view" checked /> What is on screen</label>
-        <label><input type="radio" name="{{ mode_name }}" value="raw_period" /> Raw for selected period</label>
-        <label><input type="radio" name="{{ mode_name }}" value="custom_rate" /> Selected period at rate</label>
+        <label><input type="radio" name="{{ mode_name }}" value="view" checked /> {{ "Saved waveform as shown" if record_scoped else "What is on screen" }}</label>
+        <label><input type="radio" name="{{ mode_name }}" value="raw_period" /> {{ "Raw acceleration (all captures)" if record_scoped else "Raw for selected period" }}</label>
+        <label><input type="radio" name="{{ mode_name }}" value="custom_rate" /> {{ "Saved waveform at selected rate" if record_scoped else "Selected period at rate" }}</label>
       </div>
       <div id="{{ rate_wrap_id }}" class="modal-rate">
         <span>Rate (Hz)</span>

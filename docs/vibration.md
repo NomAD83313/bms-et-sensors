@@ -176,6 +176,37 @@ the API also takes `{"averages": N}` in the POST body for one capture. Polling p
 `capture N/M`, and one failed capture fails the whole series. The summary field `averages`
 records the count.
 
+**Saved time signals in Graf App Lite.** The `/graf/vibration` page can start a named capture
+for any enabled sensor with 1, 2, 4, 8 or 16 FFT averages. Each record stores the signed,
+mean-removed acceleration, velocity and displacement waveform from the last FIFO capture,
+the averaged FFT, and the raw acceleration FIFO data for every average. Records are gzip JSON
+files under `runtime/vibration/records/`; this is runtime state and is not committed. The table
+can reopen a record, draw its waveforms, orbits and acceleration FFT, download JSON or CSV, and
+delete it. Multiple records can be selected and deleted together. API routes are `POST /vibration/api/sensors/<address>/records`,
+`GET /vibration/api/records`, and `GET`/`DELETE /vibration/api/records/<id>`; append
+`/download.csv` or `/download.json` for exports.
+
+The record's **CSV** button opens Graf's export dialog with the same locale options as the other
+exports. **Saved waveform as shown** exports the three signed waveforms at their saved sample rate.
+**Raw acceleration (all captures)** exports each FIFO capture separately, with elapsed time from
+the start of each capture estimated using the saved rate. **Saved waveform at selected rate** averages
+the signed waveform in time bins at the requested rate, up to the saved sample rate.
+
+The same panel can start automatic recording using the existing periodic FFT scheduler. Configure
+the interval, FFT averages, retention age and maximum record count, then select **Start automatic
+recording**. Each completed periodic capture is stored in the same table with source **Automatic**;
+records beyond either retention limit are deleted oldest first. **Stop automatic recording** stops
+the periodic scheduler and automatic persistence. The related config keys are `fft_save_records`,
+`record_retention_days` (default 7) and `record_max_count` (default 100).
+Starting or stopping periodic capture in the vibration collector UI also enables or disables record
+persistence, so both interfaces report and control the same timer state.
+
+The recorder deliberately labels the acquisition limits instead of presenting unsupported
+controls: the WTVB01 FIFO length is fixed at 1024 points and its sampling rate is sensor-controlled
+(measured for every capture). Therefore selecting 2048/4096 points or changing the sampling rate
+is not possible with the known protocol. FFT averaging improves stability but does not extend the
+record duration or change frequency resolution.
+
 Every capture series writes one summary point to InfluxDB measurement `wtvb01_fft` (override with
 `VIBRATION_FFT_INFLUX_MEASUREMENT`). It includes the sample rate, averages, the three strongest
 FFT peaks per axis in Hz and g, fixed-band RMS in g, velocity RMS and its lower limit, and

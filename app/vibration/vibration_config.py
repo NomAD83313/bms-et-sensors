@@ -35,6 +35,10 @@ VELOCITY_RMS_MIN_HZ_CHOICES = (2.0, 10.0)
 SIM_PORT_PREFIX = "sim://"
 MIN_FFT_AVERAGES = 1
 MAX_FFT_AVERAGES = 16
+MIN_RECORD_RETENTION_DAYS = 1
+MAX_RECORD_RETENTION_DAYS = 3650
+MIN_RECORD_MAX_COUNT = 1
+MAX_RECORD_MAX_COUNT = 10000
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,47}$")
 
 DEFAULTS: dict[str, Any] = {
@@ -46,6 +50,9 @@ DEFAULTS: dict[str, Any] = {
     "fft_interval_sec": 300.0,
     "fft_averages": 1,
     "fft_velocity_min_hz": DEFAULT_VELOCITY_MIN_HZ,
+    "fft_save_records": False,
+    "record_retention_days": 7,
+    "record_max_count": 100,
     "sensors": [],
 }
 
@@ -96,6 +103,20 @@ def parse_fft_averages(value: Any) -> int:
     if not MIN_FFT_AVERAGES <= averages <= MAX_FFT_AVERAGES:
         raise ValueError(f"fft_averages must be {MIN_FFT_AVERAGES}..{MAX_FFT_AVERAGES}")
     return averages
+
+
+def parse_record_retention_days(value: Any) -> int:
+    days = _int(value, "record_retention_days")
+    if not MIN_RECORD_RETENTION_DAYS <= days <= MAX_RECORD_RETENTION_DAYS:
+        raise ValueError(f"record_retention_days must be {MIN_RECORD_RETENTION_DAYS}..{MAX_RECORD_RETENTION_DAYS}")
+    return days
+
+
+def parse_record_max_count(value: Any) -> int:
+    count = _int(value, "record_max_count")
+    if not MIN_RECORD_MAX_COUNT <= count <= MAX_RECORD_MAX_COUNT:
+        raise ValueError(f"record_max_count must be {MIN_RECORD_MAX_COUNT}..{MAX_RECORD_MAX_COUNT}")
+    return count
 
 
 def parse_name(value: Any) -> str:
@@ -157,6 +178,13 @@ def validate(data: Any) -> dict[str, Any]:
     config["fft_periodic"] = False if legacy_off else periodic
     config["fft_averages"] = parse_fft_averages(data.get("fft_averages", config["fft_averages"]))
     config["fft_velocity_min_hz"] = parse_velocity_min_hz(data.get("fft_velocity_min_hz", config["fft_velocity_min_hz"]))
+    save_records = data.get("fft_save_records", config["fft_save_records"])
+    if not isinstance(save_records, bool):
+        raise ValueError("fft_save_records must be true or false")
+    config["fft_save_records"] = save_records
+    config["record_retention_days"] = parse_record_retention_days(
+        data.get("record_retention_days", config["record_retention_days"]))
+    config["record_max_count"] = parse_record_max_count(data.get("record_max_count", config["record_max_count"]))
     sensors = data.get("sensors", [])
     if not isinstance(sensors, list) or len(sensors) > MAX_SENSORS:
         raise ValueError(f"sensors must be a list of at most {MAX_SENSORS}")

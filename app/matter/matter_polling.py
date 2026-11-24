@@ -12,6 +12,9 @@ DEFAULT_ENVIRONMENT_ATTRIBUTES: tuple[tuple[int, str, str], ...] = (
     (3, "1069", "0"),
 )
 
+# Power Source: BatVoltage, BatPercentRemaining, BatChargeState.
+BATTERY_ATTRIBUTE_IDS: tuple[str, ...] = ("11", "12", "26")
+
 
 @dataclass(frozen=True)
 class PollingConfig:
@@ -36,18 +39,43 @@ class MatterPollingService:
         self._record_event = record_event
         self._log = log
 
-    def target_node_ids(self) -> list[int]:
+    def _load_node_snapshot(self) -> list[dict[str, Any]]:
+        try:
+            nodes = self._get_node_snapshot()
+        except Exception as exc:
+            self._log(f"matter poll target discovery failed: {exc}")
+            return []
+        return [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
+
+    def target_node_ids(self, nodes: list[dict[str, Any]] | None = None) -> list[int]:
+        if nodes is None:
+            nodes = self._load_node_snapshot()
         node_ids: list[int] = []
         if self._config.primary_node_id > 0:
             node_ids.append(self._config.primary_node_id)
-        try:
-            for node in self._get_node_snapshot():
-                node_id = node.get("node_id")
-                if isinstance(node_id, int) and node_id > 0 and node_id not in node_ids:
-                    node_ids.append(node_id)
-        except Exception as exc:
-            self._log(f"matter poll target discovery failed: {exc}")
+        for node in nodes:
+            node_id = node.get("node_id")
+            if isinstance(node_id, int) and node_id > 0 and node_id not in node_ids:
+                node_ids.append(node_id)
         return node_ids
+
+    def battery_endpoint_ids(self, node_id: int, nodes: list[dict[str, Any]]) -> list[int]:
+        """Battery Power Source endpoints for a node.
+
+        Discovered endpoints come from the node snapshot. The configured
+        battery endpoint stays as a fallback for the primary node so it is
+        still polled when the snapshot is empty or not yet interviewed.
+        """
+        endpoint_ids: list[int] = []
+        if node_id == self._config.primary_node_id and self._config.battery_endpoint_id >= 0:
+            endpoint_ids.append(self._config.battery_endpoint_id)
+        for node in nodes:
+            if node.get("node_id") != node_id:
+                continue
+            for endpoint_id in node.get("battery_endpoints") or []:
+                if isinstance(endpoint_id, int) and endpoint_id >= 0 and endpoint_id not in endpoint_ids:
+                    endpoint_ids.append(endpoint_id)
+        return endpoint_ids
 
     def poll_numeric_attribute(
         self,
@@ -76,7 +104,8 @@ class MatterPollingService:
         if self._config.interval_sec <= 0:
             return
 
-        target_node_ids = self.target_node_ids()
+        nodes = self._load_node_snapshot()
+        target_node_ids = self.target_node_ids(nodes)
         primary_node_id = self._config.primary_node_id
         local_temp_centi = self._read_attribute(primary_node_id, "1/513/0")
         heat_setpoint_centi = self._read_attribute(primary_node_id, "1/513/18")
@@ -94,15 +123,9 @@ class MatterPollingService:
                 }
             )
 
-        if primary_node_id > 0:
-            for attribute_id in (11, 12, 26):
-                self.poll_numeric_attribute(
-                    primary_node_id,
-                    self._config.battery_endpoint_id,
-                    "47",
-                    str(attribute_id),
-                )
-
         for node_id in target_node_ids:
+            for battery_endpoint_id in self.battery_endpoint_ids(node_id, nodes):
+                for attribute_id in BATTERY_ATTRIBUTE_IDS:
+                    self.poll_numeric_attribute(node_id, battery_endpoint_id, "47", attribute_id)
             for endpoint_id, cluster_id, attribute_id in self._config.environment_attributes:
                 self.poll_numeric_attribute(node_id, endpoint_id, cluster_id, attribute_id)

@@ -54,6 +54,84 @@ class MatterPollingServiceTests(unittest.TestCase):
 
         self.assertEqual(service.target_node_ids(), [1, 7])
 
+    def test_battery_is_polled_on_discovered_endpoints_of_every_node(self) -> None:
+        reads: list[tuple[int, str]] = []
+
+        def read_attribute(node_id: int, path: str):
+            reads.append((node_id, path))
+            return 100 if "/47/" in path else None
+
+        records: list[dict] = []
+        service = MatterPollingService(
+            PollingConfig(interval_sec=60.0, primary_node_id=1, battery_endpoint_id=5, environment_attributes=()),
+            read_attribute=read_attribute,
+            get_node_snapshot=lambda: [
+                {"node_id": 1, "battery_endpoints": [5]},
+                {"node_id": 2, "battery_endpoints": [5]},
+                {"node_id": 3, "battery_endpoints": []},
+                {"node_id": 4, "battery_endpoints": [0, 2]},
+            ],
+            record_event=records.append,
+            log=Mock(),
+        )
+
+        service.poll_once()
+
+        battery_reads = [(node_id, path) for node_id, path in reads if "/47/" in path]
+        self.assertEqual(
+            battery_reads,
+            [
+                (1, "5/47/11"), (1, "5/47/12"), (1, "5/47/26"),
+                (2, "5/47/11"), (2, "5/47/12"), (2, "5/47/26"),
+                (4, "0/47/11"), (4, "0/47/12"), (4, "0/47/26"),
+                (4, "2/47/11"), (4, "2/47/12"), (4, "2/47/26"),
+            ],
+        )
+        node2_percent = [
+            r for r in records
+            if r["tags"]["node_id"] == "2" and r["tags"]["cluster_id"] == "47" and r["tags"]["attribute_id"] == "12"
+        ]
+        self.assertEqual(len(node2_percent), 1)
+        self.assertEqual(node2_percent[0]["tags"]["endpoint_id"], "5")
+        self.assertEqual(node2_percent[0]["event_type"], "poll_attribute")
+
+    def test_primary_node_keeps_configured_battery_endpoint_without_snapshot(self) -> None:
+        reads: list[tuple[int, str]] = []
+        service = MatterPollingService(
+            PollingConfig(interval_sec=60.0, primary_node_id=1, battery_endpoint_id=5, environment_attributes=()),
+            read_attribute=lambda node_id, path: reads.append((node_id, path)),
+            get_node_snapshot=lambda: [],
+            record_event=Mock(),
+            log=Mock(),
+        )
+
+        service.poll_once()
+
+        self.assertEqual(
+            [entry for entry in reads if "/47/" in entry[1]],
+            [(1, "5/47/11"), (1, "5/47/12"), (1, "5/47/26")],
+        )
+
+    def test_snapshot_failure_still_polls_primary_node(self) -> None:
+        log = Mock()
+        reads: list[tuple[int, str]] = []
+
+        def failing_snapshot():
+            raise RuntimeError("ws down")
+
+        service = MatterPollingService(
+            PollingConfig(interval_sec=60.0, primary_node_id=1, battery_endpoint_id=5, environment_attributes=()),
+            read_attribute=lambda node_id, path: reads.append((node_id, path)),
+            get_node_snapshot=failing_snapshot,
+            record_event=Mock(),
+            log=log,
+        )
+
+        service.poll_once()
+
+        self.assertIn((1, "5/47/12"), reads)
+        log.assert_called_once()
+
     def test_disabled_polling_performs_no_io(self) -> None:
         read_attribute = Mock()
         get_node_snapshot = Mock()

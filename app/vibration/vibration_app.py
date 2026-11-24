@@ -9,24 +9,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 
 try:
+    from app.shared.csv_locale import resolve_csv_delimiter
     from . import vibration_config as cfg
     from . import vibration_fft as fft
     from . import vibration_sim as sim
+    from . import vibration_records as records
     from . import wtvb01_protocol as proto
     from .vibration_bus import BusError, ModbusBus
 except ImportError:  # Flat import inside the container.
+    from csv_locale import resolve_csv_delimiter
     import vibration_config as cfg
     import vibration_fft as fft
     import vibration_sim as sim
+    import vibration_records as records
     import wtvb01_protocol as proto
     from vibration_bus import BusError, ModbusBus
 
 HTTP_PORT = int(os.getenv("VIBRATION_HTTP_PORT", "3090"))
 DATA_DIR = Path(os.getenv("VIBRATION_DATA_DIR", "/data"))
 CONFIG_PATH = DATA_DIR / "config.json"
+RECORDS_DIR = DATA_DIR / "records"
 MEASUREMENT = os.getenv("VIBRATION_INFLUX_MEASUREMENT", "wtvb01")
 FFT_MEASUREMENT = os.getenv("VIBRATION_FFT_INFLUX_MEASUREMENT", "wtvb01_fft")
 INFLUX_URL = os.getenv("INFLUX_URL", "http://influxdb:8086")
@@ -279,7 +284,9 @@ def _poll_loop() -> None:
         try:
             config = _config_snapshot()
             due = None if OPERATION["running"] else _fft_due(config, time.monotonic())
-            if due is not None and _start_operation("fft", lambda: _fft_work(due, periodic=True)):
+            if due is not None and _start_operation(
+                    "fft", lambda: _fft_work(due, periodic=True, save_record=config["fft_save_records"],
+                                              note="Automatic timer capture")):
                 delay = 1.0
             else:
                 delay = 1.0 if OPERATION["running"] else poll_cycle(config, INFLUX)
@@ -366,7 +373,8 @@ def _round_list(values: list[float], digits: int) -> list[float]:
     return [round(v, digits) for v in values]
 
 
-def _fft_work(address: int, periodic: bool = False, averages: int | None = None) -> dict[str, Any]:
+def _fft_work(address: int, periodic: bool = False, averages: int | None = None,
+              save_record: bool = False, note: str = "") -> dict[str, Any]:
     """Capture the raw FIFO of one sensor `averages` times, compute the averaged
     spectrum and store the summary. Any failed capture fails the whole run.
 
@@ -439,8 +447,21 @@ def _fft_work(address: int, periodic: bool = False, averages: int | None = None)
         SPECTRA[address] = spectrum
         WAVEFORMS[address] = waveform
     INFLUX.write(sensor, result["summary"], observed, measurement=FFT_MEASUREMENT)
-    return {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures), "stopped": stopped,
-            "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
+    response = {"address": address, "sample_rate_hz": spectrum["sample_rate_hz"], "averages": len(captures), "stopped": stopped,
+                "peaks": {axis: data["peaks"] for axis, data in spectrum["axes"].items()}}
+    if save_record:
+        saved = records.save(RECORDS_DIR, {
+            "sensor": sensor["name"], "address": address, "captured_at": spectrum["captured_at"],
+            "note": note, "sample_rate_hz": spectrum["sample_rate_hz"], "samples": spectrum["samples"],
+            "duration_s": spectrum["duration_s"], "averages": len(captures), "capture_count": len(captures),
+            "periodic": periodic, "processing": {"velocity_min_hz": spectrum["velocity_min_hz"], "window": "hann"},
+            "raw_captures_g": [capture["samples"] for capture in captures],
+            "waveform": waveform, "spectrum": spectrum,
+        })
+        current = _config_snapshot()
+        records.prune(RECORDS_DIR, current["record_max_count"], current["record_retention_days"])
+        response["record"] = saved
+    return response
 
 
 def _fft_next_in(config: dict[str, Any], sensor: dict[str, Any]) -> float | None:
@@ -585,7 +606,8 @@ def _busy_response():
 
 # Settings that never touch the bus; they may change while a capture or scan runs
 # (Stop must work during a long averaged series).
-FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages", "fft_velocity_min_hz")
+FFT_SETTING_KEYS = ("fft_periodic", "fft_interval_sec", "fft_averages", "fft_velocity_min_hz",
+                    "fft_save_records", "record_retention_days", "record_max_count")
 
 
 def _update_config(mutator: Callable[[dict[str, Any]], None], allow_while_busy: bool = False):
@@ -720,6 +742,94 @@ def get_waveform(address: int):
     if not waveform:
         return jsonify(error="no capture yet"), 404
     return jsonify(waveform)
+
+
+@app.post("/api/sensors/<int:address>/records")
+def capture_record(address: int):
+    try:
+        _find(_config_snapshot(), address)
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            raise ValueError("JSON object body required")
+        averages = cfg.parse_fft_averages(body.get("averages", 1))
+        note = str(body.get("note") or "").strip()
+        if len(note) > 200:
+            raise ValueError("note must not exceed 200 characters")
+    except LookupError:
+        return jsonify(error="unknown sensor"), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if not _start_operation("record", lambda: _fft_work(address, averages=averages, save_record=True, note=note)):
+        return _busy_response()
+    return jsonify(started=True), 202
+
+
+@app.get("/api/records")
+def list_capture_records():
+    return jsonify(records=records.list_records(RECORDS_DIR))
+
+
+@app.delete("/api/records")
+def delete_capture_records():
+    body = request.get_json(silent=True)
+    item_ids = body.get("ids") if isinstance(body, dict) else None
+    if not isinstance(item_ids, list) or not item_ids or len(item_ids) > 10000:
+        return jsonify(error="ids must be a non-empty array of at most 10000 record IDs"), 400
+    if not all(isinstance(item_id, str) for item_id in item_ids):
+        return jsonify(error="every record ID must be a string"), 400
+    try:
+        deleted, missing = records.delete_many(RECORDS_DIR, item_ids)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(deleted=deleted, missing=missing, deleted_count=len(deleted))
+
+
+@app.get("/api/records/<record_id>")
+def get_capture_record(record_id: str):
+    try:
+        return jsonify(records.load(RECORDS_DIR, record_id))
+    except FileNotFoundError:
+        return jsonify(error="record not found"), 404
+    except (OSError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.get("/api/records/<record_id>/download.json")
+def download_capture_json(record_id: str):
+    try:
+        body = records.load(RECORDS_DIR, record_id)
+    except FileNotFoundError:
+        return jsonify(error="record not found"), 404
+    except (OSError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    response = jsonify(body)
+    response.headers["Content-Disposition"] = f'attachment; filename="{record_id}.json"'
+    return response
+
+
+@app.get("/api/records/<record_id>/download.csv")
+def download_capture_csv(record_id: str):
+    try:
+        body = records.load(RECORDS_DIR, record_id)
+        content = records.csv_content(
+            body, mode=request.args.get("export_mode", "view"),
+            export_hz=request.args.get("export_hz"), delimiter=resolve_csv_delimiter(request.args),
+        )
+    except FileNotFoundError:
+        return jsonify(error="record not found"), 404
+    except (OSError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    return Response(content, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{record_id}.csv"'})
+
+
+@app.delete("/api/records/<record_id>")
+def delete_capture_record(record_id: str):
+    try:
+        if not records.delete(RECORDS_DIR, record_id):
+            return jsonify(error="record not found"), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(deleted=True)
 
 
 @app.post("/api/bus/baud")

@@ -167,6 +167,8 @@ def _export_modals(view_name: str, cfg: dict) -> list[dict[str, str]]:
         modals.append({"key": "Matter", "title": "Export Matter CSV"})
     if cfg.get("show_messkluppe") and view_name == "messkluppe":
         modals.append({"key": "Messkluppe", "title": "Export Messkluppe CSV"})
+    if view_name == "vibration":
+        modals.append({"key": "VibrationRecord", "title": "Export vibration record CSV"})
     return modals
 
 

@@ -145,7 +145,7 @@
     .waveform-plots { display:grid; gap:12px; }
     .waveform-figure { margin:0; min-width:0; }
     .waveform-chart-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-bottom:6px; }
-    .waveform-chart-title { color:var(--text); font-size:13px; font-weight:600; }
+    .waveform-chart-title { display:grid; gap:3px; color:var(--text); font-size:13px; font-weight:600; }
     .waveform-chart { width:100%; height:auto; aspect-ratio:1000 / 260; display:block; border:1px solid #243657; border-radius:8px; background:#0e1628; }
     .waveform-chart .wave-grid { stroke:#2a3c63; stroke-width:1; }
     .waveform-chart .axis-x { fill:none; stroke:#34d399; stroke-width:1; vector-effect:non-scaling-stroke; }
@@ -157,9 +157,40 @@
     .waveform-legend .x { color:#34d399; }
     .waveform-legend .y { color:#f87171; }
     .waveform-legend .z { color:#e5e7eb; }
-    .waveform-scale-controls { display:inline-flex; gap:5px; }
+    .waveform-scale-controls { display:inline-flex; flex-wrap:wrap; gap:6px; align-items:flex-end; }
+    .waveform-scale-controls label { display:grid; gap:3px; color:var(--muted); font-size:11px; }
+    .waveform-scale-controls label[hidden] { display:none; }
+    .waveform-scale-controls input { width:100px; }
     .waveform-scale-controls button { padding:5px 10px; font-size:12px; }
-    .waveform-scale-controls button.on { background:var(--chip-active); border-color:rgba(125,211,252,0.45); }
+    .recorder-panel { margin-top:14px; }
+    .recorder-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .recorder-controls label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
+    .recorder-controls .record-note { flex:1 1 260px; }
+    .recorder-auto { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:10px; padding-top:10px; border-top:1px solid rgba(69,97,143,.25); }
+    .recorder-auto label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
+    .record-hardware { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+    .records-table-wrap { overflow-x:auto; }
+    .records-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .records-table th, .records-table td { padding:7px 8px; border-bottom:1px solid rgba(69,97,143,.25); text-align:left; white-space:nowrap; }
+    .records-table td.note-cell { white-space:normal; min-width:160px; }
+    .record-actions { display:flex; flex-wrap:wrap; gap:5px; }
+    .record-actions a { color:#bfdbfe; text-decoration:none; border:1px solid #31456f; border-radius:7px; padding:5px 8px; }
+    .record-actions button { padding:5px 8px; font-size:12px; }
+    .records-bulk-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+    .records-bulk-actions label { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
+    .saved-fft { position:relative; margin-top:14px; }
+    .saved-fft-chart { width:100%; height:auto; aspect-ratio:1000 / 300; display:block; border:1px solid #243657; border-radius:8px; background:#0e1628; }
+    .saved-fft-chart .fft-grid { stroke:#2a3c63; stroke-width:1; }
+    .saved-fft-chart .axis-x { fill:none; stroke:#34d399; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .saved-fft-chart .axis-y { fill:none; stroke:#f87171; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .saved-fft-chart .axis-z { fill:none; stroke:#e5e7eb; stroke-width:1; vector-effect:non-scaling-stroke; }
+    .saved-fft-chart text { fill:#8ea6d9; font-size:10px; }
+    .saved-fft-chart .fft-hover { stroke:rgba(220,230,255,.7); stroke-width:1; vector-effect:non-scaling-stroke; display:none; }
+    .fft-scale-controls { display:flex; flex-wrap:wrap; gap:6px; align-items:flex-end; }
+    .fft-scale-controls label { display:grid; gap:3px; color:var(--muted); font-size:11px; }
+    .fft-scale-controls label[hidden] { display:none; }
+    .fft-scale-controls input { width:100px; }
+    .fft-scale-controls button { padding:5px 10px; font-size:12px; }
     .panel {
       background:linear-gradient(180deg, rgba(22, 37, 66, 0.96) 0%, rgba(17, 27, 47, 0.98) 100%);
       border:1px solid var(--line);
@@ -519,6 +550,40 @@
   </div>
 
   {% if page_mode == "vibration" %}
+  <section class="panel recorder-panel" aria-labelledby="recorderTitle">
+    <div class="panel-head"><h2 id="recorderTitle">Time signal recorder</h2><span id="recordStatus" class="orbit-status">Ready</span></div>
+    <div class="recorder-controls">
+      <label>Sensor<select id="recordSensor"></select></label>
+      <label>FFT averages<select id="recordAverages"><option>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select></label>
+      <label class="record-note">Name / comment<input id="recordNote" type="text" maxlength="200" placeholder="Motor A · bearing side · baseline" /></label>
+      <button id="recordTimeSignal" type="button">Record time signal</button>
+    </div>
+    <div class="recorder-auto">
+      <label>Automatic interval, seconds<input id="recordAutoInterval" type="number" min="5" max="86400" step="1" value="300" /></label>
+      <label>Keep for, days<input id="recordRetentionDays" type="number" min="1" max="3650" step="1" value="7" /></label>
+      <label>Maximum records<input id="recordMaxCount" type="number" min="1" max="10000" step="1" value="100" /></label>
+      <button id="recordAutoStart" type="button">Start automatic recording</button>
+      <button id="recordAutoStop" type="button">Stop automatic recording</button>
+      <span id="recordAutoStatus" class="orbit-status">Automatic recording stopped</span>
+    </div>
+    <div class="record-hardware">
+      <span class="summary-chip">Data points <strong>1024 · hardware fixed</strong></span>
+      <span class="summary-chip">Sampling rate <strong id="recordSampleRate">≈246 Hz · sensor controlled</strong></span>
+      <span class="summary-chip">Record duration <strong id="recordDuration">≈4.16 s</strong></span>
+      <span class="summary-chip">FFT resolution <strong id="recordResolution">≈0.240 Hz</strong></span>
+      <span class="summary-chip">Nyquist <strong id="recordNyquist">≈123 Hz</strong></span>
+    </div>
+    <div class="records-bulk-actions">
+      <label><input id="recordsSelectAll" type="checkbox" /> Select all</label>
+      <button id="recordsDeleteSelected" type="button" disabled>Delete selected</button>
+      <span id="recordsSelectionStatus" class="orbit-status">0 selected</span>
+    </div>
+    <div class="records-table-wrap">
+      <table class="records-table"><thead><tr><th>Select</th><th>Captured</th><th>Sensor</th><th>Source</th><th>Points</th><th>Rate</th><th>Duration</th><th>Avg</th><th>Comment</th><th>Actions</th></tr></thead><tbody id="recordsTableBody"></tbody></table>
+    </div>
+    <div id="savedRecordFft" class="saved-fft"></div>
+  </section>
+
   <section class="panel waveform-panel" aria-labelledby="waveformPanelTitle">
     <div class="panel-head">
       <h2 id="waveformPanelTitle">Latest signed waveforms</h2>
@@ -560,7 +625,8 @@
       "export" ~ m.key ~ "Mode", "export" ~ m.key ~ "RateWrap",
       "exportHzPreset" ~ m.key, "exportHzCustom" ~ m.key,
       "exportDelimiter" ~ m.key,
-      "btnExport" ~ m.key ~ "Cancel", "btnExport" ~ m.key ~ "Confirm"
+      "btnExport" ~ m.key ~ "Cancel", "btnExport" ~ m.key ~ "Confirm",
+      record_scoped=(m.key == "VibrationRecord")
   ) }}
   {% endfor %}
 
@@ -615,10 +681,10 @@
   <script src="./static/graf_zoom_state.js?v=20260722-redlab-db-name-2"></script>
   <script src="./static/graf_ui_state.js?v=20260804-redlab-cleared-name"></script>
   <script src="./static/graf_chart.js?v=20260804-redlab-display-order"></script>
-  <script src="./static/graf_exports.js?v=20260722-redlab-db-name-2"></script>
+  <script src="./static/graf_exports.js?v=20261123-record-export"></script>
   <script src="./static/graf_app.js?v=20261123-vibration-panels"></script>
   {% if page_mode == "vibration" %}
-  <script src="./static/graf_orbits.js?v=20261123-waveform-axis-controls"></script>
+  <script src="./static/graf_orbits.js?v=20261123-wave-scale-dropdown"></script>
   {% endif %}
 </body>
 </html>

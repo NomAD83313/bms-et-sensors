@@ -3,25 +3,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-CSV_DELIMITERS = {
-    "comma": ",",
-    ",": ",",
-    "semicolon": ";",
-    "semi": ";",
-    ";": ";",
-    "tab": "\t",
-    "tsv": "\t",
-    "\\t": "\t",
-}
-
-
-def resolve_csv_delimiter(args) -> str:
-    value = str(args.get("csv_delimiter", args.get("delimiter", "comma")) or "comma").strip().lower()
-    return CSV_DELIMITERS.get(value, ",")
-
-
-def resolve_csv_decimal_separator(delimiter: str) -> str:
-    return "," if delimiter == ";" else "."
+try:
+    from app.shared.csv_locale import resolve_csv_decimal_separator, resolve_csv_delimiter
+except ImportError:  # Flat import inside the container.
+    from csv_locale import resolve_csv_decimal_separator, resolve_csv_delimiter
 
 
 def resolve_dashboard_request(

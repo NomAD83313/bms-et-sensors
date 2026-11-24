@@ -1,13 +1,16 @@
+import csv
 import math
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from app.vibration import vibration_app as vapp
 from app.vibration import vibration_config as cfg
 from app.vibration import vibration_fft as vfft
+from app.vibration import vibration_records as records
 from app.vibration import wtvb01_protocol as proto
 from app.vibration.vibration_bus import BusError, ModbusBus
 from tests.vibration_fakes import FakeSensor, FakeSerial, fifo_data_frame, fifo_progress_frame, opener_for
@@ -244,6 +247,7 @@ class FftAppTests(unittest.TestCase):
         self.sink = RecordingSink()
         patches = [
             patch.object(vapp, "CONFIG_PATH", Path(directory.name) / "config.json"),
+            patch.object(vapp, "RECORDS_DIR", Path(directory.name) / "records"),
             patch.object(vapp, "BUS", self.bus),
             patch.object(vapp, "INFLUX", self.sink),
             patch.object(vapp, "CONFIG", cfg.default_config()),
@@ -392,6 +396,84 @@ class FftAppTests(unittest.TestCase):
         self.assertIn("xy", spectrum["orbits"])
         self.assertNotIn("displacement_um", str(self.client.get("/api/status").get_json()))
 
+    def test_record_capture_persists_lists_downloads_and_deletes(self):
+        self.configure()
+        self.sensor.fifo = self.tone_fifo(12.0)
+        response = self.client.post("/api/sensors/80/records", json={"averages": 2, "note": "Motor A baseline"})
+        self.assertEqual(response.status_code, 202)
+        operation = self.wait_operation()
+        self.assertIsNone(operation["error"])
+        saved = operation["result"]["record"]
+        self.assertEqual((saved["samples"], saved["averages"], saved["note"]), (1024, 2, "Motor A baseline"))
+
+        listing = self.client.get("/api/records").get_json()["records"]
+        self.assertEqual([item["id"] for item in listing], [saved["id"]])
+        record = self.client.get(f"/api/records/{saved['id']}").get_json()
+        self.assertEqual(len(record["raw_captures_g"]), 2)
+        self.assertEqual(len(record["waveform"]["axes"]["x"]["acc_g"]), 1024)
+        self.assertEqual(record["spectrum"]["samples"], 1024)
+
+        csv_url = f"/api/records/{saved['id']}/download.csv"
+        csv_response = self.client.get(csv_url)
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertIn("time_s,acc_g_x,acc_g_y,acc_g_z", csv_response.get_data(as_text=True).splitlines()[0])
+        waveform_rows = list(csv.reader(csv_response.get_data(as_text=True).splitlines()))
+        self.assertEqual(len(waveform_rows), 1 + 1024)
+
+        raw_response = self.client.get(csv_url, query_string={"export_mode": "raw_period", "csv_delimiter": "semicolon"})
+        self.assertEqual(raw_response.status_code, 200)
+        raw_rows = list(csv.reader(raw_response.get_data(as_text=True).splitlines(), delimiter=";"))
+        self.assertEqual(len(raw_rows), 1 + 2 * 1024)
+        self.assertEqual(raw_rows[0], ["capture", "sample", "time_s", "raw_acc_g_x", "raw_acc_g_y", "raw_acc_g_z"])
+        self.assertEqual(raw_rows[2][:2], ["1", "1"])
+        self.assertIn(",", raw_rows[2][2])
+        self.assertEqual(raw_rows[1025][:3], ["2", "0", "0,000000000"])
+
+        custom_response = self.client.get(csv_url, query_string={
+            "export_mode": "custom_rate", "export_hz": 4, "csv_delimiter": "tab",
+        })
+        self.assertEqual(custom_response.status_code, 200)
+        custom_rows = list(csv.reader(custom_response.get_data(as_text=True).splitlines(), delimiter="\t"))
+        self.assertEqual(custom_rows[0], waveform_rows[0])
+        self.assertEqual(len(custom_rows), 1 + math.ceil(1024 * 4 / saved["sample_rate_hz"]))
+        self.assertEqual(custom_rows[2][:2], ["1", "0.250000000"])
+        first_bin = record["waveform"]["axes"]["x"]["acc_g"][:math.ceil(saved["sample_rate_hz"] / 4)]
+        self.assertAlmostEqual(float(custom_rows[1][2]), sum(first_bin) / len(first_bin))
+        for invalid in ("0", "nan", "inf", "1000"):
+            response = self.client.get(csv_url, query_string={"export_mode": "custom_rate", "export_hz": invalid})
+            self.assertEqual(response.status_code, 400)
+
+        json_response = self.client.get(f"/api/records/{saved['id']}/download.json")
+        self.assertIn("attachment", json_response.headers["Content-Disposition"])
+        self.assertEqual(self.client.delete(f"/api/records/{saved['id']}").status_code, 200)
+        self.assertEqual(self.client.get("/api/records").get_json()["records"], [])
+
+    def test_record_capture_validates_note_and_averages(self):
+        self.configure()
+        self.assertEqual(self.client.post("/api/sensors/80/records", json={"averages": 0}).status_code, 400)
+        self.assertEqual(self.client.post("/api/sensors/80/records", json={"note": "x" * 201}).status_code, 400)
+
+    def test_record_retention_prunes_by_count_and_age(self):
+        now = datetime(2026, 11, 23, tzinfo=timezone.utc)
+        for days_ago in (0, 1, 10):
+            captured = (now - timedelta(days=days_ago)).isoformat()
+            records.save(vapp.RECORDS_DIR, {"sensor": f"sensor-{days_ago}", "captured_at": captured})
+        removed = records.prune(vapp.RECORDS_DIR, max_count=2, retention_days=7, now=now)
+        self.assertEqual(len(removed), 1)
+        self.assertEqual(len(records.list_records(vapp.RECORDS_DIR)), 2)
+
+    def test_bulk_delete_records(self):
+        first = records.save(vapp.RECORDS_DIR, {"sensor": "first", "captured_at": "2026-11-23T10:00:00+00:00"})
+        second = records.save(vapp.RECORDS_DIR, {"sensor": "second", "captured_at": "2026-11-23T10:01:00+00:00"})
+        response = self.client.delete("/api/records", json={"ids": [first["id"], second["id"], "missing"]})
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["deleted_count"], 2)
+        self.assertEqual(payload["missing"], ["missing"])
+        self.assertEqual(self.client.get("/api/records").get_json()["records"], [])
+        self.assertEqual(self.client.delete("/api/records", json={"ids": []}).status_code, 400)
+        self.assertEqual(self.client.delete("/api/records", json={"ids": ["../bad"]}).status_code, 400)
+
     def test_spectrum_before_capture_is_404(self):
         self.configure()
         self.assertEqual(self.client.get("/api/sensors/80/spectrum").status_code, 404)
@@ -422,6 +504,18 @@ class FftAppTests(unittest.TestCase):
         self.assertEqual((started["config"]["fft_periodic"], started["config"]["fft_interval_sec"]), (True, 120.0))
         stopped = self.client.post("/api/config", json={"fft_periodic": False}).get_json()
         self.assertEqual((stopped["config"]["fft_periodic"], stopped["config"]["fft_interval_sec"]), (False, 120.0))
+
+    def test_automatic_record_settings_validation(self):
+        self.configure()
+        response = self.client.post("/api/config", json={
+            "fft_periodic": True, "fft_save_records": True, "record_retention_days": 14,
+            "record_max_count": 250,
+        })
+        config = response.get_json()["config"]
+        self.assertTrue(config["fft_save_records"])
+        self.assertEqual((config["record_retention_days"], config["record_max_count"]), (14, 250))
+        self.assertEqual(self.client.post("/api/config", json={"record_retention_days": 0}).status_code, 400)
+        self.assertEqual(self.client.post("/api/config", json={"record_max_count": 10001}).status_code, 400)
 
     def test_fft_settings_change_while_an_operation_runs(self):
         self.configure(fft_periodic=True, fft_interval_sec=60)

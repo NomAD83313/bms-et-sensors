@@ -544,13 +544,13 @@ $('sensorRows').addEventListener('click', (event) => {
     const seconds = pendingIntervalSec ?? lastStatus.config.fft_interval_sec;
     run('sensorMsg', async () => {
       if (!Number.isFinite(seconds) || seconds < 5 || seconds > 86400) throw new Error('Interval must be 5..86400 s');
-      await api('POST', 'api/config', { fft_periodic: true, fft_interval_sec: seconds });
+      await api('POST', 'api/config', { fft_periodic: true, fft_save_records: true, fft_interval_sec: seconds });
       pendingIntervalSec = null;
       return `Periodic capture every ${duration(seconds)} started.`;
     });
   } else if (act === 'fft-stop') {
     run('sensorMsg', async () => {
-      await api('POST', 'api/config', { fft_periodic: false });
+      await api('POST', 'api/config', { fft_periodic: false, fft_save_records: false });
       return 'Periodic capture stopped.';
     });
   } else if (act === 'toggle') {

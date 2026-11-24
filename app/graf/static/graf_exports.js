@@ -97,6 +97,20 @@ const EXPORT_CONFIGS = {
     cancelButtonId: "btnExportMesskluppeCancel",
     errorLabel: "Messkluppe export rate",
   },
+  vibrationRecord: {
+    key: "vibrationRecord",
+    recordRoute: (id) => `/vibration/api/records/${id}/download.csv`,
+    modeName: "exportVibrationRecordMode",
+    modalId: "exportVibrationRecordModal",
+    rateWrapId: "exportVibrationRecordRateWrap",
+    presetId: "exportHzPresetVibrationRecord",
+    customInputId: "exportHzCustomVibrationRecord",
+    delimiterId: "exportDelimiterVibrationRecord",
+    openButtonIds: [],
+    confirmButtonId: "btnExportVibrationRecordConfirm",
+    cancelButtonId: "btnExportVibrationRecordCancel",
+    errorLabel: "vibration export rate",
+  },
 };
 
 function getExportConfig(key) {
@@ -125,15 +139,24 @@ function closeExportModal(config) {
   modal.setAttribute("aria-hidden", "true");
 }
 
-function openExportModal(config) {
+function openExportModal(config, record = null) {
   const modal = document.getElementById(config.modalId);
   if (!modal) return;
+  if (record) {
+    modal.dataset.recordId = record.id;
+    const customInp = document.getElementById(config.customInputId);
+    customInp.max = String(record.sampleRate);
+  }
   modal.style.display = "flex";
   modal.setAttribute("aria-hidden", "false");
 }
 
 function exportCsv(config) {
-  const params = buildDashboardParams();
+  const modal = document.getElementById(config.modalId);
+  const recordId = modal?.dataset.recordId;
+  const route = config.recordRoute ? (recordId && config.recordRoute(recordId)) : config.route;
+  if (!route) return;
+  const params = config.recordRoute ? new URLSearchParams() : buildDashboardParams();
   if (!params) return;
   const mode = getExportMode(config);
   params.set("export_mode", mode);
@@ -152,9 +175,13 @@ function exportCsv(config) {
       setStatus(`error: set valid ${config.errorLabel} in Hz`);
       return;
     }
+    if (config.recordRoute && (hz < Number(customInp.min) || hz > Number(customInp.max))) {
+      window.alert(`Choose an export rate between ${customInp.min} and ${customInp.max} Hz.`);
+      return;
+    }
     params.set("export_hz", String(hz));
   }
-  window.location.href = `${config.route}?${params.toString()}`;
+  window.location.href = `${route}?${params.toString()}`;
   closeExportModal(config);
 }
 
