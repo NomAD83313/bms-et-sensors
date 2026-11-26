@@ -160,7 +160,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 - Dashboard: `http://<host>:80`
 - AP Control: `http://<host>/ap/`
 - System health page: `http://<host>/health.html`
-- Internet access (profile `tunnel`, Cloudflare Tunnel + Access): `./scripts/restart-tunnel.sh`, see `docs/remote-access.md`
+- Internet access (profile `tunnel`, Cloudflare Tunnel + Access): `./scripts/setup-tunnel.sh <public-hostname>`, see `docs/remote-access.md`
 - Service control API (internal, via dashboard proxy): `http://<host>/api/control/*`
 - Optional local DNS alias for AP clients: `http://<ap-local-name>`
 

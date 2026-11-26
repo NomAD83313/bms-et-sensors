@@ -10,8 +10,12 @@ bms_cd_project
 
 # The runtime image may use the locally built XNNPACK wheel image.
 bms_ensure_camera_onnx_runtime
-runtime_image="${CAMERA_ONNX_RUNTIME_IMAGE:-$(read_env_var CAMERA_ONNX_RUNTIME_IMAGE)}"
-docker build -q -f Dockerfile.camera-analysis --target test \
+runtime_image="$(bms_camera_onnx_runtime_image)"
+builder_args=()
+if [[ "$runtime_image" == "bms-onnx-xnnpack:local" ]]; then
+  builder_args=(--builder default)
+fi
+docker build "${builder_args[@]}" -q -f Dockerfile.camera-analysis --target test \
   --build-arg "ONNX_RUNTIME_IMAGE=${runtime_image:-onnx-cpu}" -t bms-camera-analysis:test . >/dev/null
 
 if [[ $# -eq 0 ]]; then

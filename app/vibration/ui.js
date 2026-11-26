@@ -24,6 +24,8 @@ const COMPARE_MINIMUMS = {
 const FFT_AVERAGE_CHOICES = [1, 2, 4, 8, 16];
 // Interval typed but not yet applied, in seconds; survives the 1 s re-render.
 let pendingIntervalSec = null;
+// "Save record" next to Capture spectrum now: the capture is stored as a record for Graf App Lite.
+let saveSpectrumRecord = false;
 // The table re-renders every second; a re-render between press and release would swallow the click.
 let pointerDown = false;
 
@@ -507,7 +509,8 @@ function spectrumPanel(sensor, busy) {
   const choices = FFT_AVERAGE_CHOICES.map((n) => ({ value: n, label: n === 1 ? '1 capture (4.2 s)' : `${n} captures (~${Math.round(n * 4.5)} s)` }));
   const select = `<label>Average<select data-averages ${busy ? 'disabled' : ''}>${choices.map((c) =>
     `<option value="${c.value}"${c.value === config.fft_averages ? ' selected' : ''}>${c.label}</option>`).join('')}</select></label>`;
-  const button = `${select}<button data-act="spectrum" data-addr="${sensor.address}" ${busy || !sensor.enabled ? 'disabled' : ''}>Capture spectrum now</button>`;
+  const save = `<label class="check" title="Store the capture as a record in Graf App Lite (/graf/vibration)"><input type="checkbox" data-save-record${saveSpectrumRecord ? ' checked' : ''}> Save record</label>`;
+  const button = `${select}<button data-act="spectrum" data-addr="${sensor.address}" ${busy || !sensor.enabled ? 'disabled' : ''}>Capture spectrum now</button>${save}`;
   const error = brief && brief.error ? `<div class="msg err">${escapeHtml(brief.error)}</div>` : '';
   const seconds = pendingIntervalSec ?? config.fft_interval_sec;
   const state = !config.fft_periodic
@@ -717,9 +720,10 @@ $('sensorRows').addEventListener('click', (event) => {
   if (act === 'spectrum') {
     openDetails.add(`f${address}`);
     const averages = lastStatus.config.fft_averages || 1;
+    const save = saveSpectrumRecord;
     run('sensorMsg', async () => {
-      await api('POST', `api/sensors/${address}/spectrum`, { averages });
-      return `Capturing spectrum (${averages} × ~4.5 s)…`;
+      await api('POST', `api/sensors/${address}/${save ? 'records' : 'spectrum'}`, { averages });
+      return `Capturing spectrum (${averages} × ~4.5 s)${save ? ', saving record' : ''}…`;
     });
   } else if (act === 'fft-start') {
     const seconds = pendingIntervalSec ?? lastStatus.config.fft_interval_sec;
@@ -772,6 +776,11 @@ $('sensorRows').addEventListener('input', (event) => {
 });
 
 $('sensorRows').addEventListener('change', (event) => {
+  const saveBox = event.target.closest('input[data-save-record]');
+  if (saveBox) {
+    saveSpectrumRecord = saveBox.checked;
+    return;
+  }
   const averages = event.target.closest('select[data-averages]');
   if (averages) {
     const value = Number(averages.value);

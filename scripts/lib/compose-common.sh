@@ -58,6 +58,19 @@ bms_build_services() {
   if [[ "${NO_CACHE:-0}" == "1" ]]; then
     args+=(--no-cache)
   fi
+  local service runtime_image
+  for service in "${to_build[@]}"; do
+    if [[ "$service" == "camera-analysis" ]]; then
+      runtime_image="$(bms_camera_onnx_runtime_image)"
+      if [[ "$runtime_image" == "bms-onnx-xnnpack:local" ]]; then
+        # The Docker driver can resolve images from the host's image store.
+        BUILDX_BUILDER=default "${COMPOSE[@]}" "${profile_args[@]}" build "${args[@]}" "${to_build[@]}"
+      else
+        CAMERA_ONNX_RUNTIME_IMAGE="$runtime_image" "${COMPOSE[@]}" "${profile_args[@]}" build "${args[@]}" "${to_build[@]}"
+      fi
+      return
+    fi
+  done
   "${COMPOSE[@]}" "${profile_args[@]}" build "${args[@]}" "${to_build[@]}"
 }
 
@@ -73,12 +86,23 @@ bms_verify_services_created() {
   verify_stack_services_created "$@"
 }
 
-# Build the optional XNNPACK ONNX Runtime wheel image once, before camera analysis
+# Resolve the legacy local tag to a registry reference that BuildKit can pull.
+bms_camera_onnx_runtime_image() {
+  local image="${CAMERA_ONNX_RUNTIME_IMAGE:-$(read_env_var CAMERA_ONNX_RUNTIME_IMAGE)}"
+  local prebuilt="${CAMERA_ONNX_PREBUILT_IMAGE-nomad375/bms-onnx-xnnpack:ort-1.31.1-arm64}"
+  if [[ "$image" == "bms-onnx-xnnpack:local" && -n "$prebuilt" && "$(uname -m)" =~ ^(aarch64|arm64)$ ]]; then
+    image="$prebuilt"
+  fi
+  printf '%s\n' "${image:-onnx-cpu}"
+}
+
+# Prepare the optional XNNPACK ONNX Runtime wheel image before camera analysis
 # images are built from it. A shell value overrides .env, as in Docker Compose.
 # Remove the image (docker image rm bms-onnx-xnnpack:local) to force a rebuild.
 bms_ensure_camera_onnx_runtime() {
-  local image="${CAMERA_ONNX_RUNTIME_IMAGE:-$(read_env_var CAMERA_ONNX_RUNTIME_IMAGE)}"
-  if [[ -z "$image" || "$image" == "onnx-cpu" ]]; then
+  local image
+  image="$(bms_camera_onnx_runtime_image)"
+  if [[ "$image" == "onnx-cpu" ]]; then
     return 0
   fi
   if [[ "$(bms_image_source)" == "pull" ]] \
@@ -98,19 +122,9 @@ bms_ensure_camera_onnx_runtime() {
     echo "ERROR: CAMERA_ONNX_RUNTIME_IMAGE=$image could not be pulled." >&2
     return 1
   fi
-  # A fresh arm64 host first tries the published wheel image instead of a compile
-  # that takes hours. CAMERA_ONNX_PREBUILT_IMAGE= (empty) always compiles locally.
-  local prebuilt="${CAMERA_ONNX_PREBUILT_IMAGE-nomad375/bms-onnx-xnnpack:ort-1.31.1-arm64}"
-  if [[ -n "$prebuilt" && "$(uname -m)" =~ ^(aarch64|arm64)$ ]]; then
-    echo ">>> Pulling prebuilt ONNX Runtime image: $prebuilt"
-    if docker pull "$prebuilt" && docker tag "$prebuilt" "$image"; then
-      return 0
-    fi
-    echo "WARN: $prebuilt is not available; compiling ONNX Runtime locally instead." >&2
-  fi
   echo ">>> Building $image once: compiling ONNX Runtime with XNNPACK."
   echo ">>> This is a one-time step and can take a long time on a Raspberry Pi."
-  docker build -f Dockerfile.camera-onnx-xnnpack -t "$image" .
+  docker build --builder default -f Dockerfile.camera-onnx-xnnpack -t "$image" .
 }
 
 bms_restart_service() {

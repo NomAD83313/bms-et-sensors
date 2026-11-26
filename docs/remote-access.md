@@ -24,38 +24,35 @@ settings. Cloudflare Access is therefore mandatory:
 
 ## Setup
 
-One tunnel per host. A tunnel used on another host can stay as it is; create a new one
-for this Pi.
+Use one remotely managed tunnel per host and a hostname in a zone managed by Cloudflare.
+On the new host with Docker Compose installed, pass its public hostname to the setup
+script. For example:
 
-1. Cloudflare dashboard -> **Zero Trust -> Networks -> Tunnels -> Create a tunnel**,
-   type **Cloudflared**, name it (for example `bms-pi`).
-2. On the install step choose **Docker** and copy only the token (the long value after
-   `--token`). Put it into `.env` on the Pi:
+```bash
+./scripts/setup-tunnel.sh ets2.douzhyk.net
+```
 
-   ```
-   CLOUDFLARE_TUNNEL_TOKEN=eyJ...
-   ```
+The script prints the Cloudflare setup steps and creates a private `.env` from
+`.env.example` if needed. Create the tunnel in Cloudflare and copy the value after
+`--token` from the Docker install command into `CLOUDFLARE_TUNNEL_TOKEN` in `.env`.
+Rerun the same command to start `cloudflared` through Compose.
 
-3. **Public hostname**: subdomain `sensors` (any), your domain, service type `HTTP`,
-   URL `dashboard:80`.
-4. **Zero Trust -> Access -> Applications -> Add an application -> Self-hosted**:
-   - application domain: the same hostname (`sensors.<domain>`), path empty;
-   - policy: action **Allow**, include **Emails** (list of allowed addresses) or an
-     email domain; login method **One-time PIN** works without extra setup.
-5. SSL/TLS -> Edge Certificates: enable **Always Use HTTPS**.
-6. Start the tunnel on the Pi:
-
-   ```bash
-   ./scripts/restart-tunnel.sh
-   ./scripts/logs.sh cloudflared
-   ```
-
-7. Open `https://sensors.<domain>/`, log in with an allowed email.
+In Cloudflare Zero Trust, create a self-hosted Access application for the hostname with
+an empty path and an **Allow** policy for the authorized emails. **One-time PIN** can
+serve as the login method. On the tunnel, add the **Published application** route for
+the same hostname with service URL `http://dashboard:80`. Cloudflare creates the DNS
+record when you add the route. Under **SSL/TLS → Edge Certificates**, enable **Always
+Use HTTPS**. Open the public HTTPS URL and sign in to verify the dashboard.
 
 ## Operation
 
+- Restart after updating the token: `./scripts/restart-tunnel.sh`
+- Connector logs: `./scripts/logs.sh cloudflared`
 - Stop: `docker compose -f docker-compose.yml -f docker-compose.override.yml --profile tunnel stop cloudflared`
 - `./scripts/update-from-github.sh` restarts the tunnel only if it was running.
+- A registered connection confirms the connector can reach Cloudflare. If Cloudflare
+  Access opens but the origin returns `503`, check that the published application
+  route is configured on the same tunnel as the connector token.
 - `403 Forbidden` from nginx through the domain means the request had no Access token:
   check that the Access application covers exactly this hostname.
 - Grafana keeps its own login (`GRAFANA_ADMIN_PASSWORD`) on top of Access.

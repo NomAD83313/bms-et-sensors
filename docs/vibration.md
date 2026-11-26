@@ -156,6 +156,9 @@ sensor stays online.
 - **On demand**: per sensor, **Spectrum (FFT) → Capture spectrum now** in the UI, or
   `POST /vibration/api/sensors/<address>/spectrum`; the last full spectrum is at
   `GET /vibration/api/sensors/<address>/spectrum` (kept in memory only).
+  With **Save record** checked next to the button, the capture is started through
+  `POST /vibration/api/sensors/<address>/records` instead and is stored as a record shown in
+  Graf App Lite (`/graf/vibration`).
 - **Periodic**: **Spectrum (FFT) → Periodic capture**: interval in seconds (5–86400),
   **Start** / **Apply** / **Stop**. It captures every enabled, online sensor in turn; the
   interval counts from the end of a capture series, so polling runs in between. The state

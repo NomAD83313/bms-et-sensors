@@ -131,23 +131,28 @@
     const range = envelopeLimit(state.quantity, peak);
     state.timelineRange = range;
     const sy = (value) => pad.top + (1 - (Math.max(-range, Math.min(range, value)) + range) / (2 * range)) * (height - pad.top - pad.bottom);
-    // Two 1 px lines per axis: the maximum and the minimum of every time bin (outline of
-    // the signal, no fill between them); lines break at gaps.
-    const bands = axes.map((axis) => ["max", "min"].map((key) => {
-      const values = channels[axis][key];
-      const lines = [];
-      let points = [];
+    // One filled band per axis between the minimum and the maximum of every time bin;
+    // bands break at gaps.
+    const bands = axes.map((axis) => {
+      const lows = channels[axis].min;
+      const highs = channels[axis].max;
+      const shapes = [];
+      let upper = [];
+      let lower = [];
       const flush = () => {
-        if (points.length > 1) lines.push(`<polyline class="band-${axis}" points="${points.join(" ")}" />`);
-        points = [];
+        if (upper.length > 1) shapes.push(`<polygon class="band-${axis}" points="${upper.concat(lower.reverse()).join(" ")}" />`);
+        upper = [];
+        lower = [];
       };
-      for (let index = 0; index < values.length; index += 1) {
-        if (values[index] === null) { flush(); continue; }
-        points.push(`${sx((index + 0.5) * binS).toFixed(1)},${sy(values[index]).toFixed(1)}`);
+      for (let index = 0; index < highs.length; index += 1) {
+        if (highs[index] === null || lows[index] === null) { flush(); continue; }
+        const x = sx((index + 0.5) * binS).toFixed(1);
+        upper.push(`${x},${sy(highs[index]).toFixed(1)}`);
+        lower.push(`${x},${sy(lows[index]).toFixed(1)}`);
       }
       flush();
-      return lines.join("");
-    }).join("")).join("");
+      return shapes.join("");
+    }).join("");
     const yTicks = [-1, -0.5, 0, 0.5, 1].map((fraction) => {
       const y = sy(range * fraction);
       return `<line class="wave-grid" x1="${pad.left}" x2="${width - pad.right}" y1="${y}" y2="${y}" />
@@ -367,7 +372,7 @@
       <div class="burst-block">
         <div class="waveform-chart-head">
           <span class="waveform-chart-title"><span>Signal envelope over the record</span>
-            <span class="orbit-status">Upper line = maximum, lower line = minimum per time bin · shaded strips are gaps · click to select a capture</span></span>
+            <span class="orbit-status">Band = minimum … maximum per time bin · shaded strips are gaps · click to select a capture</span></span>
           <span class="burst-controls">
             <label>Quantity<select data-burst-control="quantity">${Object.entries(quantities).map(([key, [label, unit]]) => option(key, `${label}, ${unit}`, state.quantity)).join("")}</select></label>
             <span class="burst-controls" data-burst-part="envelope-scale">${envelopeScaleControls()}</span>

@@ -22,12 +22,12 @@ if [[ -z "${token}" ]]; then
 fi
 
 echo ">>> Starting Cloudflare Tunnel (cloudflared -> dashboard:80)..."
-"${COMPOSE[@]}" --profile tunnel up -d --force-recreate cloudflared
+"${COMPOSE[@]}" --env-file "${ENV_FILE}" --profile tunnel up -d --force-recreate cloudflared
 bms_verify_services_created cloudflared
 
 echo ">>> Waiting for the tunnel connection..."
 for _ in $(seq 1 20); do
-  if docker logs cloudflared 2>&1 | grep -q "Registered tunnel connection"; then
+  if docker logs cloudflared 2>&1 | grep -F "Registered tunnel connection" >/dev/null; then
     echo ">>> Done. The tunnel is connected."
     exit 0
   fi
