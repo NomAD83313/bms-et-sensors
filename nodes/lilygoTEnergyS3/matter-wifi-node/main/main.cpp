@@ -1476,6 +1476,12 @@ extern "C" void app_main(void)
 
     ESP_ERROR_CHECK(bms_node_core::install_device_identity(s_device_info_provider));
     ESP_ERROR_CHECK(configure_wifi_hostname_from_serial());
+
+    // Apply station-only mode before Matter starts Wi-Fi with the saved configuration.
+    wifi_init_config_t wifi_config = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
     ESP_ERROR_CHECK(init_test_event_trigger_delegate());
 
     node::config_t node_config;

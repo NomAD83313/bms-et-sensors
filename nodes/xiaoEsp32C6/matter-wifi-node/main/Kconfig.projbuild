@@ -1,0 +1,10 @@
+menu "XIAO battery monitoring"
+
+config XIAO_BATTERY_DIVIDER
+    bool "Enable battery voltage measurement on D0"
+    default n
+    help
+        Enable only when D0 is connected to the midpoint of the external 1:1
+        battery voltage divider.
+
+endmenu

@@ -116,6 +116,9 @@ The connected board initially contained a LILYGO/Arduino-style firmware:
 The first BMS firmware intentionally replaces this with the same Matter over
 Wi-Fi model used by the C3 node.
 
+The BMS firmware uses Wi-Fi station mode with SoftAP support disabled. Matter
+commissioning uses Bluetooth LE.
+
 ## Build
 
 Run from the repository root:

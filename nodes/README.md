@@ -14,9 +14,12 @@ Firmware workspace for BMS DOA Matter nodes.
 - `m5stickcPlus2/matter-node` - Matter over Wi-Fi node for `M5StickC Plus2`
 - `esp32sCam/camera-node` - Matter over Wi-Fi node for `ESP32-S-CAM` (camera runtime intentionally disabled)
 - `lilygoTEnergyS3/matter-wifi-node` - Matter over Wi-Fi node for `LILYGO T-Energy-S3`
+- `xiaoEsp32C6/matter-wifi-node` - Matter over Wi-Fi tilt and battery telemetry for Seeed Studio XIAO ESP32-C6
 - `esp32c6zero/multinode` - Matter over Thread capability-platform firmware for `ESP32-C6-Zero` (see its own `README.md`)
 
 ## Documentation
+
+- [Seeed Studio XIAO ESP32-C6](./XIAO-ESP32-C6.md)
 
 - [AMD64 build host setup](../docs/amd64-node-build-host.md)
 - [ESP32-C6-Zero](./ESP32-C6-Zero.md)

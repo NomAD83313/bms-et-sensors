@@ -302,15 +302,18 @@
         : "Back-to-back FIFO captures · polling paused · short gaps between captures";
     }
     const config = payload.config || {};
+    // Apply a server value only when it changes, so a local choice survives status polling.
     const syncInput = (element, value) => {
-      if (element && document.activeElement !== element && value !== undefined) element.value = String(value);
+      if (!element || value === undefined || value === null) return;
+      const serverValue = String(value);
+      if (element.dataset.serverValue === serverValue) return;
+      element.dataset.serverValue = serverValue;
+      if (document.activeElement !== element) element.value = serverValue;
     };
     syncInput(recordAutoInterval, config.fft_interval_sec);
     syncInput(recordRetentionDays, config.record_retention_days);
     syncInput(recordMaxCount, config.record_max_count);
-    if (recordAverages && document.activeElement !== recordAverages && config.fft_averages) {
-      recordAverages.value = String(config.fft_averages);
-    }
+    syncInput(recordAverages, config.fft_averages || undefined);
     const periodic = Boolean(config.fft_periodic);
     const automatic = Boolean(periodic && config.fft_save_records);
     if (recordAutoStart) recordAutoStart.disabled = automatic || recorderSensors.length === 0;
